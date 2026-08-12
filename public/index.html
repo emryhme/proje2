@@ -583,6 +583,25 @@
       .demo-section, .about-card { grid-template-columns: 1fr; }
       nav { display: none; }
     }
+
+    @media(max-width:600px) {
+      header { padding: 14px 16px; }
+      .logo { font-size: 16px; }
+      .logo span { display: none; }
+      .nav-actions { gap: 7px; }
+      .nav-actions .btn { padding: 9px 10px; font-size: 11px; }
+      .hero { padding: 70px 16px 45px; }
+      .hero h1 { font-size: 30px; line-height: 1.14; }
+      .hero p { font-size: 15px; line-height: 1.55; }
+      section { padding-left: 16px; padding-right: 16px; }
+      .hero-actions, .header-actions { width: 100%; flex-direction: column; }
+      .hero-actions .btn, .header-actions .btn { width: 100%; min-height: 44px; }
+      .features-grid, .pricing-grid { gap: 14px; }
+      .feature-card, .pricing-card { padding: 20px; }
+      .about-card { padding: 20px; }
+      .about-card > div[style*="grid-template-columns"] { grid-template-columns: 1fr !important; }
+      footer { padding: 28px 16px; margin-top: 45px; }
+    }
   </style>
 </head>
 <body>

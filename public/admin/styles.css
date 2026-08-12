@@ -983,3 +983,41 @@ tr:last-child td {
     min-width: 700px;
   }
 }
+
+/* Responsive refinements for phones and small tablets */
+@media(max-width:800px) {
+  .sidebar { box-shadow: 12px 0 30px rgba(0, 0, 0, .22); }
+  .topbar { gap: 10px; }
+}
+
+@media(max-width:600px) {
+  .topbar { height: 60px; padding: 0 10px; }
+  .top-actions { gap: 3px; margin-left: auto; }
+  .top-actions .sync-badge,
+  .top-actions #btnToggleSound,
+  .top-actions #btnOpenSystemSettings { display: none; }
+  .user { padding-left: 8px; }
+  .avatar { width: 32px; height: 32px; }
+  .content { padding: 14px; }
+  .page-title h1 { font-size: 20px; }
+  .page-title p { line-height: 1.45; }
+  .header-actions { flex-direction: column; }
+  .header-actions .btn { min-height: 42px; }
+  .table-header { padding: 15px; align-items: flex-start; gap: 12px; flex-direction: column; }
+  .table-header .btn { width: 100%; }
+  .card, .data-card { border-radius: 9px; }
+  .kpi, .chart-card { padding: 15px; }
+  .chart-container { height: 220px; }
+  .form-grid { padding: 15px; }
+  .form-actions { padding: 0 15px 15px; flex-direction: column-reverse; }
+  .form-actions .btn { width: 100%; min-height: 42px; }
+  .toast-container { left: 14px; right: 14px; bottom: 14px; }
+  .toast { width: 100%; }
+}
+
+@media(max-width:380px) {
+  .content { padding: 10px; }
+  .icon-button { width: 32px; height: 32px; }
+  .page-title h1 { font-size: 18px; }
+  .kpi-value { font-size: 21px; }
+}

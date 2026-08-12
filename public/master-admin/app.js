@@ -101,6 +101,10 @@ function checkMasterAuth() {
   }
 }
 
+function toggleMasterSidebar() {
+  document.querySelector('.sidebar')?.classList.toggle('open');
+}
+
 function renderMasterUser() {
   const rawUser = localStorage.getItem('barons_admin_user');
   if (!rawUser) return;
@@ -425,6 +429,9 @@ async function promptChangePlan(storeId) {
 
 // Global App Init
 document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.sidebar-menu a').forEach(link => {
+    link.addEventListener('click', () => document.querySelector('.sidebar')?.classList.remove('open'));
+  });
   checkMasterAuth();
   renderMasterUser();
 
