@@ -739,7 +739,8 @@ app.delete('/api/api-keys/:id', AuthMiddleware.authenticate, AuthMiddleware.requ
   }
 });
 
-// --- ADMIN TEST SIMULATOR ENDPOINTS ---
+/* Removed AI test simulator endpoints. */
+/*
 
 // Helper to verify admin access to requested store
 function verifyAdminStoreAccess(userId: number, userStoreId: number, targetStoreId: number): boolean {
@@ -1003,6 +1004,7 @@ app.post('/api/test-simulator/run-tests', AuthMiddleware.authenticate, AuthMiddl
   }
 });
 
+*/
 // Start Express Application Server
 app.listen(env.port, () => {
   console.log(`

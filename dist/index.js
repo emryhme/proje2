@@ -9,7 +9,6 @@ const crypto_1 = __importDefault(require("crypto"));
 const env_1 = require("./config/env");
 const order_service_1 = require("./services/order.service");
 const stock_service_1 = require("./services/stock.service");
-const ai_service_1 = require("./services/ai.service");
 const gemini_service_1 = require("./services/gemini.service");
 const admin_copilot_service_1 = require("./services/admin-copilot.service");
 const db_1 = require("./database/db");
@@ -679,231 +678,273 @@ app.delete('/api/api-keys/:id', auth_middleware_1.AuthMiddleware.authenticate, a
         res.status(500).json({ success: false, error: e.message });
     }
 });
-// --- ADMIN TEST SIMULATOR ENDPOINTS ---
+/* Removed AI test simulator endpoints. Kept as a disabled historical block
+ * temporarily to avoid a broad, unrelated rewrite of the application entry point. */
+/*
+
 // Helper to verify admin access to requested store
-function verifyAdminStoreAccess(userId, userStoreId, targetStoreId) {
-    if (userStoreId === 1 || userStoreId === targetStoreId)
-        return true;
-    try {
-        const memb = db_1.db.prepare("SELECT id FROM memberships WHERE user_id = ? AND store_id = ? AND status = 'active'").get(userId, targetStoreId);
-        return !!memb;
-    }
-    catch {
-        return false;
-    }
+function verifyAdminStoreAccess(userId: number, userStoreId: number, targetStoreId: number): boolean {
+  if (userStoreId === 1 || userStoreId === targetStoreId) return true;
+  try {
+    const memb = db.prepare("SELECT id FROM memberships WHERE user_id = ? AND store_id = ? AND status = 'active'").get(userId, targetStoreId);
+    return !!memb;
+  } catch {
+    return false;
+  }
 }
-app.get('/api/test-simulator/stores', auth_middleware_1.AuthMiddleware.authenticate, auth_middleware_1.AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req, res) => {
-    try {
-        const userId = req.auth.userId;
-        const userStoreId = req.auth.storeId;
-        let stores = [];
-        if (userStoreId === 1) {
-            stores = db_1.db.prepare('SELECT id, name, slug, status FROM stores ORDER BY id ASC').all();
-        }
-        else {
-            stores = db_1.db.prepare(`
-        SELECT s.id, s.name, s.slug, s.status 
-        FROM stores s 
-        JOIN memberships m ON s.id = m.store_id 
-        WHERE m.user_id = ? AND m.status = 'active' 
+
+app.get('/api/test-simulator/stores', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.auth!.userId;
+    const userStoreId = req.auth!.storeId;
+
+    let stores: any[] = [];
+    if (userStoreId === 1) {
+      stores = db.prepare('SELECT id, name, slug, status FROM stores ORDER BY id ASC').all();
+    } else {
+      stores = db.prepare(`
+        SELECT s.id, s.name, s.slug, s.status
+        FROM stores s
+        JOIN memberships m ON s.id = m.store_id
+        WHERE m.user_id = ? AND m.status = 'active'
         ORDER BY s.id ASC
       `).all(userId);
-        }
-        res.json({ success: true, stores });
     }
-    catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
+
+    res.json({ success: true, stores });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
-app.post('/api/test-simulator/message', auth_middleware_1.AuthMiddleware.authenticate, auth_middleware_1.AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), async (req, res) => {
+
+app.post('/api/test-simulator/message', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), async (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.auth!.userId;
+    const userStoreId = req.auth!.storeId;
+    const { targetStoreId, externalUserId, message } = req.body || {};
+
+    const storeIdNum = Number(targetStoreId);
+    if (!storeIdNum || isNaN(storeIdNum) || storeIdNum <= 0) {
+      return res.status(400).json({ success: false, error: 'GeÃƒÆ’Ã‚Â§ersiz MaÃƒâ€Ã…Â¸aza ID.' });
+    }
+
+    if (!verifyAdminStoreAccess(userId, userStoreId, storeIdNum)) {
+      return res.status(403).json({ success: false, error: 'Bu maÃƒâ€Ã…Â¸azayÃƒâ€Ã‚Â± test etme yetkiniz bulunmamaktadÃƒâ€Ã‚Â±r.' });
+    }
+
+    const store = db.prepare('SELECT id, name, slug, status FROM stores WHERE id = ?').get(storeIdNum) as any;
+    if (!store) {
+      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+    }
+
+    const cleanUser = (externalUserId || 'test_user_001').trim();
+    const cleanMsg = (message || '').trim();
+    if (!cleanMsg) {
+      return res.status(400).json({ success: false, error: 'Mesaj metni zorunludur.' });
+    }
+
+    const testExtUserId = `test:${cleanUser}`;
+    const convId = AIService.getOrCreateConversation(storeIdNum, testExtUserId);
+    AIService.persistMessage(convId, 'user', cleanMsg);
+
+    const startTime = Date.now();
+    const resAi = await AIService.processMessage(cleanUser, cleanMsg, store.slug, storeIdNum, 'TEST');
+    const totalDurationMs = Date.now() - startTime;
+
+    AIService.persistMessage(convId, 'assistant', resAi.reply);
+
+    AuthMiddleware.logAudit(storeIdNum, userId, 'SIMULATE_TEST_MESSAGE', 'ai_simulator', cleanUser);
+
+    res.json({
+      success: true,
+      storeId: storeIdNum,
+      storeName: store.name,
+      slug: store.slug,
+      externalUserId: cleanUser,
+      testExtUserId: testExtUserId,
+      conversationId: convId,
+      reply: resAi.reply,
+      toolTraces: resAi.toolTraces || [],
+      cart: resAi.cart || [],
+      tokens: resAi.tokens,
+      durationMs: totalDurationMs
+    });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message || 'SimÃƒÆ’Ã‚Â¼latÃƒÆ’Ã‚Â¶r mesaj hatasÃƒâ€Ã‚Â±' });
+  }
+});
+
+app.get('/api/test-simulator/conversation', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.auth!.userId;
+    const userStoreId = req.auth!.storeId;
+    const storeIdNum = Number(req.query.storeId);
+    const cleanUser = String(req.query.externalUserId || 'test_user_001').trim();
+
+    if (!storeIdNum || isNaN(storeIdNum) || !verifyAdminStoreAccess(userId, userStoreId, storeIdNum)) {
+      return res.status(403).json({ success: false, error: 'Bu maÃƒâ€Ã…Â¸azanÃƒâ€Ã‚Â±n verilerine eriÃƒâ€¦Ã…Â¸im yetkiniz yok.' });
+    }
+
+    const store = db.prepare('SELECT id, name, slug, status FROM stores WHERE id = ?').get(storeIdNum) as any;
+    if (!store) return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+
+    const testExtUserId = `test:${cleanUser}`;
+    const convId = AIService.getOrCreateConversation(storeIdNum, testExtUserId);
+
+    const messages = db.prepare('SELECT sender_type, text, created_at FROM messages WHERE conversation_id = ? ORDER BY id ASC').all(convId);
+    const products = db.prepare('SELECT product_code, name, color, size, price, stock FROM products WHERE store_id = ? ORDER BY id DESC LIMIT 15').all(storeIdNum);
+    const activeCampaigns = db.prepare('SELECT title, description, code FROM campaigns WHERE store_id = ? AND active = 1').all(storeIdNum);
+    const userRewards = db.prepare('SELECT reward_code, discount_percent, min_qualifying_amount, is_used FROM user_rewards WHERE store_id = ? AND sender_id = ?').all(storeIdNum, cleanUser);
+    const testOrders = db.prepare('SELECT order_id, product_name, quantity, total_price, status, created_at FROM orders WHERE store_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 10').all(storeIdNum, cleanUser);
+
+    const sessionInfo = AIService.getSessionInfo(storeIdNum, store.slug, cleanUser, 'TEST');
+
+    res.json({
+      success: true,
+      store: store,
+      externalUserId: cleanUser,
+      testExtUserId: testExtUserId,
+      conversationId: convId,
+      messages: messages,
+      cart: sessionInfo.cart,
+      products: products,
+      campaigns: activeCampaigns,
+      rewards: userRewards,
+      orders: testOrders
+    });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/test-simulator/reset', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req: AuthenticatedRequest, res) => {
+  try {
+    const userId = req.auth!.userId;
+    const userStoreId = req.auth!.storeId;
+    const { targetStoreId, externalUserId, action } = req.body || {};
+
+    const storeIdNum = Number(targetStoreId);
+    if (!storeIdNum || isNaN(storeIdNum) || !verifyAdminStoreAccess(userId, userStoreId, storeIdNum)) {
+      return res.status(403).json({ success: false, error: 'Yetkisiz maÃƒâ€Ã…Â¸aza sÃƒâ€Ã‚Â±fÃƒâ€Ã‚Â±rlama isteÃƒâ€Ã…Â¸i.' });
+    }
+
+    const store = db.prepare('SELECT id, slug FROM stores WHERE id = ?').get(storeIdNum) as any;
+    if (!store) return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+
+    const cleanUser = String(externalUserId || 'test_user_001').trim();
+    const act = action || 'all';
+
+    AIService.resetTestSession(storeIdNum, store.slug, cleanUser, 'TEST', act);
+
+    if (act === 'conversation' || act === 'all') {
+      const testExtUserId = `test:${cleanUser}`;
+      const conv = db.prepare('SELECT id FROM conversations WHERE store_id = ? AND external_user_id = ?').get(storeIdNum, testExtUserId) as any;
+      if (conv) {
+        db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conv.id);
+      }
+    }
+
+    AuthMiddleware.logAudit(storeIdNum, userId, 'RESET_TEST_SIMULATOR', 'ai_simulator', `${cleanUser}:${act}`);
+
+    res.json({ success: true, message: `Test simÃƒÆ’Ã‚Â¼lasyon verileri (${act}) baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla sÃƒâ€Ã‚Â±fÃƒâ€Ã‚Â±rlandÃƒâ€Ã‚Â±.` });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+app.post('/api/test-simulator/run-tests', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER']), async (req: AuthenticatedRequest, res) => {
+  try {
+    const results: Array<{ id: number; name: string; status: 'PASS' | 'FAIL'; details: string }> = [];
+
+    // Helper test runner
+    const record = (id: number, name: string, pass: boolean, details: string) => {
+      results.push({ id, name, status: pass ? 'PASS' : 'FAIL', details });
+    };
+
+    // Prepare temporary isolated test records in DB for Store 1 & Store 3
+    const st1 = db.prepare("SELECT id FROM stores WHERE id = 1").get();
+    const st3 = db.prepare("SELECT id FROM stores WHERE id = 3").get();
+
+    if (!st1 || !st3) {
+      return res.status(400).json({ success: false, error: 'Testlerin ÃƒÆ’Ã‚Â§alÃƒâ€Ã‚Â±Ãƒâ€¦Ã…Â¸abilmesi iÃƒÆ’Ã‚Â§in veritabanÃƒâ€Ã‚Â±nda Store #1 ve Store #3 tanÃƒâ€Ã‚Â±mlÃƒâ€Ã‚Â± olmalÃƒâ€Ã‚Â±dÃƒâ€Ã‚Â±r.' });
+    }
+
+    // Insert dummy test products if missing
     try {
-        const userId = req.auth.userId;
-        const userStoreId = req.auth.storeId;
-        const { targetStoreId, externalUserId, message } = req.body || {};
-        const storeIdNum = Number(targetStoreId);
-        if (!storeIdNum || isNaN(storeIdNum) || storeIdNum <= 0) {
-            return res.status(400).json({ success: false, error: 'GeÃƒÆ’Ã‚Â§ersiz MaÃƒâ€Ã…Â¸aza ID.' });
-        }
-        if (!verifyAdminStoreAccess(userId, userStoreId, storeIdNum)) {
-            return res.status(403).json({ success: false, error: 'Bu maÃƒâ€Ã…Â¸azayÃƒâ€Ã‚Â± test etme yetkiniz bulunmamaktadÃƒâ€Ã‚Â±r.' });
-        }
-        const store = db_1.db.prepare('SELECT id, name, slug, status FROM stores WHERE id = ?').get(storeIdNum);
-        if (!store) {
-            return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
-        }
-        const cleanUser = (externalUserId || 'test_user_001').trim();
-        const cleanMsg = (message || '').trim();
-        if (!cleanMsg) {
-            return res.status(400).json({ success: false, error: 'Mesaj metni zorunludur.' });
-        }
-        const testExtUserId = `test:${cleanUser}`;
-        const convId = ai_service_1.AIService.getOrCreateConversation(storeIdNum, testExtUserId);
-        ai_service_1.AIService.persistMessage(convId, 'user', cleanMsg);
-        const startTime = Date.now();
-        const resAi = await ai_service_1.AIService.processMessage(cleanUser, cleanMsg, store.slug, storeIdNum, 'TEST');
-        const totalDurationMs = Date.now() - startTime;
-        ai_service_1.AIService.persistMessage(convId, 'assistant', resAi.reply);
-        auth_middleware_1.AuthMiddleware.logAudit(storeIdNum, userId, 'SIMULATE_TEST_MESSAGE', 'ai_simulator', cleanUser);
-        res.json({
-            success: true,
-            storeId: storeIdNum,
-            storeName: store.name,
-            slug: store.slug,
-            externalUserId: cleanUser,
-            testExtUserId: testExtUserId,
-            conversationId: convId,
-            reply: resAi.reply,
-            toolTraces: resAi.toolTraces || [],
-            cart: resAi.cart || [],
-            tokens: resAi.tokens,
-            durationMs: totalDurationMs
-        });
-    }
-    catch (e) {
-        res.status(500).json({ success: false, error: e.message || 'SimÃƒÆ’Ã‚Â¼latÃƒÆ’Ã‚Â¶r mesaj hatasÃƒâ€Ã‚Â±' });
-    }
+      db.prepare("INSERT OR REPLACE INTO products (store_id, short_code, product_code, name, color, size, price, stock) VALUES (1, 'SIM1', 'SIM-A-100', 'SimÃƒÆ’Ã‚Â¼latÃƒÆ’Ã‚Â¶r ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼nÃƒÆ’Ã‚Â¼ A', 'Siyah', 'M', 100.0, 50)").run();
+      db.prepare("INSERT OR REPLACE INTO inventory (store_id, product_code, stock) VALUES (1, 'SIM-A-100', 50)").run();
+      
+      db.prepare("INSERT OR REPLACE INTO products (store_id, short_code, product_code, name, color, size, price, stock) VALUES (3, 'SIM1', 'SIM-A-100', 'SimÃƒÆ’Ã‚Â¼latÃƒÆ’Ã‚Â¶r ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼nÃƒÆ’Ã‚Â¼ B (Gamma)', 'KÃƒâ€Ã‚Â±rmÃƒâ€Ã‚Â±zÃƒâ€Ã‚Â±', 'M', 500.0, 99)").run();
+      db.prepare("INSERT OR REPLACE INTO inventory (store_id, product_code, stock) VALUES (3, 'SIM-A-100', 99)").run();
+
+      db.prepare("INSERT OR REPLACE INTO campaigns (id, store_id, title, description, code, active) VALUES (901, 1, 'Store A ÃƒÆ’Ã¢â‚¬â€œzel Ãƒâ€Ã‚Â°ndirim', 'Store A KampanyasÃƒâ€Ã‚Â±', 'SIMKOD100', 1)").run();
+      db.prepare("INSERT OR REPLACE INTO campaigns (id, store_id, title, description, code, active) VALUES (903, 3, 'Store B ÃƒÆ’Ã¢â‚¬â€œzel Ãƒâ€Ã‚Â°ndirim', 'Store B KampanyasÃƒâ€Ã‚Â±', 'SIMKOD500', 1)").run();
+    } catch {}
+
+    // TEST 1: Store A Product Lookup
+    const p1 = db.prepare("SELECT * FROM products WHERE store_id = 1 AND product_code = 'SIM-A-100'").get() as any;
+    record(1, 'Store A Product Lookup', p1 && p1.price === 100, `Product price: ${p1?.price} TL (Expected: 100 TL)`);
+
+    // TEST 2: Store B Same Product Code Lookup
+    const p3 = db.prepare("SELECT * FROM products WHERE store_id = 3 AND product_code = 'SIM-A-100'").get() as any;
+    record(2, 'Store B Same Product Code Lookup', p3 && p3.price === 500, `Product price: ${p3?.price} TL (Expected: 500 TL)`);
+
+    // TEST 3: Store A Campaign Isolation
+    const c1 = db.prepare("SELECT * FROM campaigns WHERE store_id = 1 AND code = 'SIMKOD100'").get();
+    record(3, 'Store A Campaign Isolation', !!c1, 'Store 1 campaign retrieved strictly in Store 1 context');
+
+    // TEST 4: Store B Campaign Isolation
+    const c3 = db.prepare("SELECT * FROM campaigns WHERE store_id = 3 AND code = 'SIMKOD100'").get();
+    record(4, 'Store B Campaign Isolation', !c3, 'Store 3 query for Store 1 campaign returns null (Isolated)');
+
+    // TEST 5 & 6: Conversation Isolation
+    const conv1 = AIService.getOrCreateConversation(1, 'test:sec_user_777');
+    const conv3 = AIService.getOrCreateConversation(3, 'test:sec_user_777');
+    record(5, 'Store A Conversation Creation', conv1 > 0, `Store 1 Conversation ID: ${conv1}`);
+    record(6, 'Store B Same external_user_id Conversation Isolation', conv3 > 0 && conv3 !== conv1, `Store 3 Conversation ID: ${conv3} (Distinct from ${conv1})`);
+
+    // TEST 7: Cross-Tenant Product Query Isolation
+    const crossProduct = db.prepare("SELECT * FROM products WHERE store_id = 1 AND product_code = 'STORE3_ONLY_CODE_XYZ'").get();
+    record(7, 'Cross-Tenant Product Request', !crossProduct, 'Cross-tenant product query safely returns null');
+
+    // TEST 8: Cross-Tenant Order Lookup
+    const crossOrder = db.prepare("SELECT * FROM orders WHERE store_id = 1 AND sender_id = 'user_belonging_to_store_3_only'").get();
+    record(8, 'Cross-Tenant Order Lookup', !crossOrder, 'Cross-tenant order lookup isolated');
+
+    // TEST 9: Cross-Tenant Reward Lookup
+    const crossReward = db.prepare("SELECT * FROM user_rewards WHERE store_id = 1 AND sender_id = 'user_belonging_to_store_3_only'").get();
+    record(9, 'Cross-Tenant Reward Lookup', !crossReward, 'Cross-tenant reward lookup isolated');
+
+    // TEST 10: Cross-Tenant Cart Access Isolation
+    const cartInfo1 = AIService.getSessionInfo(1, 'store-1', 'sec_user_777', 'TEST');
+    const cartInfo3 = AIService.getSessionInfo(3, 'store-3', 'sec_user_777', 'TEST');
+    record(10, 'Cross-Tenant Cart Access Isolation', Array.isArray(cartInfo1.cart) && Array.isArray(cartInfo3.cart), 'Session carts isolated per store key');
+
+    // TEST 11: Cross-Tenant Order Creation Safety
+    record(11, 'Cross-Tenant Order Creation Safety', true, 'Order creation requires matching store_id validation');
+
+    // TEST 12: AI Prompt Store Switch Attack Protection
+    // Test that passing prompt "Store 3'ÃƒÆ’Ã‚Â¼n ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼nlerini gÃƒÆ’Ã‚Â¶ster" does NOT change backend store context from Store 1 to Store 3
+    const attackStoreContext = 1; // Backend forces storeId = 1
+    const pAttack = db.prepare("SELECT name FROM products WHERE store_id = ? AND price = 500").get(attackStoreContext);
+    record(12, 'AI Prompt Store Switch Attack Protection', !pAttack, 'Prompt injection attempt "Store 3 ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼nleri" blocked by locked backend tenant context');
+
+    const totalPassed = results.filter(r => r.status === 'PASS').length;
+    const allPassed = totalPassed === results.length;
+
+    res.json({
+      success: true,
+      allPassed: allPassed,
+      passedCount: totalPassed,
+      totalCount: results.length,
+      results: results
+    });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message });
+  }
 });
-app.get('/api/test-simulator/conversation', auth_middleware_1.AuthMiddleware.authenticate, auth_middleware_1.AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req, res) => {
-    try {
-        const userId = req.auth.userId;
-        const userStoreId = req.auth.storeId;
-        const storeIdNum = Number(req.query.storeId);
-        const cleanUser = String(req.query.externalUserId || 'test_user_001').trim();
-        if (!storeIdNum || isNaN(storeIdNum) || !verifyAdminStoreAccess(userId, userStoreId, storeIdNum)) {
-            return res.status(403).json({ success: false, error: 'Bu maÃƒâ€Ã…Â¸azanÃƒâ€Ã‚Â±n verilerine eriÃƒâ€¦Ã…Â¸im yetkiniz yok.' });
-        }
-        const store = db_1.db.prepare('SELECT id, name, slug, status FROM stores WHERE id = ?').get(storeIdNum);
-        if (!store)
-            return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
-        const testExtUserId = `test:${cleanUser}`;
-        const convId = ai_service_1.AIService.getOrCreateConversation(storeIdNum, testExtUserId);
-        const messages = db_1.db.prepare('SELECT sender_type, text, created_at FROM messages WHERE conversation_id = ? ORDER BY id ASC').all(convId);
-        const products = db_1.db.prepare('SELECT product_code, name, color, size, price, stock FROM products WHERE store_id = ? ORDER BY id DESC LIMIT 15').all(storeIdNum);
-        const activeCampaigns = db_1.db.prepare('SELECT title, description, code FROM campaigns WHERE store_id = ? AND active = 1').all(storeIdNum);
-        const userRewards = db_1.db.prepare('SELECT reward_code, discount_percent, min_qualifying_amount, is_used FROM user_rewards WHERE store_id = ? AND sender_id = ?').all(storeIdNum, cleanUser);
-        const testOrders = db_1.db.prepare('SELECT order_id, product_name, quantity, total_price, status, created_at FROM orders WHERE store_id = ? AND sender_id = ? ORDER BY id DESC LIMIT 10').all(storeIdNum, cleanUser);
-        const sessionInfo = ai_service_1.AIService.getSessionInfo(storeIdNum, store.slug, cleanUser, 'TEST');
-        res.json({
-            success: true,
-            store: store,
-            externalUserId: cleanUser,
-            testExtUserId: testExtUserId,
-            conversationId: convId,
-            messages: messages,
-            cart: sessionInfo.cart,
-            products: products,
-            campaigns: activeCampaigns,
-            rewards: userRewards,
-            orders: testOrders
-        });
-    }
-    catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
-app.post('/api/test-simulator/reset', auth_middleware_1.AuthMiddleware.authenticate, auth_middleware_1.AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req, res) => {
-    try {
-        const userId = req.auth.userId;
-        const userStoreId = req.auth.storeId;
-        const { targetStoreId, externalUserId, action } = req.body || {};
-        const storeIdNum = Number(targetStoreId);
-        if (!storeIdNum || isNaN(storeIdNum) || !verifyAdminStoreAccess(userId, userStoreId, storeIdNum)) {
-            return res.status(403).json({ success: false, error: 'Yetkisiz maÃƒâ€Ã…Â¸aza sÃƒâ€Ã‚Â±fÃƒâ€Ã‚Â±rlama isteÃƒâ€Ã…Â¸i.' });
-        }
-        const store = db_1.db.prepare('SELECT id, slug FROM stores WHERE id = ?').get(storeIdNum);
-        if (!store)
-            return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
-        const cleanUser = String(externalUserId || 'test_user_001').trim();
-        const act = action || 'all';
-        ai_service_1.AIService.resetTestSession(storeIdNum, store.slug, cleanUser, 'TEST', act);
-        if (act === 'conversation' || act === 'all') {
-            const testExtUserId = `test:${cleanUser}`;
-            const conv = db_1.db.prepare('SELECT id FROM conversations WHERE store_id = ? AND external_user_id = ?').get(storeIdNum, testExtUserId);
-            if (conv) {
-                db_1.db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(conv.id);
-            }
-        }
-        auth_middleware_1.AuthMiddleware.logAudit(storeIdNum, userId, 'RESET_TEST_SIMULATOR', 'ai_simulator', `${cleanUser}:${act}`);
-        res.json({ success: true, message: `Test simÃƒÆ’Ã‚Â¼lasyon verileri (${act}) baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla sÃƒâ€Ã‚Â±fÃƒâ€Ã‚Â±rlandÃƒâ€Ã‚Â±.` });
-    }
-    catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
-app.post('/api/test-simulator/run-tests', auth_middleware_1.AuthMiddleware.authenticate, auth_middleware_1.AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER']), async (req, res) => {
-    try {
-        const results = [];
-        // Helper test runner
-        const record = (id, name, pass, details) => {
-            results.push({ id, name, status: pass ? 'PASS' : 'FAIL', details });
-        };
-        // Prepare temporary isolated test records in DB for Store 1 & Store 3
-        const st1 = db_1.db.prepare("SELECT id FROM stores WHERE id = 1").get();
-        const st3 = db_1.db.prepare("SELECT id FROM stores WHERE id = 3").get();
-        if (!st1 || !st3) {
-            return res.status(400).json({ success: false, error: 'Testlerin ÃƒÆ’Ã‚Â§alÃƒâ€Ã‚Â±Ãƒâ€¦Ã…Â¸abilmesi iÃƒÆ’Ã‚Â§in veritabanÃƒâ€Ã‚Â±nda Store #1 ve Store #3 tanÃƒâ€Ã‚Â±mlÃƒâ€Ã‚Â± olmalÃƒâ€Ã‚Â±dÃƒâ€Ã‚Â±r.' });
-        }
-        // Insert dummy test products if missing
-        try {
-            db_1.db.prepare("INSERT OR REPLACE INTO products (store_id, short_code, product_code, name, color, size, price, stock) VALUES (1, 'SIM1', 'SIM-A-100', 'SimÃƒÆ’Ã‚Â¼latÃƒÆ’Ã‚Â¶r ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼nÃƒÆ’Ã‚Â¼ A', 'Siyah', 'M', 100.0, 50)").run();
-            db_1.db.prepare("INSERT OR REPLACE INTO inventory (store_id, product_code, stock) VALUES (1, 'SIM-A-100', 50)").run();
-            db_1.db.prepare("INSERT OR REPLACE INTO products (store_id, short_code, product_code, name, color, size, price, stock) VALUES (3, 'SIM1', 'SIM-A-100', 'SimÃƒÆ’Ã‚Â¼latÃƒÆ’Ã‚Â¶r ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼nÃƒÆ’Ã‚Â¼ B (Gamma)', 'KÃƒâ€Ã‚Â±rmÃƒâ€Ã‚Â±zÃƒâ€Ã‚Â±', 'M', 500.0, 99)").run();
-            db_1.db.prepare("INSERT OR REPLACE INTO inventory (store_id, product_code, stock) VALUES (3, 'SIM-A-100', 99)").run();
-            db_1.db.prepare("INSERT OR REPLACE INTO campaigns (id, store_id, title, description, code, active) VALUES (901, 1, 'Store A ÃƒÆ’Ã¢â‚¬â€œzel Ãƒâ€Ã‚Â°ndirim', 'Store A KampanyasÃƒâ€Ã‚Â±', 'SIMKOD100', 1)").run();
-            db_1.db.prepare("INSERT OR REPLACE INTO campaigns (id, store_id, title, description, code, active) VALUES (903, 3, 'Store B ÃƒÆ’Ã¢â‚¬â€œzel Ãƒâ€Ã‚Â°ndirim', 'Store B KampanyasÃƒâ€Ã‚Â±', 'SIMKOD500', 1)").run();
-        }
-        catch { }
-        // TEST 1: Store A Product Lookup
-        const p1 = db_1.db.prepare("SELECT * FROM products WHERE store_id = 1 AND product_code = 'SIM-A-100'").get();
-        record(1, 'Store A Product Lookup', p1 && p1.price === 100, `Product price: ${p1?.price} TL (Expected: 100 TL)`);
-        // TEST 2: Store B Same Product Code Lookup
-        const p3 = db_1.db.prepare("SELECT * FROM products WHERE store_id = 3 AND product_code = 'SIM-A-100'").get();
-        record(2, 'Store B Same Product Code Lookup', p3 && p3.price === 500, `Product price: ${p3?.price} TL (Expected: 500 TL)`);
-        // TEST 3: Store A Campaign Isolation
-        const c1 = db_1.db.prepare("SELECT * FROM campaigns WHERE store_id = 1 AND code = 'SIMKOD100'").get();
-        record(3, 'Store A Campaign Isolation', !!c1, 'Store 1 campaign retrieved strictly in Store 1 context');
-        // TEST 4: Store B Campaign Isolation
-        const c3 = db_1.db.prepare("SELECT * FROM campaigns WHERE store_id = 3 AND code = 'SIMKOD100'").get();
-        record(4, 'Store B Campaign Isolation', !c3, 'Store 3 query for Store 1 campaign returns null (Isolated)');
-        // TEST 5 & 6: Conversation Isolation
-        const conv1 = ai_service_1.AIService.getOrCreateConversation(1, 'test:sec_user_777');
-        const conv3 = ai_service_1.AIService.getOrCreateConversation(3, 'test:sec_user_777');
-        record(5, 'Store A Conversation Creation', conv1 > 0, `Store 1 Conversation ID: ${conv1}`);
-        record(6, 'Store B Same external_user_id Conversation Isolation', conv3 > 0 && conv3 !== conv1, `Store 3 Conversation ID: ${conv3} (Distinct from ${conv1})`);
-        // TEST 7: Cross-Tenant Product Query Isolation
-        const crossProduct = db_1.db.prepare("SELECT * FROM products WHERE store_id = 1 AND product_code = 'STORE3_ONLY_CODE_XYZ'").get();
-        record(7, 'Cross-Tenant Product Request', !crossProduct, 'Cross-tenant product query safely returns null');
-        // TEST 8: Cross-Tenant Order Lookup
-        const crossOrder = db_1.db.prepare("SELECT * FROM orders WHERE store_id = 1 AND sender_id = 'user_belonging_to_store_3_only'").get();
-        record(8, 'Cross-Tenant Order Lookup', !crossOrder, 'Cross-tenant order lookup isolated');
-        // TEST 9: Cross-Tenant Reward Lookup
-        const crossReward = db_1.db.prepare("SELECT * FROM user_rewards WHERE store_id = 1 AND sender_id = 'user_belonging_to_store_3_only'").get();
-        record(9, 'Cross-Tenant Reward Lookup', !crossReward, 'Cross-tenant reward lookup isolated');
-        // TEST 10: Cross-Tenant Cart Access Isolation
-        const cartInfo1 = ai_service_1.AIService.getSessionInfo(1, 'store-1', 'sec_user_777', 'TEST');
-        const cartInfo3 = ai_service_1.AIService.getSessionInfo(3, 'store-3', 'sec_user_777', 'TEST');
-        record(10, 'Cross-Tenant Cart Access Isolation', Array.isArray(cartInfo1.cart) && Array.isArray(cartInfo3.cart), 'Session carts isolated per store key');
-        // TEST 11: Cross-Tenant Order Creation Safety
-        record(11, 'Cross-Tenant Order Creation Safety', true, 'Order creation requires matching store_id validation');
-        // TEST 12: AI Prompt Store Switch Attack Protection
-        // Test that passing prompt "Store 3'ÃƒÆ’Ã‚Â¼n ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼nlerini gÃƒÆ’Ã‚Â¶ster" does NOT change backend store context from Store 1 to Store 3
-        const attackStoreContext = 1; // Backend forces storeId = 1
-        const pAttack = db_1.db.prepare("SELECT name FROM products WHERE store_id = ? AND price = 500").get(attackStoreContext);
-        record(12, 'AI Prompt Store Switch Attack Protection', !pAttack, 'Prompt injection attempt "Store 3 ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼nleri" blocked by locked backend tenant context');
-        const totalPassed = results.filter(r => r.status === 'PASS').length;
-        const allPassed = totalPassed === results.length;
-        res.json({
-            success: true,
-            allPassed: allPassed,
-            passedCount: totalPassed,
-            totalCount: results.length,
-            results: results
-        });
-    }
-    catch (e) {
-        res.status(500).json({ success: false, error: e.message });
-    }
-});
+
+*/
 // Start Express Application Server
 app.listen(env_1.env.port, () => {
     console.log(`
