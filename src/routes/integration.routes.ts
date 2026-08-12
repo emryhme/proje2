@@ -49,6 +49,7 @@ function disconnectInstagramAccount(instagramUserId: string): number | null {
 
   db.transaction(() => {
     db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").run(store.id);
+    db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_webhook_subscribed_at'").run(store.id);
     db.prepare('UPDATE stores SET instagram_account_id = ?, instagram_username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('', '', store.id);
     AuthMiddleware.logAudit(store.id, 0, 'INSTAGRAM_DEAUTHORIZED', 'stores', String(store.id));
   })();
@@ -132,11 +133,19 @@ router.get('/api/integrations/instagram/callback', async (req, res) => {
     const resolvedInstagramId = String(profile.data?.user_id || instagramUserId);
     const username = String(profile.data?.username || '').trim();
 
+    // Webhook configuration is application-wide, but each Instagram Login account
+    // must explicitly subscribe its own `messages` field after OAuth consent.
+    await axios.post(`https://graph.instagram.com/v24.0/${encodeURIComponent(resolvedInstagramId)}/subscribed_apps`, null, {
+      params: { subscribed_fields: 'messages', access_token: accessToken }, timeout: 15_000
+    });
+
     db.transaction(() => {
       db.prepare('UPDATE stores SET instagram_account_id = ?, instagram_username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
         .run(resolvedInstagramId, username, oauthState.store_id);
       db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)')
         .run(oauthState.store_id, 'instagram_access_token', encryptToken(accessToken));
+      db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, CURRENT_TIMESTAMP)')
+        .run(oauthState.store_id, 'instagram_webhook_subscribed_at');
       AuthMiddleware.logAudit(oauthState.store_id, oauthState.user_id, 'CONNECT_INSTAGRAM', 'stores', String(oauthState.store_id));
     })();
 
@@ -151,6 +160,7 @@ router.post('/api/integrations/instagram/disconnect', AuthMiddleware.authenticat
   const storeId = req.auth!.storeId;
   db.transaction(() => {
     db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").run(storeId);
+    db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_webhook_subscribed_at'").run(storeId);
     db.prepare('UPDATE stores SET instagram_account_id = ?, instagram_username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('', '', storeId);
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'DISCONNECT_INSTAGRAM', 'stores', String(storeId));
   })();
