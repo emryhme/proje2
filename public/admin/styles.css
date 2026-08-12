@@ -1044,6 +1044,7 @@ body { background: var(--bg); color: var(--text); }
 .nav-item.active i, .nav-item.active svg { color: #fff; }
 .nav-badge { background: rgba(255,255,255,.11); color: #fff; }
 .store-card { background: rgba(255,255,255,.045); border-color: var(--border); border-radius: 11px; }
+.sidebar-bottom { display:none; }
 .store-avatar { background: #fff; color: #09090b; }
 .main { margin-left: 270px; width: calc(100% - 270px); background: radial-gradient(circle at 75% -20%, rgba(91, 79, 255, .11), transparent 32%), #0a0a0c; }
 .topbar { height: 72px; padding: 0 28px; background: rgba(10,10,12,.7); border-color: var(--border); backdrop-filter: blur(18px); }
@@ -1079,6 +1080,8 @@ table, .data-table { color:#d9dbe0; } th { background: rgba(255,255,255,.025); c
 html[data-theme="dark"] { color-scheme:dark; }
 html[data-theme="dark"] .btn-primary { background:#a3ff12; border-color:#a3ff12; color:#0a0a0c; }
 html[data-theme="dark"] .btn-primary:hover { background:#c5ff63; color:#0a0a0c; }
+html[data-theme="dark"] .btn-stock { background:#a3ff12; border-color:#a3ff12; color:#0a0a0c; }
+html[data-theme="dark"] .btn-stock:hover { background:#c5ff63; color:#0a0a0c; transform:translateY(-1px); }
 html[data-theme="dark"] #aiAdminChatWindow div[style*="background:#ffffff"] { background:#1d1e25 !important; color:#f4f4f5 !important; border-color:var(--border) !important; }
 html[data-theme="dark"] .header-actions div[style*="background:white"] { background:#14151b !important; border-color:var(--border) !important; }
 html[data-theme="dark"] .header-actions div[style*="background:white"] span[style] { color:#d7d9df !important; }
@@ -1097,6 +1100,8 @@ html[data-theme="light"] .form-group label { color:#343843; }
 html[data-theme="light"] .form-group input, html[data-theme="light"] .form-group select, html[data-theme="light"] .form-group textarea, html[data-theme="light"] textarea, html[data-theme="light"] input, html[data-theme="light"] select { background:#fff; color:#15161a; border-color:rgba(20,24,35,.18); }
 html[data-theme="light"] .btn-primary { background:#15161a; color:#fff; border-color:#15161a; }
 html[data-theme="light"] .btn-primary:hover { background:#343842; color:#fff; }
+html[data-theme="light"] .btn-stock { background:#15161a; color:#fff; border-color:#15161a; }
+html[data-theme="light"] .btn-stock:hover { background:#343842; color:#fff; }
 html[data-theme="light"] .btn-secondary, html[data-theme="light"] .btn:hover { background:#fff; color:#242733; border-color:rgba(20,24,35,.18); }
 html[data-theme="light"] .theme-toggle { background:#fff; color:#15161a; border-color:rgba(20,24,35,.16); }
 html[data-theme="light"] #aiAdminChatWindow, html[data-theme="light"] .chat-messages { background:#f7f8fa !important; }
