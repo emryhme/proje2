@@ -127,6 +127,23 @@ function runSchemaMigrations() {
         CREATE INDEX IF NOT EXISTS idx_instagram_oauth_states_expiry ON instagram_oauth_states(expires_at);
       `);
             }
+        }, {
+            version: '20260812_005_instagram_data_deletion_requests',
+            name: 'Track Instagram data deletion confirmations',
+            up: () => {
+                exports.db.exec(`
+        CREATE TABLE IF NOT EXISTS instagram_data_deletion_requests (
+          confirmation_code TEXT PRIMARY KEY,
+          instagram_user_id TEXT NOT NULL,
+          store_id INTEGER DEFAULT NULL,
+          status TEXT NOT NULL DEFAULT 'completed',
+          requested_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          completed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE SET NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_instagram_data_deletion_user ON instagram_data_deletion_requests(instagram_user_id);
+      `);
+            }
         }];
     const isApplied = exports.db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?');
     const markApplied = exports.db.prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)');

@@ -23,6 +23,36 @@ function htmlResponse(title, message, success = false) {
     const color = success ? '#16a34a' : '#dc2626';
     return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>${title}</title></head><body style="font-family:Arial,sans-serif;padding:48px;text-align:center"><h1 style="color:${color}">${title}</h1><p>${message}</p><p>Bu pencereyi kapatıp mağaza paneline dönebilirsiniz.</p><script>if (window.opener) window.opener.postMessage({type:'instagram-oauth-complete',success:${success}}, window.location.origin);</script></body></html>`;
 }
+function parseInstagramSignedRequest(signedRequest) {
+    if (!env_1.env.instagramAppSecret || typeof signedRequest !== 'string')
+        return null;
+    const [signatureText, payloadText] = signedRequest.split('.', 2);
+    if (!signatureText || !payloadText)
+        return null;
+    try {
+        const suppliedSignature = Buffer.from(signatureText, 'base64url');
+        const expectedSignature = crypto_1.default.createHmac('sha256', env_1.env.instagramAppSecret).update(payloadText).digest();
+        if (suppliedSignature.length !== expectedSignature.length || !crypto_1.default.timingSafeEqual(suppliedSignature, expectedSignature)) {
+            return null;
+        }
+        const payload = JSON.parse(Buffer.from(payloadText, 'base64url').toString('utf8'));
+        return typeof payload.user_id === 'string' && payload.user_id.trim() ? payload : null;
+    }
+    catch {
+        return null;
+    }
+}
+function disconnectInstagramAccount(instagramUserId) {
+    const store = db_1.db.prepare('SELECT id FROM stores WHERE instagram_account_id = ?').get(instagramUserId);
+    if (!store)
+        return null;
+    db_1.db.transaction(() => {
+        db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").run(store.id);
+        db_1.db.prepare('UPDATE stores SET instagram_account_id = ?, instagram_username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('', '', store.id);
+        auth_middleware_1.AuthMiddleware.logAudit(store.id, 0, 'INSTAGRAM_DEAUTHORIZED', 'stores', String(store.id));
+    })();
+    return store.id;
+}
 // 2. WEBHOOK ENDPOINTS (Stage 5 Security Rules)
 // ==========================================
 router.get('/webhook/instagram', webhook_controller_1.WebhookController.verifyWebhook);
@@ -115,6 +145,38 @@ router.post('/api/integrations/instagram/disconnect', auth_middleware_1.AuthMidd
         auth_middleware_1.AuthMiddleware.logAudit(storeId, req.auth.userId, 'DISCONNECT_INSTAGRAM', 'stores', String(storeId));
     })();
     return res.json({ success: true });
+});
+// Meta calls this after the account owner removes this application's authorization.
+router.post('/api/integrations/instagram/deauthorize', (req, res) => {
+    const payload = parseInstagramSignedRequest(req.body?.signed_request);
+    if (!payload?.user_id)
+        return res.sendStatus(400);
+    disconnectInstagramAccount(payload.user_id);
+    return res.sendStatus(200);
+});
+// Meta calls this when the connected Instagram user requests deletion of app-held data.
+router.post('/api/integrations/instagram/data-deletion', (req, res) => {
+    const payload = parseInstagramSignedRequest(req.body?.signed_request);
+    if (!payload?.user_id)
+        return res.sendStatus(400);
+    const storeId = disconnectInstagramAccount(payload.user_id);
+    const confirmationCode = crypto_1.default.randomUUID();
+    db_1.db.prepare(`
+    INSERT INTO instagram_data_deletion_requests (confirmation_code, instagram_user_id, store_id, status)
+    VALUES (?, ?, ?, 'completed')
+  `).run(confirmationCode, payload.user_id, storeId);
+    const protocol = req.get('x-forwarded-proto') || req.protocol;
+    const statusUrl = `${protocol}://${req.get('host')}/api/integrations/instagram/data-deletion/${confirmationCode}`;
+    return res.status(200).json({ url: statusUrl, confirmation_code: confirmationCode });
+});
+router.get('/api/integrations/instagram/data-deletion/:confirmationCode', (req, res) => {
+    const request = db_1.db.prepare(`
+    SELECT confirmation_code, status, requested_at, completed_at
+    FROM instagram_data_deletion_requests WHERE confirmation_code = ?
+  `).get(String(req.params.confirmationCode || ''));
+    if (!request)
+        return res.status(404).send(htmlResponse('Kayıt bulunamadı', 'Bu veri silme talebi bulunamadı.'));
+    return res.send(htmlResponse('Veri silme talebi tamamlandı', `Talep kodu: ${request.confirmation_code}`, true));
 });
 // GET /api/integration/status (Authenticated Merchant - Scoped by req.auth.storeId)
 router.get('/api/integration/status', auth_middleware_1.AuthMiddleware.authenticate, (req, res) => {
