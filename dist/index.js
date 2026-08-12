@@ -493,6 +493,7 @@ app.get('/api/stores/webhook-info', auth_middleware_1.AuthMiddleware.authenticat
         const host = req.get('host') || '136.92.8.201:3000';
         const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
         const webhookUrl = `${protocol}://${host}/api/webhook/${store.slug}`;
+        const hasInstagramToken = !!db_1.db.prepare("SELECT 1 FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").get(storeId);
         return res.json({
             success: true,
             storeId: store.id,
@@ -503,6 +504,7 @@ app.get('/api/stores/webhook-info', auth_middleware_1.AuthMiddleware.authenticat
             metaPageId: store.meta_page_id || '',
             instagramAccountId: store.instagram_account_id || '',
             instagramUsername: store.instagram_username || '',
+            instagramConnected: Boolean(store.instagram_account_id && hasInstagramToken),
             lastWebhookAt: store.last_webhook_at || null
         });
     }
