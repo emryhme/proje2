@@ -4,6 +4,7 @@ const express_1 = require("express");
 const db_1 = require("../database/db");
 const auth_middleware_1 = require("../middleware/auth.middleware");
 const router = (0, express_1.Router)();
+const STRONG_PASSWORD_PATTERN = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 // ==========================================
 // 1. PUBLIC AUTHENTICATION ROUTES
 // ==========================================
@@ -14,8 +15,11 @@ router.post('/api/auth/register', (req, res) => {
         if (!fullName || !phone || !email || !storeName || !password) {
             return res.status(400).json({ success: false, error: 'LÃ¼tfen tÃ¼m zorunlu alanlarÄ± doldurun.' });
         }
-        if (String(password).length < 12) {
-            return res.status(400).json({ success: false, error: 'Password must be at least 12 characters long.' });
+        if (!STRONG_PASSWORD_PATTERN.test(String(password))) {
+            return res.status(400).json({
+                success: false,
+                error: 'Şifre en az 8 karakter olmalı; bir büyük harf, bir sayı ve bir özel karakter içermelidir.'
+            });
         }
         const cleanEmail = String(email).trim().toLowerCase();
         const cleanStoreName = String(storeName).trim();

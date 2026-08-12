@@ -72,6 +72,8 @@
         grid-template-columns: 1fr;
         gap: 0;
       }
+
+      .password-rules { grid-template-columns: 1fr; }
     }
 
     .form-group {
@@ -124,6 +126,51 @@
     .input-wrapper input:focus, .input-wrapper select:focus {
       border-color: var(--primary);
       box-shadow: 0 0 0 3px rgba(255,153,0,0.15);
+    }
+
+    .password-rules {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 12px;
+      padding: 12px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      list-style: none;
+    }
+
+    .password-rule {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: #94a3b8;
+      font-size: 11px;
+      transition: color .2s ease;
+    }
+
+    .password-rule i {
+      width: 16px;
+      height: 16px;
+      border: 1px solid #64748b;
+      border-radius: 50%;
+      display: inline-grid;
+      place-items: center;
+      color: transparent;
+      font-size: 9px;
+      transition: all .2s ease;
+    }
+
+    .password-rule.met { color: #6ee7b7; }
+    .password-rule.met i {
+      border-color: #10b981;
+      background: #10b981;
+      color: #052e16;
+      animation: ruleComplete .35s ease;
+    }
+
+    @keyframes ruleComplete {
+      50% { transform: scale(1.25); }
+      100% { transform: scale(1); }
     }
 
     .btn-register {
@@ -297,7 +344,7 @@
         <label>Şifre *</label>
         <div class="input-wrapper">
           <i class="fa-solid fa-lock"></i>
-          <input type="password" id="regPassword" placeholder="En az 12 karakter" minlength="12" required autocomplete="new-password">
+          <input type="password" id="regPassword" placeholder="Güçlü bir şifre oluşturun" minlength="8" required autocomplete="new-password" aria-describedby="passwordRules">
         </div>
       </div>
 
@@ -307,6 +354,15 @@
           <i class="fa-solid fa-lock"></i>
           <input type="password" id="regConfirmPassword" placeholder="Şifrenizi tekrar girin" required autocomplete="new-password">
         </div>
+      </div>
+
+      <div class="form-group full-width">
+        <ul class="password-rules" id="passwordRules" aria-label="Şifre gereksinimleri">
+          <li class="password-rule" id="ruleLength"><i class="fa-solid fa-check"></i> En az 8 karakter</li>
+          <li class="password-rule" id="ruleUppercase"><i class="fa-solid fa-check"></i> En az 1 büyük harf</li>
+          <li class="password-rule" id="ruleNumber"><i class="fa-solid fa-check"></i> En az 1 sayı</li>
+          <li class="password-rule" id="ruleSpecial"><i class="fa-solid fa-check"></i> En az 1 özel karakter</li>
+        </ul>
       </div>
     </div>
 
@@ -326,6 +382,25 @@
 </div>
 
 <script>
+  function passwordRequirements(password) {
+    return {
+      length: password.length >= 8,
+      uppercase: /[A-Z]/.test(password),
+      number: /\d/.test(password),
+      special: /[^A-Za-z0-9]/.test(password)
+    };
+  }
+
+  function updatePasswordRules() {
+    const requirements = passwordRequirements(document.getElementById('regPassword').value);
+    Object.entries(requirements).forEach(([name, met]) => {
+      document.getElementById(`rule${name[0].toUpperCase()}${name.slice(1)}`).classList.toggle('met', met);
+    });
+    return Object.values(requirements).every(Boolean);
+  }
+
+  document.getElementById('regPassword').addEventListener('input', updatePasswordRules);
+
   document.getElementById('registerForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const alertDanger = document.getElementById('registerAlert');
@@ -357,8 +432,8 @@
       return;
     }
 
-    if (password.length < 12) {
-      alertDangerText.textContent = 'Şifreniz en az 12 karakter uzunluğunda olmalıdır.';
+    if (!updatePasswordRules()) {
+      alertDangerText.textContent = 'Şifreniz tüm güvenlik kriterlerini karşılamalıdır.';
       alertDanger.style.display = 'flex';
       return;
     }

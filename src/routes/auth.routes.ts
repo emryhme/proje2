@@ -3,6 +3,7 @@ import { db, hashPassword, needsPasswordRehash, verifyPassword } from '../databa
 import { AuthMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
 
 const router = Router();
+const STRONG_PASSWORD_PATTERN = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
 
 // ==========================================
 // 1. PUBLIC AUTHENTICATION ROUTES
@@ -16,8 +17,11 @@ router.post('/api/auth/register', (req, res) => {
       return res.status(400).json({ success: false, error: 'LÃ¼tfen tÃ¼m zorunlu alanlarÄ± doldurun.' });
     }
 
-    if (String(password).length < 12) {
-      return res.status(400).json({ success: false, error: 'Password must be at least 12 characters long.' });
+    if (!STRONG_PASSWORD_PATTERN.test(String(password))) {
+      return res.status(400).json({
+        success: false,
+        error: 'Şifre en az 8 karakter olmalı; bir büyük harf, bir sayı ve bir özel karakter içermelidir.'
+      });
     }
 
     const cleanEmail = String(email).trim().toLowerCase();
