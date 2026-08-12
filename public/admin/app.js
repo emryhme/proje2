@@ -1,4 +1,4 @@
-// BARON'S SILLAGE Admin Control Panel Application Logic (Ultra-Smooth Multi-Page)
+// ISCWORKS Admin Control Panel Application Logic
 
 const API_BASE = '';
 const POLL_INTERVAL_MS = 10000; // 10 Saniyede Bir Arka Plan Kontrolü (Ultra Hafif)
@@ -72,7 +72,7 @@ const state = {
 
 function applyDynamicStoreBranding() {
   const rawUser = localStorage.getItem('barons_admin_user');
-  let storeName = 'CommerceOS';
+  let storeName = 'ISCWORKS';
   if (rawUser) {
     try {
       const u = JSON.parse(rawUser);
