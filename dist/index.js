@@ -678,8 +678,7 @@ app.delete('/api/api-keys/:id', auth_middleware_1.AuthMiddleware.authenticate, a
         res.status(500).json({ success: false, error: e.message });
     }
 });
-/* Removed AI test simulator endpoints. Kept as a disabled historical block
- * temporarily to avoid a broad, unrelated rewrite of the application entry point. */
+/* Removed AI test simulator endpoints. */
 /*
 
 // Helper to verify admin access to requested store

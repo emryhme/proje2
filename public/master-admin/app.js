@@ -1,5 +1,37 @@
 // Master Admin Platform Console Application Logic
 
+const THEME_STORAGE_KEY = 'iscworks_admin_theme';
+
+function applyMasterTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+
+  const button = document.getElementById('themeToggle');
+  if (!button) return;
+
+  const isLight = theme === 'light';
+  button.setAttribute('aria-label', isLight ? 'Koyu moda geç' : 'Açık moda geç');
+  button.title = isLight ? 'Koyu moda geç' : 'Açık moda geç';
+  button.innerHTML = `<i class="fa-solid ${isLight ? 'fa-moon' : 'fa-sun'}"></i>`;
+}
+
+function setupMasterThemeToggle() {
+  const navbar = document.querySelector('.top-navbar');
+  if (!navbar || document.getElementById('themeToggle')) return;
+
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.id = 'themeToggle';
+  button.className = 'theme-toggle';
+  button.addEventListener('click', () => {
+    applyMasterTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+  });
+
+  const profile = navbar.querySelector('.user-profile');
+  navbar.insertBefore(button, profile || null);
+  applyMasterTheme(localStorage.getItem(THEME_STORAGE_KEY) || 'dark');
+}
+
 function escapeHtml(str) {
   if (str === null || str === undefined) return '';
   return String(str)
@@ -432,6 +464,7 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelectorAll('.sidebar-menu a').forEach(link => {
     link.addEventListener('click', () => document.querySelector('.sidebar')?.classList.remove('open'));
   });
+  setupMasterThemeToggle();
   checkMasterAuth();
   renderMasterUser();
 

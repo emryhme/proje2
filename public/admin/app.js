@@ -70,6 +70,35 @@ const state = {
   isFetching: false
 };
 
+const THEME_STORAGE_KEY = 'iscworks_admin_theme';
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem(THEME_STORAGE_KEY, theme);
+  const button = document.getElementById('themeToggle');
+  if (button) {
+    const isLight = theme === 'light';
+    button.setAttribute('aria-label', isLight ? 'Koyu moda geç' : 'Açık moda geç');
+    button.title = isLight ? 'Koyu moda geç' : 'Açık moda geç';
+    button.innerHTML = `<i data-lucide="${isLight ? 'moon' : 'sun'}" size="17"></i>`;
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+function setupThemeToggle() {
+  const actions = document.querySelector('.top-actions');
+  if (!actions || document.getElementById('themeToggle')) return;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'icon-button theme-toggle';
+  button.id = 'themeToggle';
+  button.addEventListener('click', () => {
+    applyTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light');
+  });
+  actions.prepend(button);
+  applyTheme(localStorage.getItem(THEME_STORAGE_KEY) || 'dark');
+}
+
 function applyDynamicStoreBranding() {
   const rawUser = localStorage.getItem('barons_admin_user');
   let storeName = 'ISCWORKS';
@@ -197,6 +226,7 @@ function setupUserDropdown() {
 // Initialize Application Robustly (Supports readyState interactive & complete)
 function initApp() {
   checkAuthStatus();
+  setupThemeToggle();
   applyDynamicStoreBranding();
   applyCurrentUserProfile();
   setupEventListeners();
