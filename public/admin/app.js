@@ -84,6 +84,45 @@ function applyDynamicStoreBranding() {
   if (logoSpan) {
     logoSpan.textContent = storeName;
   }
+
+  const storeAvatar = document.querySelector('.store-avatar');
+  const storeTitle = document.querySelector('.store-info strong');
+  const storeSubtitle = document.querySelector('.store-info small');
+  const initials = storeName.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'MA';
+  if (storeAvatar) storeAvatar.textContent = initials;
+  if (storeTitle) storeTitle.textContent = storeName;
+  if (storeSubtitle) storeSubtitle.textContent = 'Mağaza kontrol paneli';
+}
+
+function applyCurrentUserProfile() {
+  const rawUser = localStorage.getItem('barons_admin_user');
+  let displayName = 'Kullanıcı';
+  let role = 'OWNER';
+
+  if (rawUser) {
+    try {
+      const user = JSON.parse(rawUser);
+      displayName = user.name || user.email || displayName;
+      role = user.role || role;
+    } catch (error) {
+      // checkAuthStatus redirects when a valid user session is not available.
+    }
+  }
+
+  const roleLabels = {
+    OWNER: 'Mağaza Sahibi',
+    ADMIN: 'Mağaza Yöneticisi',
+    MANAGER: 'Mağaza Müdürü',
+    STAFF: 'Mağaza Personeli'
+  };
+  const initials = String(displayName).split(/\s+|@/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'KU';
+  const avatar = document.querySelector('.user .avatar');
+  const nameElement = document.querySelector('.user-text strong');
+  const roleElement = document.querySelector('.user-text span');
+
+  if (avatar) avatar.textContent = initials;
+  if (nameElement) nameElement.textContent = displayName;
+  if (roleElement) roleElement.textContent = roleLabels[role] || role;
 }
 
 function checkAuthStatus() {
@@ -163,6 +202,7 @@ function setupUserDropdown() {
 function initApp() {
   checkAuthStatus();
   applyDynamicStoreBranding();
+  applyCurrentUserProfile();
   setupEventListeners();
   setupUserDropdown();
   fetchData();
@@ -425,7 +465,7 @@ function updateMetrics() {
     const aiValElem = metricCards[3].querySelector('.metric-value');
     const aiSubElem = metricCards[3].querySelector('.metric-sub');
     if (aiValElem) aiValElem.textContent = 'F.R.I.D.A.Y.';
-    if (aiSubElem) aiSubElem.textContent = 'Tony Stark Özel Asistanı';
+    if (aiSubElem) aiSubElem.textContent = 'Yönetici Asistanı';
   }
 
   // 1. Gerçek Ciro ve Sipariş Trendi Çizgi Grafiğini Çiz
@@ -1914,7 +1954,7 @@ function getOrCreateSystemSettingsModal() {
             <option value="luxury">Lüks Parfüm Danışmanı & Saygılı (Önerilen)</option>
             <option value="friendly">Samimi, Sıcak & Yardımsever</option>
             <option value="formal">Kurumsal, Kısa & Profesyonel</option>
-            <option value="patron">Patron Asistanı (Tony Stark Özel)</option>
+            <option value="patron">Yönetici Asistanı</option>
           </select>
         </div>
 
