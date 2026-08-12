@@ -2,18 +2,100 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
+import { env } from '../config/env';
 
 /**
  * BARON'S SILLAGE SQLite Veritabanı Yöneticisi (barons.db)
  */
-const dbPath = path.resolve(process.cwd(), 'barons.db');
+const dbPath = path.resolve(process.cwd(), env.databasePath);
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 console.log(`[Database] 🗄️ SQLite Veritabanı Yolu: ${dbPath}`);
 
 export const db = new Database(dbPath, { verbose: undefined });
 
 // Performans Ayarları (WAL Mode & Synchronous Normal)
+db.pragma('foreign_keys = ON');
 db.pragma('journal_mode = WAL');
 db.pragma('synchronous = NORMAL');
+
+type SchemaMigration = {
+  version: string;
+  name: string;
+  up: () => void;
+};
+
+function hasColumn(table: string, column: string): boolean {
+  return (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>)
+    .some((existing) => existing.name === column);
+}
+
+function addColumnIfMissing(table: string, column: string, definition: string): void {
+  if (!hasColumn(table, column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+function runSchemaMigrations(): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      version TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
+
+  const migrations: SchemaMigration[] = [{
+    version: '20260812_001_tenant_and_meta_columns',
+    name: 'Add tenant and Meta integration columns',
+    up: () => {
+      addColumnIfMissing('products', 'price', 'REAL NOT NULL DEFAULT 299.00');
+      addColumnIfMissing('products', 'store_name', "TEXT DEFAULT ''");
+      addColumnIfMissing('products', 'store_id', 'INTEGER NOT NULL DEFAULT 1');
+      addColumnIfMissing('orders', 'unit_price', 'REAL NOT NULL DEFAULT 0');
+      addColumnIfMissing('orders', 'shipping_fee', 'REAL NOT NULL DEFAULT 0');
+      addColumnIfMissing('orders', 'discount', 'REAL NOT NULL DEFAULT 0');
+      addColumnIfMissing('orders', 'total_price', 'REAL NOT NULL DEFAULT 0');
+      addColumnIfMissing('orders', 'sender_id', "TEXT DEFAULT ''");
+      addColumnIfMissing('orders', 'store_name', "TEXT DEFAULT ''");
+      addColumnIfMissing('orders', 'store_id', 'INTEGER NOT NULL DEFAULT 1');
+      addColumnIfMissing('campaigns', 'start_date', 'TEXT DEFAULT NULL');
+      addColumnIfMissing('campaigns', 'end_date', 'TEXT DEFAULT NULL');
+      addColumnIfMissing('campaigns', 'store_name', "TEXT DEFAULT ''");
+      addColumnIfMissing('campaigns', 'store_id', 'INTEGER NOT NULL DEFAULT 1');
+      addColumnIfMissing('user_rewards', 'store_name', "TEXT DEFAULT ''");
+      addColumnIfMissing('user_rewards', 'store_id', 'INTEGER NOT NULL DEFAULT 1');
+      addColumnIfMissing('webhook_events', 'store_id', 'INTEGER NOT NULL DEFAULT 1');
+      addColumnIfMissing('stores', 'webhook_verify_token', "TEXT DEFAULT ''");
+      addColumnIfMissing('stores', 'meta_page_id', "TEXT DEFAULT ''");
+      addColumnIfMissing('stores', 'instagram_account_id', "TEXT DEFAULT ''");
+      addColumnIfMissing('stores', 'instagram_username', "TEXT DEFAULT ''");
+      addColumnIfMissing('stores', 'last_webhook_at', 'TEXT DEFAULT NULL');
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_webhook_events_store_event ON webhook_events(store_id, event_id);
+        CREATE INDEX IF NOT EXISTS idx_stores_meta_page ON stores(meta_page_id);
+        CREATE INDEX IF NOT EXISTS idx_stores_ig_account ON stores(instagram_account_id);
+      `);
+    }
+  }, {
+    version: '20260812_002_api_key_lifecycle',
+    name: 'Add API key expiration and revocation fields',
+    up: () => {
+      addColumnIfMissing('api_keys', 'expires_at', 'TEXT DEFAULT NULL');
+      addColumnIfMissing('api_keys', 'revoked_at', 'TEXT DEFAULT NULL');
+      db.exec('CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(store_id, revoked_at, expires_at);');
+    }
+  }];
+
+  const isApplied = db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?');
+  const markApplied = db.prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)');
+  for (const migration of migrations) {
+    if (isApplied.get(migration.version)) continue;
+    db.transaction(() => {
+      migration.up();
+      markApplied.run(migration.version, migration.name);
+    })();
+  }
+}
 
 /**
  * Tabloları Oluşturur (Migrations)
@@ -104,12 +186,9 @@ export function initDatabase() {
     CREATE TABLE IF NOT EXISTS merchant_applications (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       full_name TEXT NOT NULL,
-      tc_no TEXT NOT NULL,
-      phone TEXT NOT NULL,
       email TEXT NOT NULL UNIQUE,
       store_name TEXT NOT NULL,
       plan TEXT NOT NULL DEFAULT 'Pro Store (₺6.000 / Ay)',
-      password TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -268,7 +347,9 @@ export function initDatabase() {
       key_hash TEXT NOT NULL UNIQUE,
       permissions TEXT DEFAULT 'read_write',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      last_used_at TEXT DEFAULT NULL
+      last_used_at TEXT DEFAULT NULL,
+      expires_at TEXT DEFAULT NULL,
+      revoked_at TEXT DEFAULT NULL
     );
   `);
 
@@ -294,37 +375,50 @@ export function initDatabase() {
     VALUES (1, 1, 'BARON''S SILLAGE', 'default', 'active');
   `);
 
-  const adminPassHash = hashPassword('cintonik!');
-  db.exec(`
-    INSERT OR IGNORE INTO users (id, full_name, email, password_hash, status)
-    VALUES (1, 'Tony Stark', 'tonystark@iscworks.com', '${adminPassHash}', 'active');
+  // A privileged account is created only when explicitly requested through
+  // environment variables. Never ship or recreate a known default account.
+  if (env.bootstrapMasterAdmin) {
+    const adminPassHash = hashPassword(env.masterAdminPassword!);
+    db.prepare(`
+      INSERT OR IGNORE INTO users (id, full_name, email, password_hash, status)
+      VALUES (1, ?, ?, ?, 'active')
+    `).run(env.masterAdminName, env.masterAdminEmail, adminPassHash);
+    db.prepare(`
+      INSERT OR IGNORE INTO memberships (id, user_id, store_id, role, status)
+      VALUES (1, 1, 1, 'OWNER', 'active')
+    `).run();
+  }
 
-    INSERT OR IGNORE INTO memberships (id, user_id, store_id, role, status)
-    VALUES (1, 1, 1, 'OWNER', 'active');
-  `);
+  runSchemaMigrations();
 
-  // Auto Migrations: Kolonlar eksikse otomatik ekle
-  try { db.exec(`ALTER TABLE products ADD COLUMN price REAL NOT NULL DEFAULT 299.00;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE products ADD COLUMN store_name TEXT DEFAULT '';`); } catch (e) {}
-  try { db.exec(`ALTER TABLE products ADD COLUMN store_id INTEGER NOT NULL DEFAULT 1;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE orders ADD COLUMN unit_price REAL NOT NULL DEFAULT 0;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE orders ADD COLUMN shipping_fee REAL NOT NULL DEFAULT 0;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE orders ADD COLUMN discount REAL NOT NULL DEFAULT 0;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE orders ADD COLUMN total_price REAL NOT NULL DEFAULT 0;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE orders ADD COLUMN sender_id TEXT DEFAULT '';`); } catch (e) {}
-  try { db.exec(`ALTER TABLE orders ADD COLUMN store_name TEXT DEFAULT '';`); } catch (e) {}
-  try { db.exec(`ALTER TABLE orders ADD COLUMN store_id INTEGER NOT NULL DEFAULT 1;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE campaigns ADD COLUMN start_date TEXT DEFAULT NULL;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE campaigns ADD COLUMN end_date TEXT DEFAULT NULL;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE campaigns ADD COLUMN store_name TEXT DEFAULT '';`); } catch (e) {}
-  try { db.exec(`ALTER TABLE campaigns ADD COLUMN store_id INTEGER NOT NULL DEFAULT 1;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE user_rewards ADD COLUMN store_name TEXT DEFAULT '';`); } catch (e) {}
-  try { db.exec(`ALTER TABLE user_rewards ADD COLUMN store_id INTEGER NOT NULL DEFAULT 1;`); } catch (e) {}
-  try { db.exec(`ALTER TABLE webhook_events ADD COLUMN store_id INTEGER NOT NULL DEFAULT 1;`); } catch (e) {}
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_webhook_events_store_event ON webhook_events(store_id, event_id);`);
-  try { db.exec(`ALTER TABLE stores ADD COLUMN webhook_verify_token TEXT DEFAULT '';`); } catch (e) {}
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_stores_meta_page ON stores(meta_page_id);`);
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_stores_ig_account ON stores(instagram_account_id);`);
+  // Application history must not duplicate identity/contact data or retain any
+  // password hash. The user account remains the sole authentication record.
+  const applicationColumns = db.prepare("PRAGMA table_info(merchant_applications)").all() as Array<{ name: string }>;
+  const hasLegacyApplicationData = applicationColumns.some((column) =>
+    ['tc_no', 'phone', 'password'].includes(column.name)
+  );
+  if (hasLegacyApplicationData) {
+    const migrateApplications = db.transaction(() => {
+      db.exec(`
+        CREATE TABLE merchant_applications_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          full_name TEXT NOT NULL,
+          email TEXT NOT NULL UNIQUE,
+          store_name TEXT NOT NULL,
+          plan TEXT NOT NULL DEFAULT 'Pro Store',
+          status TEXT NOT NULL DEFAULT 'pending',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO merchant_applications_new (id, full_name, email, store_name, plan, status, created_at, updated_at)
+        SELECT id, full_name, email, store_name, plan, status, created_at, updated_at
+        FROM merchant_applications;
+        DROP TABLE merchant_applications;
+        ALTER TABLE merchant_applications_new RENAME TO merchant_applications;
+      `);
+    });
+    migrateApplications();
+  }
 
   // Auto-generate webhook_verify_token for any store missing a token
   try {
@@ -528,30 +622,21 @@ function seedInitialCampaigns() {
   }
 }
 
-// Veritabanını Otomatik İlklendir
-initDatabase();
-
 export function createMerchantApplication(data: {
   fullName: string;
-  tcNo: string;
-  phone: string;
   email: string;
   storeName: string;
   plan?: string;
-  password?: string;
 }) {
   const stmt = db.prepare(`
-    INSERT INTO merchant_applications (full_name, tc_no, phone, email, store_name, plan, password, status)
-    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+    INSERT INTO merchant_applications (full_name, email, store_name, plan, status)
+    VALUES (?, ?, ?, ?, 'pending')
   `);
   return stmt.run(
     data.fullName,
-    data.tcNo,
-    data.phone,
     data.email,
     data.storeName,
     data.plan || 'Pro Store (₺6.000 / Ay)',
-    data.password || '123456'
   );
 }
 
@@ -566,9 +651,9 @@ export function approveMerchantApplication(identifier: number | string) {
   const stmt = db.prepare(`
     UPDATE merchant_applications 
     SET status = 'approved', updated_at = CURRENT_TIMESTAMP 
-    WHERE id = ? OR LOWER(email) = LOWER(?) OR LOWER(store_name) = LOWER(?) OR phone = ?
+    WHERE id = ? OR LOWER(email) = LOWER(?) OR LOWER(store_name) = LOWER(?)
   `);
-  return stmt.run(idNum, idStr, idStr, idStr);
+  return stmt.run(idNum, idStr, idStr);
 }
 
 export function rejectMerchantApplication(identifier: number | string) {
@@ -577,9 +662,9 @@ export function rejectMerchantApplication(identifier: number | string) {
   const stmt = db.prepare(`
     UPDATE merchant_applications 
     SET status = 'rejected', updated_at = CURRENT_TIMESTAMP 
-    WHERE id = ? OR LOWER(email) = LOWER(?) OR LOWER(store_name) = LOWER(?) OR phone = ?
+    WHERE id = ? OR LOWER(email) = LOWER(?) OR LOWER(store_name) = LOWER(?)
   `);
-  return stmt.run(idNum, idStr, idStr, idStr);
+  return stmt.run(idNum, idStr, idStr);
 }
 
 export function findMerchantApplicationByIdentifier(identifier: string) {
@@ -589,28 +674,62 @@ export function findMerchantApplicationByIdentifier(identifier: string) {
     WHERE LOWER(email) = LOWER(?) 
        OR LOWER(store_name) = LOWER(?) 
        OR LOWER(full_name) = LOWER(?)
-       OR phone = ?
-       OR tc_no = ?
   `);
-  return stmt.get(cleanId, cleanId, cleanId, cleanId, cleanId);
+  return stmt.get(cleanId, cleanId, cleanId);
 }
 
 /**
  * Şifre Güvenliği & Hashleme (PBKDF2 / SHA-512)
  */
 export function hashPassword(password: string): string {
-  if (!password) return '';
-  const salt = 'iscworks_salt_2026';
-  const hash = crypto.pbkdf2Sync(password, salt, 1000, 64, 'sha512').toString('hex');
-  return `pbkdf2:sha512:${hash}`;
+  if (!password) {
+    throw new Error('Password must not be empty.');
+  }
+
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.pbkdf2Sync(password, salt, 210_000, 64, 'sha512');
+  return `pbkdf2:sha512:v1:210000:${salt.toString('base64url')}:${hash.toString('base64url')}`;
 }
 
 export function verifyPassword(password: string, storedHash: string): boolean {
   if (!password || !storedHash) return false;
-  // Düz metin geçiş desteği (eski veriler için)
-  if (!storedHash.startsWith('pbkdf2:')) {
-    return String(password).trim() === String(storedHash).trim();
+  const parts = storedHash.split(':');
+  try {
+    if (parts.length === 6 &&
+        parts[0] === 'pbkdf2' &&
+        parts[1] === 'sha512' &&
+        parts[2] === 'v1' &&
+        Number(parts[3]) === 210_000) {
+      const salt = Buffer.from(parts[4], 'base64url');
+      const expectedHash = Buffer.from(parts[5], 'base64url');
+      if (salt.length !== 16 || expectedHash.length !== 64) return false;
+
+      const computedHash = crypto.pbkdf2Sync(password, salt, 210_000, 64, 'sha512');
+      return crypto.timingSafeEqual(computedHash, expectedHash);
+    }
+
+    // Existing PBKDF2 hashes are supported only so that they can be upgraded
+    // at the next successful login. Plain-text values are never accepted.
+    if (parts.length === 3 && parts[0] === 'pbkdf2' && parts[1] === 'sha512') {
+      const expectedHash = Buffer.from(parts[2], 'hex');
+      if (expectedHash.length !== 64) return false;
+
+      const computedHash = crypto.pbkdf2Sync(password, 'iscworks_salt_2026', 1_000, 64, 'sha512');
+      return crypto.timingSafeEqual(computedHash, expectedHash);
+    }
+  } catch {
+    return false;
   }
-  const computed = hashPassword(password);
-  return computed === storedHash;
+
+  return false;
+}
+
+/** True when a valid legacy PBKDF2 record should be replaced at login. */
+export function needsPasswordRehash(storedHash: string): boolean {
+  const parts = (storedHash || '').split(':');
+  return parts.length !== 6 ||
+    parts[0] !== 'pbkdf2' ||
+    parts[1] !== 'sha512' ||
+    parts[2] !== 'v1' ||
+    Number(parts[3]) !== 210_000;
 }

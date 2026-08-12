@@ -7,7 +7,9 @@ import { AdminCopilotService } from '../services/admin-copilot.service';
 import { GeminiService } from '../services/gemini.service';
 import { WebhookController } from '../controllers/webhook.controller';
 import { AuthMiddleware } from '../middleware/auth.middleware';
-import { db, hashPassword, verifyPassword } from '../database/db';
+import { db, hashPassword, initDatabase, needsPasswordRehash, verifyPassword } from '../database/db';
+
+initDatabase();
 
 async function runTestSuite() {
   console.log('🧪 Starting ISC Works Master Admin & Master Security & Stock Test Suite...\n');
@@ -23,6 +25,9 @@ async function runTestSuite() {
       failed++;
     }
   }
+
+  const foreignKeysEnabled = (db.pragma('foreign_keys', { simple: true }) as number) === 1;
+  assert(foreignKeysEnabled, 'SQLite foreign key enforcement is enabled');
 
   // PRE-TEST CLEANUP
   db.prepare('DELETE FROM audit_logs WHERE store_id IN (1, 100, 200, 999)').run();
@@ -73,6 +78,12 @@ async function runTestSuite() {
   console.log('1️⃣ AUTH TEST 1: Password Verification (PBKDF2 SHA-512)');
   assert(verifyPassword('password123', passHash) === true, 'Valid password verification returns true');
   assert(verifyPassword('wrongpassword', passHash) === false, 'Invalid password verification returns false');
+  assert(needsPasswordRehash(passHash) === false, 'New password hashes use the current secure format');
+  assert(verifyPassword('password123', 'password123') === false, 'Plain-text password values are rejected');
+  const legacyHash = `pbkdf2:sha512:${crypto.pbkdf2Sync('password123', 'iscworks_salt_2026', 1_000, 64, 'sha512').toString('hex')}`;
+  assert(verifyPassword('password123', legacyHash) === true && needsPasswordRehash(legacyHash) === true, 'Legacy PBKDF2 hashes are eligible for secure login-time upgrade');
+  const applicationColumns = db.prepare("PRAGMA table_info(merchant_applications)").all() as Array<{ name: string }>;
+  assert(!applicationColumns.some((column) => ['tc_no', 'phone', 'password'].includes(column.name)), 'Application history does not retain duplicated personal data or passwords');
 
   console.log('\n2️⃣ AUTH TEST 2: Valid JWT Token Generation & Verification');
   const jwtOwnerA = AuthMiddleware.generateToken({ userId: 10, storeId: 100, role: 'OWNER', email: 'owner_a@iscworks.com' });
@@ -230,6 +241,10 @@ async function runTestSuite() {
   const invalidSigReq = { headers: { 'x-hub-signature-256': 'sha256=invalid_hash_signature' }, body: { text: 'test' } } as any;
   const sigValid = WebhookController.verifySignature(invalidSigReq);
   assert(sigValid === false, 'Invalid Meta HMAC signature rejected with false (HTTP 401/403)');
+  const rawWebhookPayload = Buffer.from('{"entry":[{"id":"page_100"}]}', 'utf8');
+  const validSignature = crypto.createHmac('sha256', process.env.INSTAGRAM_APP_SECRET!).update(rawWebhookPayload).digest('hex');
+  const validSigReq = { headers: { 'x-hub-signature-256': `sha256=${validSignature}` }, rawBody: rawWebhookPayload } as any;
+  assert(WebhookController.verifySignature(validSigReq) === true, 'Valid Meta HMAC is verified against the original raw request bytes');
 
   console.log('\n2️⃣6️⃣ WEBHOOK SECURITY ATTACK TEST 10: Multi-Tenant Event Idempotency Check');
   const evtStoreA = WebhookController.isDuplicateEvent('evt_attack_001', 100);

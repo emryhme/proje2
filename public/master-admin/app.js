@@ -308,8 +308,7 @@ async function loadMasterApplications() {
           <td>#${a.id}</td>
           <td><strong>${escapeHtml(a.store_name)}</strong></td>
           <td>${escapeHtml(a.full_name)}</td>
-          <td>${escapeHtml(a.email)}<br><small style="color:#64748b;">${escapeHtml(a.phone)}</small></td>
-          <td>${escapeHtml(a.tc_no)}</td>
+          <td>${escapeHtml(a.email)}</td>
           <td><span class="code-tag">${escapeHtml(a.plan || 'Pro Store')}</span></td>
           <td><span class="badge ${a.status}">${escapeHtml(a.status)}</span></td>
           <td>

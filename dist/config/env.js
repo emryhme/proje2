@@ -11,41 +11,42 @@ dotenv_1.default.config({ path: path_1.default.join(__dirname, '../../.env') });
 const envSchema = zod_1.z.object({
     PORT: zod_1.z.string().default('3000').transform((v) => parseInt(v, 10)),
     NODE_ENV: zod_1.z.string().default('development'),
-    FB_VERIFY_TOKEN: zod_1.z.string().default('barons_secure_verify_token_2026'),
+    DATABASE_PATH: zod_1.z.string().trim().min(1).default('./barons.db'),
+    FB_VERIFY_TOKEN: zod_1.z.string().trim().min(1, 'FB_VERIFY_TOKEN is required.'),
     FB_PAGE_ACCESS_TOKEN: zod_1.z.string().default(''),
+    INSTAGRAM_APP_SECRET: zod_1.z.string().trim().min(1).optional(),
     OPENAI_API_KEY: zod_1.z.string().default(''),
     OPENAI_MODEL: zod_1.z.string().default('gpt-4o'),
     GEMINI_API_KEY: zod_1.z.string().default(''),
     TELEGRAM_BOT_TOKEN: zod_1.z.string().default(''),
-    TELEGRAM_CHAT_ID: zod_1.z.string().default('7659971499'),
+    TELEGRAM_CHAT_ID: zod_1.z.string().default(''),
     N8N_WEBHOOK_URL: zod_1.z.string().default(''),
-    JWT_SECRET: zod_1.z.string().default('iscworks_jwt_secret_key_production_2026'),
-    ADMIN_USER: zod_1.z.string().default('tonystark'),
-    ADMIN_PASS: zod_1.z.string().default('cintonik!'),
+    JWT_SECRET: zod_1.z.string().trim().min(32, 'JWT_SECRET must be at least 32 characters long.'),
+    BOOTSTRAP_MASTER_ADMIN: zod_1.z.enum(['true', 'false']).default('false').transform((v) => v === 'true'),
+    MASTER_ADMIN_NAME: zod_1.z.string().trim().min(1).default('Platform Administrator'),
+    MASTER_ADMIN_EMAIL: zod_1.z.string().trim().email().optional(),
+    MASTER_ADMIN_PASSWORD: zod_1.z.string().min(12).optional(),
     CORS_ORIGINS: zod_1.z.string().default('*')
 });
 const parsedEnv = envSchema.safeParse(process.env);
-const envValues = parsedEnv.success ? parsedEnv.data : {
-    PORT: parseInt(process.env.PORT || '3000', 10),
-    NODE_ENV: process.env.NODE_ENV || 'development',
-    FB_VERIFY_TOKEN: process.env.FB_VERIFY_TOKEN || 'barons_secure_verify_token_2026',
-    FB_PAGE_ACCESS_TOKEN: process.env.FB_PAGE_ACCESS_TOKEN || '',
-    OPENAI_API_KEY: process.env.OPENAI_API_KEY || '',
-    OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4o',
-    GEMINI_API_KEY: process.env.GEMINI_API_KEY || '',
-    TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN || '',
-    TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID || '7659971499',
-    N8N_WEBHOOK_URL: process.env.N8N_WEBHOOK_URL || '',
-    JWT_SECRET: process.env.JWT_SECRET || 'iscworks_jwt_secret_key_production_2026',
-    ADMIN_USER: process.env.ADMIN_USER || 'tonystark',
-    ADMIN_PASS: process.env.ADMIN_PASS || 'cintonik!',
-    CORS_ORIGINS: process.env.CORS_ORIGINS || '*'
-};
+if (!parsedEnv.success) {
+    const messages = parsedEnv.error.issues.map((issue) => `${issue.path.join('.')}: ${issue.message}`).join('; ');
+    throw new Error(`Invalid environment configuration. ${messages}`);
+}
+const envValues = parsedEnv.data;
+if (envValues.BOOTSTRAP_MASTER_ADMIN && (!envValues.MASTER_ADMIN_EMAIL || !envValues.MASTER_ADMIN_PASSWORD)) {
+    throw new Error('MASTER_ADMIN_EMAIL and MASTER_ADMIN_PASSWORD are required when BOOTSTRAP_MASTER_ADMIN=true.');
+}
+if (Boolean(envValues.TELEGRAM_BOT_TOKEN) !== Boolean(envValues.TELEGRAM_CHAT_ID)) {
+    throw new Error('TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be configured together.');
+}
 exports.env = {
     port: envValues.PORT,
     nodeEnv: envValues.NODE_ENV,
+    databasePath: envValues.DATABASE_PATH,
     fbVerifyToken: envValues.FB_VERIFY_TOKEN,
     fbPageAccessToken: envValues.FB_PAGE_ACCESS_TOKEN,
+    instagramAppSecret: envValues.INSTAGRAM_APP_SECRET,
     openaiApiKey: envValues.OPENAI_API_KEY,
     openaiModel: envValues.OPENAI_MODEL,
     geminiApiKey: envValues.GEMINI_API_KEY,
@@ -53,7 +54,9 @@ exports.env = {
     telegramChatId: envValues.TELEGRAM_CHAT_ID,
     n8nWebhookUrl: envValues.N8N_WEBHOOK_URL,
     jwtSecret: envValues.JWT_SECRET,
-    adminUser: envValues.ADMIN_USER,
-    adminPass: envValues.ADMIN_PASS,
+    bootstrapMasterAdmin: envValues.BOOTSTRAP_MASTER_ADMIN,
+    masterAdminName: envValues.MASTER_ADMIN_NAME,
+    masterAdminEmail: envValues.MASTER_ADMIN_EMAIL,
+    masterAdminPassword: envValues.MASTER_ADMIN_PASSWORD,
     corsOrigins: envValues.CORS_ORIGINS
 };

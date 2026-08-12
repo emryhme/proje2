@@ -2427,8 +2427,7 @@ async function fetchMerchantApplications() {
             <td>#${app.id}</td>
             <td><strong>${escapeHtml(app.store_name)}</strong></td>
             <td>${escapeHtml(app.full_name)}</td>
-            <td>${escapeHtml(app.email)}<br><small style="color:#6b7280;">${escapeHtml(app.phone)}</small></td>
-            <td>${escapeHtml(app.tc_no)}</td>
+            <td>${escapeHtml(app.email)}</td>
             <td><span class="code-tag">${escapeHtml(app.plan || 'Pro')}</span></td>
             <td>${statusBadge}</td>
             <td>${actions}</td>

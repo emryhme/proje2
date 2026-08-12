@@ -36,18 +36,22 @@ class WebhookController {
             if (signatureHeader) {
                 console.warn('[Webhook Signature] ⚠️ App secret is not configured in environment variables.');
             }
-            return true;
+            return false;
         }
         if (!signatureHeader) {
             console.warn('[Webhook Signature] ❌ X-Hub-Signature-256 header missing.');
             return false;
         }
         try {
-            const parts = signatureHeader.split('=');
-            const expectedHash = parts.length === 2 ? parts[1] : parts[0];
-            const rawBody = req.rawBody || (typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {}));
-            const computedHash = crypto_1.default.createHmac('sha256', appSecret).update(rawBody).digest('hex');
-            const isValid = crypto_1.default.timingSafeEqual(Buffer.from(computedHash, 'utf8'), Buffer.from(expectedHash, 'utf8'));
+            const [algorithm, expectedHash] = signatureHeader.split('=', 2);
+            const rawBody = req.rawBody;
+            if (algorithm !== 'sha256' || !expectedHash || !/^[a-f0-9]{64}$/i.test(expectedHash) || !Buffer.isBuffer(rawBody)) {
+                console.warn('[Webhook Signature] Invalid signature format or missing raw request body.');
+                return false;
+            }
+            const computedHash = crypto_1.default.createHmac('sha256', appSecret).update(rawBody).digest();
+            const suppliedHash = Buffer.from(expectedHash, 'hex');
+            const isValid = crypto_1.default.timingSafeEqual(computedHash, suppliedHash);
             if (!isValid) {
                 console.error('[Webhook Signature] ❌ HMAC Signature Mismatch!');
             }
@@ -86,7 +90,7 @@ class WebhookController {
         const token = String(req.query['hub.verify_token'] || '');
         const challenge = req.query['hub.challenge'];
         console.log(`[WebhookController] 🔍 Webhook Doğrulama İsteği Geldi: mode=${mode}, token=${token}`);
-        const expectedToken = process.env.FB_VERIFY_TOKEN || env_1.env.fbVerifyToken;
+        const expectedToken = env_1.env.fbVerifyToken;
         if (mode === 'subscribe' && token === expectedToken) {
             console.log('[WebhookController] ✅ Webhook Doğrulaması Başarılı!');
             res.status(200).send(challenge);
@@ -123,7 +127,7 @@ class WebhookController {
             return;
         }
         const storeVerifyToken = store.webhook_verify_token;
-        const globalVerifyToken = process.env.FB_VERIFY_TOKEN || env_1.env.fbVerifyToken;
+        const globalVerifyToken = env_1.env.fbVerifyToken;
         // Check per-store verify token first, with global fallback if store token not configured
         const isTokenValid = (token && storeVerifyToken && token === storeVerifyToken) ||
             (token && globalVerifyToken && token === globalVerifyToken);

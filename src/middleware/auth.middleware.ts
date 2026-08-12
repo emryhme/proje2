@@ -24,7 +24,7 @@ export class AuthMiddleware {
    * Generates signed JWT Token
    */
   public static generateToken(payload: { userId: number; storeId: number; role: string; email: string }): string {
-    const secret = process.env.JWT_SECRET || env.jwtSecret || 'iscworks_prod_jwt_secret_2026';
+    const secret = env.jwtSecret;
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const body = Buffer.from(JSON.stringify({
       ...payload,
@@ -45,7 +45,7 @@ export class AuthMiddleware {
     if (parts.length !== 3) return null;
 
     const [header, body, signature] = parts;
-    const secret = process.env.JWT_SECRET || env.jwtSecret || 'iscworks_prod_jwt_secret_2026';
+    const secret = env.jwtSecret;
     const expectedSig = crypto.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url');
 
     if (signature !== expectedSig) return null;
@@ -85,16 +85,28 @@ export class AuthMiddleware {
     if (apiKey) {
       const keyHash = crypto.createHash('sha256').update(apiKey.trim()).digest('hex');
       const apiKeyRecord = db.prepare(`
-        SELECT k.id, k.store_id, k.name, k.permissions, s.status as store_status
+        SELECT k.id, k.store_id, k.name, k.permissions, k.expires_at, k.revoked_at, s.status as store_status
         FROM api_keys k
         JOIN stores s ON s.id = k.store_id
-        WHERE k.key_hash = ? AND s.status = 'active'
+        WHERE k.key_hash = ? AND k.revoked_at IS NULL
+          AND (k.expires_at IS NULL OR k.expires_at > CURRENT_TIMESTAMP)
+          AND s.status = 'active'
       `).get(keyHash) as any;
 
       if (!apiKeyRecord) {
         res.status(401).json({ success: false, error: { code: 'UNAUTHORIZED', message: 'Geçersiz veya pasif API key.' } });
         return;
       }
+
+      const permission = String(apiKeyRecord.permissions || 'read_write');
+      const isWriteRequest = !['GET', 'HEAD', 'OPTIONS'].includes(req.method);
+      const isAllowed = permission === 'read_write' || (!isWriteRequest && permission === 'read') || (isWriteRequest && permission === 'write');
+      if (!isAllowed) {
+        res.status(403).json({ success: false, error: { code: 'FORBIDDEN', message: 'API key bu işlem kapsamına sahip değil.' } });
+        return;
+      }
+
+      db.prepare('UPDATE api_keys SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?').run(apiKeyRecord.id);
 
       req.auth = {
         userId: 0,

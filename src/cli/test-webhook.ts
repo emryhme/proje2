@@ -12,7 +12,7 @@ const rl = readline.createInterface({
 
 const BASE_URL = `http://localhost:3000`;
 const FIXED_WEBHOOK_URL = `https://iscworks-bot-v2.loca.lt/webhook/instagram`;
-const VERIFY_TOKEN = env.fbVerifyToken || 'barons_secure_verify_token_2026';
+const VERIFY_TOKEN = env.fbVerifyToken;
 
 function showBanner() {
   console.clear();
