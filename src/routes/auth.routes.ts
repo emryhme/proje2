@@ -11,14 +11,13 @@ const router = Router();
 // Merchant User Registration
 router.post('/api/auth/register', (req, res) => {
   try {
-    const { fullName, tcNo, phone, email, storeName, plan, password } = req.body || {};
-    if (!fullName || !tcNo || !phone || !email || !storeName || !password) {
+    const { fullName, phone, email, storeName, plan, password } = req.body || {};
+    if (!fullName || !phone || !email || !storeName || !password) {
       return res.status(400).json({ success: false, error: 'LÃ¼tfen tÃ¼m zorunlu alanlarÄ± doldurun.' });
     }
 
-    const cleanTcNo = String(tcNo).trim();
-    if (cleanTcNo.length !== 11 || !/^\d{11}$/.test(cleanTcNo)) {
-      return res.status(400).json({ success: false, error: 'T.C. Kimlik NumarasÄ± tam 11 haneli olmalÄ±dÄ±r.' });
+    if (String(password).length < 12) {
+      return res.status(400).json({ success: false, error: 'Password must be at least 12 characters long.' });
     }
 
     const cleanEmail = String(email).trim().toLowerCase();
@@ -31,12 +30,6 @@ router.post('/api/auth/register', (req, res) => {
       return res.status(400).json({ success: false, error: 'Bu E-Posta adresi ile zaten bir hesap veya baÅŸvuru mevcuttur.' });
     }
 
-    // 2. Check existing TC No
-    const existingTc = db.prepare('SELECT id FROM users WHERE tc_no = ?').get(cleanTcNo);
-    if (existingTc) {
-      return res.status(400).json({ success: false, error: 'Bu T.C. Kimlik NumarasÄ± ile zaten bir hesap mevcuttur.' });
-    }
-
     // Hash password with PBKDF2 SHA-512 (Zero Plaintext Storage)
     const hashedPassword = hashPassword(String(password).trim());
 
@@ -47,9 +40,9 @@ router.post('/api/auth/register', (req, res) => {
     db.transaction(() => {
       // 1. Create User (status: 'pending')
       const userRes = db.prepare(`
-        INSERT INTO users (full_name, email, phone, tc_no, password_hash, status)
-        VALUES (?, ?, ?, ?, ?, 'pending')
-      `).run(fullName, cleanEmail, phone, cleanTcNo, hashedPassword);
+        INSERT INTO users (full_name, email, phone, password_hash, status)
+        VALUES (?, ?, ?, ?, 'pending')
+      `).run(fullName, cleanEmail, phone, hashedPassword);
       const userId = Number(userRes.lastInsertRowid);
 
       // 2. Create Store (status: 'pending')

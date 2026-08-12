@@ -258,14 +258,6 @@
       </div>
 
       <div class="form-group">
-        <label>T.C. Kimlik No *</label>
-        <div class="input-wrapper">
-          <i class="fa-solid fa-id-card"></i>
-          <input type="text" id="regTcNo" placeholder="11 Haneli T.C. No" maxlength="11" required>
-        </div>
-      </div>
-
-      <div class="form-group">
         <label>Telefon *</label>
         <div class="input-wrapper">
           <i class="fa-solid fa-phone"></i>
@@ -305,7 +297,7 @@
         <label>Şifre *</label>
         <div class="input-wrapper">
           <i class="fa-solid fa-lock"></i>
-          <input type="password" id="regPassword" placeholder="Minimum 6 karakter" required autocomplete="new-password">
+          <input type="password" id="regPassword" placeholder="En az 12 karakter" minlength="12" required autocomplete="new-password">
         </div>
       </div>
 
@@ -344,7 +336,6 @@
     alertDanger.style.display = 'none';
 
     const fullName = document.getElementById('regFullName').value.trim();
-    const tcNo = document.getElementById('regTcNo').value.trim();
     const phone = document.getElementById('regPhone').value.trim();
     const email = document.getElementById('regEmail').value.trim();
     const storeName = document.getElementById('regStoreName').value.trim();
@@ -353,14 +344,8 @@
     const confirmPassword = document.getElementById('regConfirmPassword').value;
 
     // FRONTEND VALIDATION
-    if (!fullName || !tcNo || !phone || !email || !storeName || !password || !confirmPassword) {
+    if (!fullName || !phone || !email || !storeName || !password || !confirmPassword) {
       alertDangerText.textContent = 'Lütfen tüm zorunlu alanları doldurun.';
-      alertDanger.style.display = 'flex';
-      return;
-    }
-
-    if (tcNo.length !== 11 || !/^\d{11}$/.test(tcNo)) {
-      alertDangerText.textContent = 'T.C. Kimlik Numarası tam olarak 11 haneli rakamlardan oluşmalıdır.';
       alertDanger.style.display = 'flex';
       return;
     }
@@ -372,8 +357,8 @@
       return;
     }
 
-    if (password.length < 6) {
-      alertDangerText.textContent = 'Şifreniz en az 6 karakter uzunluğunda olmalıdır.';
+    if (password.length < 12) {
+      alertDangerText.textContent = 'Şifreniz en az 12 karakter uzunluğunda olmalıdır.';
       alertDanger.style.display = 'flex';
       return;
     }
@@ -393,7 +378,6 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           fullName,
-          tcNo,
           phone,
           email,
           storeName,

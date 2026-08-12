@@ -1899,9 +1899,6 @@ function getOrCreateSystemSettingsModal() {
         <button class="btn btn-sm btn-primary" id="tabBtnAiCustom" onclick="switchSettingsTab('ai')">
           🤖 Yapay Zeka Kişiselleştirme
         </button>
-        <button class="btn btn-sm btn-secondary" id="tabBtnApiConfig" onclick="switchSettingsTab('api')">
-          🔑 API & Webhook Anahtarları
-        </button>
       </div>
 
       <!-- Tab 1: AI Customization -->
@@ -1928,7 +1925,7 @@ function getOrCreateSystemSettingsModal() {
       </div>
 
       <!-- Tab 2: API Keys -->
-      <div id="tabContentApi" style="display:none;">
+      <div id="tabContentApi" style="display:none;" hidden>
         <div class="form-group" style="margin-bottom:14px;">
           <label>Gemini AI API Key</label>
           <input type="password" id="sysGeminiApiKey" placeholder="AIzaSy...">
@@ -1999,17 +1996,12 @@ function closeSystemSettingsModal() {
 
 async function loadSystemSettingsIntoModal() {
   try {
-    const res = await fetch(`${API_BASE}/api/settings`);
-    const data = await res.json();
+    const data = await apiFetch(`${API_BASE}/api/settings`);
     if (data.success && data.settings) {
       const s = data.settings;
       if (document.getElementById('sysBotName')) document.getElementById('sysBotName').value = s.bot_name || 'F.R.I.D.A.Y.';
       if (document.getElementById('sysBotTone')) document.getElementById('sysBotTone').value = s.bot_tone || 'luxury';
       if (document.getElementById('sysBotSystemPrompt')) document.getElementById('sysBotSystemPrompt').value = s.bot_system_prompt || '';
-      if (document.getElementById('sysGeminiApiKey')) document.getElementById('sysGeminiApiKey').value = s.gemini_api_key || '';
-      if (document.getElementById('sysFbAccessToken')) document.getElementById('sysFbAccessToken').value = s.fb_access_token || '';
-      if (document.getElementById('sysGoogleSheetId')) document.getElementById('sysGoogleSheetId').value = s.google_sheet_id || '';
-      if (document.getElementById('sysTelegramToken')) document.getElementById('sysTelegramToken').value = s.telegram_token || '';
     }
   } catch (e) {}
 }
@@ -2024,19 +2016,14 @@ async function saveSystemSettingsPage() {
     bot_name: document.getElementById('sysBotName')?.value || 'F.R.I.D.A.Y.',
     bot_tone: document.getElementById('sysBotTone')?.value || 'luxury',
     bot_system_prompt: document.getElementById('sysBotSystemPrompt')?.value || '',
-    gemini_api_key: document.getElementById('sysGeminiApiKey')?.value || '',
-    fb_access_token: document.getElementById('sysFbAccessToken')?.value || '',
-    google_sheet_id: document.getElementById('sysGoogleSheetId')?.value || '',
-    telegram_token: document.getElementById('sysTelegramToken')?.value || ''
+    // Secrets are server-managed or obtained through the Instagram OAuth flow.
   };
 
   try {
-    const res = await fetch(`${API_BASE}/api/settings/bulk`, {
+    const data = await apiFetch(`${API_BASE}/api/settings`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify({ settings: payload })
     });
-    const data = await res.json();
     if (data.success) {
       showToast('✅ API Ayarları ve Yapay Zeka Kişiselleştirmesi başarıyla kaydedildi!', 'success');
     } else {

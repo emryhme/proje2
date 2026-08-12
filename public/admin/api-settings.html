@@ -176,8 +176,8 @@
             </div>
         </div>
 
-        <!-- API KEYS CARD -->
-        <div class="card table-card">
+        <!-- Legacy credential controls are intentionally hidden: OAuth and server configuration own secrets. -->
+        <div class="card table-card" hidden>
             <div class="table-header">
                 <div class="table-title">🔑 API & Webhook Entegrasyon Anahtarları</div>
             </div>
@@ -223,8 +223,7 @@
             
             <div style="padding:15px; font-size:12px; color:#94a3b8; line-height:1.6;">
                 <p style="margin-bottom:12px; color:#e2e8f0;">
-                    Meta Developer Portal veya Instagram Business hesabınızı bağlamak için Facebook Page ID ve Instagram Account ID bilgilerinizi kaydedin.
-                    Gelen tüm webhook eventleri <strong>yalnızca bu mağazanın veritabanında</strong> işlenecektir.
+                    Instagram hesabınızı güvenli Instagram Login ile bağlayın. Gelen mesajlar otomatik olarak yalnızca bu mağazaya yönlendirilir.
                 </p>
 
                 <div class="form-group full-width" style="margin-bottom:16px; padding:14px; border:1px solid #334155; border-radius:8px; background:#0f172a;">
@@ -240,7 +239,7 @@
                     </div>
                 </div>
 
-                <div class="form-grid">
+                <div class="form-grid" hidden>
                     <div class="form-group">
                         <label>Facebook Page ID</label>
                         <input type="text" id="metaPageIdInput" placeholder="Örn: 100200300400">
@@ -291,8 +290,8 @@
                 </div>
             </div>
         </div>
-        <!-- DEDICATED GOOGLE SHEETS & DATABASE IMPORT CARD -->
-        <div class="card table-card" style="margin-top:20px;">
+        <!-- Google Sheet import was removed because it did not persist safely to the tenant database. -->
+        <div class="card table-card" style="margin-top:20px;" hidden>
             <div class="table-header">
                 <div class="table-title">📊 Google Sheet İle Stok & Ürün İçe Aktarma (Mağaza Özel)</div>
             </div>
