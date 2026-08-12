@@ -2206,7 +2206,7 @@ async function loadStoreWebhookDetails() {
       if (igUserInput) igUserInput.value = data.instagramUsername || '';
 
       if (statusBadge) {
-        if (data.metaPageId || data.instagramAccountId) {
+        if (data.instagramConnected) {
           statusBadge.className = 'status-badge in-stock';
           statusBadge.innerHTML = '🟢 Bağlı (Connected)';
         } else {
@@ -2214,6 +2214,15 @@ async function loadStoreWebhookDetails() {
           statusBadge.innerHTML = '🔴 Bağlı Değil (Not Connected)';
         }
       }
+
+      const oauthStatus = document.getElementById('instagramOAuthStatus');
+      const connectButton = document.getElementById('btnConnectInstagram');
+      const disconnectButton = document.getElementById('btnDisconnectInstagram');
+      if (oauthStatus) oauthStatus.textContent = data.instagramConnected
+        ? `Bağlı: @${data.instagramUsername || 'instagram hesabı'}`
+        : 'Henüz Instagram hesabı bağlanmadı.';
+      if (connectButton) connectButton.style.display = data.instagramConnected ? 'none' : 'inline-flex';
+      if (disconnectButton) disconnectButton.style.display = data.instagramConnected ? 'inline-flex' : 'none';
 
       if (lastEvtElem) {
         lastEvtElem.textContent = data.lastWebhookAt || 'Henüz event gelmedi';
@@ -2223,6 +2232,42 @@ async function loadStoreWebhookDetails() {
     console.warn('[loadStoreWebhookDetails Notice]:', e.message);
   }
 }
+
+async function connectInstagramOAuth() {
+  const button = document.getElementById('btnConnectInstagram');
+  try {
+    if (button) button.disabled = true;
+    const data = await apiFetch('/api/integrations/instagram/connect', { method: 'POST' });
+    if (!data?.success || !data.authorizeUrl) throw new Error(data?.error || 'Instagram bağlantısı başlatılamadı.');
+    const popup = window.open(data.authorizeUrl, 'instagram_oauth', 'width=600,height=760');
+    if (!popup) throw new Error('Açılır pencere engellendi. Tarayıcı izinlerinden pop-up izni verin.');
+  } catch (error) {
+    showToast(`❌ ${error.message || 'Instagram bağlantısı başlatılamadı.'}`, 'error');
+    if (button) button.disabled = false;
+  }
+}
+
+async function disconnectInstagramOAuth() {
+  if (!confirm('Bu mağazanın Instagram bağlantısı kaldırılsın mı?')) return;
+  try {
+    const data = await apiFetch('/api/integrations/instagram/disconnect', { method: 'POST' });
+    if (!data?.success) throw new Error(data?.error || 'Bağlantı kaldırılamadı.');
+    showToast('Instagram bağlantısı kaldırıldı.', 'success');
+    await loadStoreWebhookDetails();
+  } catch (error) {
+    showToast(`❌ ${error.message || 'Bağlantı kaldırılamadı.'}`, 'error');
+  }
+}
+
+window.addEventListener('message', (event) => {
+  if (event.origin !== window.location.origin || event.data?.type !== 'instagram-oauth-complete') return;
+  if (event.data.success) {
+    showToast('Instagram hesabı başarıyla bağlandı.', 'success');
+    loadStoreWebhookDetails();
+  }
+  const button = document.getElementById('btnConnectInstagram');
+  if (button) button.disabled = false;
+});
 
 function toggleVerifyTokenVisibility() {
   const tokenInput = document.getElementById('storeVerifyTokenInput');

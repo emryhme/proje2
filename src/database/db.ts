@@ -108,6 +108,23 @@ function runSchemaMigrations(): void {
         CREATE INDEX IF NOT EXISTS idx_webhook_events_store_event ON webhook_events(store_id, event_id);
       `);
     }
+  }, {
+    version: '20260812_004_instagram_oauth_states',
+    name: 'Add short-lived Instagram OAuth state storage',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS instagram_oauth_states (
+          state_hash TEXT PRIMARY KEY,
+          store_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          expires_at TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_instagram_oauth_states_expiry ON instagram_oauth_states(expires_at);
+      `);
+    }
   }];
 
   const isApplied = db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?');

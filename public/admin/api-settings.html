@@ -227,6 +227,19 @@
                     Gelen tüm webhook eventleri <strong>yalnızca bu mağazanın veritabanında</strong> işlenecektir.
                 </p>
 
+                <div class="form-group full-width" style="margin-bottom:16px; padding:14px; border:1px solid #334155; border-radius:8px; background:#0f172a;">
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
+                        <div>
+                            <strong>Instagram Login bağlantısı</strong>
+                            <div id="instagramOAuthStatus" style="font-size:12px; color:#94a3b8; margin-top:4px;">Bağlantı durumu yükleniyor…</div>
+                        </div>
+                        <div style="display:flex; gap:8px;">
+                            <button type="button" class="btn btn-primary" id="btnConnectInstagram" onclick="connectInstagramOAuth()"><i class="fa-brands fa-instagram"></i> Instagram'ı Bağla</button>
+                            <button type="button" class="btn btn-secondary" id="btnDisconnectInstagram" onclick="disconnectInstagramOAuth()" style="display:none; color:#f87171;"><i class="fa-solid fa-link-slash"></i> Bağlantıyı Kes</button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="form-grid">
                     <div class="form-group">
                         <label>Facebook Page ID</label>
