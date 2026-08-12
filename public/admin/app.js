@@ -80,10 +80,6 @@ function applyDynamicStoreBranding() {
     } catch (e) {}
   }
   document.title = `${storeName} — Admin Panel`;
-  const logoSpan = document.querySelector('.logo span');
-  if (logoSpan) {
-    logoSpan.textContent = storeName;
-  }
 
   const storeAvatar = document.querySelector('.store-avatar');
   const storeTitle = document.querySelector('.store-info strong');
