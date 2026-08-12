@@ -27,11 +27,13 @@ class AIService {
         this.validateStoreId(storeId);
         const key = `${storeId}:${storeSlug}:${channel}:${senderId}`;
         if (!this.sessions.has(key)) {
-            this.sessions.set(key, { storeId, history: [], cart: [] });
+            this.sessions.set(key, { storeId, history: [], cart: [], checkoutConfirmed: false });
         }
         const ctx = this.sessions.get(key);
         if (!ctx.cart)
             ctx.cart = [];
+        if (typeof ctx.checkoutConfirmed !== 'boolean')
+            ctx.checkoutConfirmed = false;
         ctx.storeId = storeId;
         return ctx;
     }
@@ -177,19 +179,24 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
                     catch {
                         data = {};
                     }
-                    const pCode = (data.productCode || ctx.productCode || 'KGMLW').toUpperCase();
-                    const pSize = (data.size || ctx.size || 'M').toUpperCase();
-                    const pQty = Number(data.quantity) || ctx.quantity || 1;
+                    const pCode = String(data.productCode || '').trim().toUpperCase();
+                    const pSize = String(data.size || '').trim().toUpperCase();
+                    const pQty = Number(data.quantity);
+                    if (!pCode || !pSize || !Number.isInteger(pQty) || pQty <= 0) {
+                        return JSON.stringify({ success: false, message: 'Sepete eklemek için ürün kodu, beden ve adet zorunludur.' });
+                    }
                     const pCodeUpper = pCode.toUpperCase();
                     const prod = db_1.db.prepare(`
             SELECT * FROM products 
-            WHERE store_id = ? AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)
+            WHERE store_id = ? AND UPPER(product_code) = ? AND UPPER(size) = ?
             LIMIT 1
-          `).get(storeId, pCodeUpper, pCodeUpper);
-                    const unitPrice = (prod && prod.price > 0) ? prod.price : 299;
-                    const productName = prod?.name || pCode;
-                    const stockRes = await stock_service_1.StockService.checkStock(storeId, pCode);
-                    if (!stockRes.inStock) {
+          `).get(storeId, pCodeUpper, pSize);
+                    if (!prod) {
+                        return JSON.stringify({ success: false, message: `${pCode} kodlu ${pSize} beden ürünü bulunamadı.` });
+                    }
+                    const unitPrice = (prod.price > 0) ? prod.price : 299;
+                    const productName = prod.name;
+                    if (Number(prod.stock) < pQty) {
                         return JSON.stringify({ success: false, message: `${productName} (${pSize}) stokta tükendiği için sepete eklenemedi.` });
                     }
                     const existingIdx = ctx.cart.findIndex(i => i.productCode === pCode && i.size === pSize);
@@ -205,6 +212,10 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
                             unitPrice: unitPrice
                         });
                     }
+                    ctx.productCode = pCode;
+                    ctx.size = pSize;
+                    ctx.quantity = pQty;
+                    ctx.checkoutConfirmed = false;
                     const cartSubtotal = ctx.cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
                     const shippingFeeEstimate = cartSubtotal >= 1500 ? 0 : 49;
                     const totalEstimate = cartSubtotal + shippingFeeEstimate;
@@ -223,6 +234,25 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
                 catch (e) {
                     return JSON.stringify({ error: e.message });
                 }
+            }
+        });
+        const sepetOnaylaTool = new tools_1.DynamicTool({
+            name: 'SEPET_ONAYLA',
+            description: 'Müşteri sepet özetini açıkça onayladıktan sonra ödeme bilgilerini isteme aşamasını başlatır.',
+            func: async () => {
+                if (!ctx.cart || ctx.cart.length === 0) {
+                    return JSON.stringify({ success: false, message: 'Onaylanacak sepet bulunmuyor. Önce ürün kodu, beden ve adet ile ürün ekleyin.' });
+                }
+                ctx.checkoutConfirmed = true;
+                // Contact details must be collected only after the cart is approved.
+                delete ctx.customerName;
+                delete ctx.customerPhone;
+                delete ctx.address;
+                return JSON.stringify({
+                    success: true,
+                    checkoutConfirmed: true,
+                    message: 'Sepet onaylandı. Siparişi tamamlamak için müşteriden ad soyad, telefon numarası ve açık teslimat adresini isteyin.'
+                });
             }
         });
         // SEPET_GORUNTULE Tool
@@ -258,30 +288,18 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
                     const customerPhone = data.customerPhone || ctx.customerPhone;
                     const address = data.address || ctx.address;
                     if (!ctx.cart || ctx.cart.length === 0) {
-                        const pCode = (data.productCode || ctx.productCode || 'KGMLW').toUpperCase();
-                        const pSize = (data.size || ctx.size || 'M').toUpperCase();
-                        const pQty = Number(data.quantity) || ctx.quantity || 1;
-                        const pCodeUpper = pCode.toUpperCase();
-                        const prod = db_1.db.prepare(`
-              SELECT * FROM products 
-              WHERE store_id = ? AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)
-              LIMIT 1
-            `).get(storeId, pCodeUpper, pCodeUpper);
-                        ctx.cart.push({
-                            productCode: pCode,
-                            productName: prod?.name || pCode,
-                            size: pSize,
-                            quantity: pQty,
-                            unitPrice: (prod && prod.price > 0) ? prod.price : 299
-                        });
+                        return JSON.stringify({ success: false, orderCreated: false, message: 'Sipariş oluşturmak için önce ürün kodu, beden ve adet ile sepet oluşturulmalıdır.' });
+                    }
+                    if (!ctx.checkoutConfirmed) {
+                        return JSON.stringify({ success: false, orderCreated: false, message: 'Sipariş oluşturulmadan önce sepet özeti müşteriye gösterilmeli ve müşterinin açık onayı alınmalıdır.' });
                     }
                     const missingFields = [];
                     if (!customerName || customerName.trim().length <= 1)
                         missingFields.push('İsim Soyisim');
-                    if (!customerPhone || customerPhone.trim().length < 10)
+                    if (!customerPhone || customerPhone.replace(/\D/g, '').length < 10)
                         missingFields.push('Telefon Numarası');
-                    if (!address || address.trim().length < 3)
-                        missingFields.push('Teslimat Adresi');
+                    if (!address || address.trim().length < 10)
+                        missingFields.push('Açık Teslimat Adresi');
                     if (missingFields.length > 0) {
                         return JSON.stringify({
                             success: false,
@@ -357,6 +375,10 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
                         return `• ${i.productName} (${i.size}) x${i.quantity} - ${lineTotal.toLocaleString('tr-TR')} TL`;
                     }).join('\n');
                     ctx.cart = [];
+                    ctx.checkoutConfirmed = false;
+                    delete ctx.customerName;
+                    delete ctx.customerPhone;
+                    delete ctx.address;
                     return JSON.stringify({
                         success: true,
                         orderCreated: true,
@@ -421,7 +443,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
                 }
             }
         });
-        return { stokTool, sepeteEkleTool, sepetGoruntuleTool, kayitTool, mesajTool, guncelleTool };
+        return { stokTool, sepeteEkleTool, sepetGoruntuleTool, sepetOnaylaTool, kayitTool, mesajTool, guncelleTool };
     }
     static createBilgilendirmeSubAgent(model, mesajTool) {
         return new tools_1.DynamicTool({
@@ -432,10 +454,10 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             }
         });
     }
-    static createSiparisSubAgent(model, stokTool, sepeteEkleTool, sepetGoruntuleTool, kayitTool, bilgilendirmeTool) {
+    static createSiparisSubAgent(model, stokTool, sepeteEkleTool, sepetGoruntuleTool, sepetOnaylaTool, kayitTool, bilgilendirmeTool) {
         return new tools_1.DynamicTool({
             name: 'SIPARIS',
-            description: 'Ürün stok kontrolü, sepete ekleme, sepet görüntüleme ve sipariş kaydı işlemlerini yürütür.',
+            description: 'Sipariş akışını yürütür. action yalnızca stok, sepete_ekle, sepet_goruntule, sepet_onayla veya kayit olabilir. sepete_ekle için productCode, size ve quantity zorunludur. sepet_onayla yalnız müşteri açıkça sepeti onayladığında, kayit yalnız onay sonrası tam müşteri bilgileri varken kullanılır.',
             func: async (input) => {
                 try {
                     let data = typeof input === 'object' ? input : JSON.parse(input);
@@ -445,6 +467,9 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
                     }
                     else if (action === 'sepet_goruntule') {
                         return await sepetGoruntuleTool.invoke('');
+                    }
+                    else if (action === 'sepet_onayla') {
+                        return await sepetOnaylaTool.invoke('');
                     }
                     else if (action === 'kayit') {
                         const res = await kayitTool.invoke(JSON.stringify(data));
@@ -533,9 +558,9 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
                 modelName: env_1.env.openaiModel || 'gpt-4o',
                 temperature: 0.2
             });
-            const { stokTool, sepeteEkleTool, sepetGoruntuleTool, kayitTool, mesajTool, guncelleTool } = this.createLeafTools(senderId, storeSlug, storeId);
+            const { stokTool, sepeteEkleTool, sepetGoruntuleTool, sepetOnaylaTool, kayitTool, mesajTool, guncelleTool } = this.createLeafTools(senderId, storeSlug, storeId);
             const bilgilendirmeAgentTool = this.createBilgilendirmeSubAgent(model, mesajTool);
-            const siparisAgentTool = this.createSiparisSubAgent(model, stokTool, sepeteEkleTool, sepetGoruntuleTool, kayitTool, bilgilendirmeAgentTool);
+            const siparisAgentTool = this.createSiparisSubAgent(model, stokTool, sepeteEkleTool, sepetGoruntuleTool, sepetOnaylaTool, kayitTool, bilgilendirmeAgentTool);
             const stokManAgentTool = this.createStokManSubAgent(model, guncelleTool);
             const rootTools = [siparisAgentTool, stokManAgentTool];
             const boundRootModel = model.bindTools(rootTools);
@@ -545,6 +570,16 @@ Sen Mağaza Müşteri Danışmanısın (F.R.I.D.A.Y.). Müşterilerin ürün sor
 </görev>
 
 <KATI_GÜVENLİK_VE_SEPET_KURALLARI>
+ZORUNLU SIPARIS SIRASI — bu kural diğer tüm sipariş talimatlarının önündedir:
+1. Önce yalnız ürün kodunu iste. Kod olmadan beden, adet veya kişisel bilgi isteme.
+2. Koddan sonra yalnız beden iste; bedenden sonra yalnız adet iste.
+3. Ürün kodu, beden ve adet eksiksiz olmadan SEPETE_EKLE çağırma.
+4. Sepete ekledikten sonra sepet özetini, kargoyu ve toplamı göster. Açıkça "Sepetinizi onaylıyor musunuz?" diye sor.
+5. Müşteri açıkça onay vermeden SEPET_ONAYLA veya KAYIT çağırma.
+6. Açık onaydan sonra SEPET_ONAYLA çağır; ardından ad soyad, telefon numarası ve açık teslimat adresini sırayla iste.
+7. Ad soyad, en az 10 haneli telefon ve en az 10 karakterlik açık adres tamamlanmadan KAYIT çağırma; sipariş oluşturuldu deme.
+8. Müşteri sepeti onaylamadan kişisel bilgileri isteme veya kullanma.
+
 1. 🛒 **SEPET SİSTEMİ (ÇOKLU ÜRÜN DESTEĞİ):**
    - Müşteri bir ürün seçtiğinde SEPETE_EKLE aracını çağır ve ürünü sepete ekle.
    - Müşteri "isteklerim bu kadar", "siparişi tamamla" dediğinde KAYIT aracını çağırarak siparişi kaydet.
