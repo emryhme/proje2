@@ -84,6 +84,30 @@ function runSchemaMigrations(): void {
       addColumnIfMissing('api_keys', 'revoked_at', 'TEXT DEFAULT NULL');
       db.exec('CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(store_id, revoked_at, expires_at);');
     }
+  }, {
+    version: '20260812_003_webhook_events_per_store',
+    name: 'Scope webhook idempotency keys to each store',
+    up: () => {
+      const schema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'webhook_events'").get() as { sql?: string } | undefined;
+      if (schema?.sql?.includes('PRIMARY KEY (store_id, event_id)')) return;
+
+      db.exec(`
+        CREATE TABLE webhook_events_new (
+          event_id TEXT NOT NULL,
+          store_id INTEGER NOT NULL,
+          store_slug TEXT DEFAULT '',
+          processed_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (store_id, event_id),
+          FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
+        );
+        INSERT OR IGNORE INTO webhook_events_new (event_id, store_id, store_slug, processed_at)
+        SELECT event_id, COALESCE(store_id, 1), COALESCE(store_slug, ''), processed_at
+        FROM webhook_events;
+        DROP TABLE webhook_events;
+        ALTER TABLE webhook_events_new RENAME TO webhook_events;
+        CREATE INDEX IF NOT EXISTS idx_webhook_events_store_event ON webhook_events(store_id, event_id);
+      `);
+    }
   }];
 
   const isApplied = db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?');

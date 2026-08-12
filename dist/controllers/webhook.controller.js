@@ -218,8 +218,8 @@ class WebhookController {
         try {
             const store = db_1.db.prepare(`
         SELECT id, name, slug, status FROM stores 
-        WHERE meta_page_id = ? OR instagram_account_id = ? OR slug = ? OR CAST(id AS TEXT) = ?
-      `).get(cleanId, cleanId, cleanId, cleanId);
+        WHERE meta_page_id = ? OR instagram_account_id = ?
+      `).get(cleanId, cleanId);
             return store || null;
         }
         catch {
@@ -228,15 +228,10 @@ class WebhookController {
     }
     /**
      * Gelen Instagram / Messenger Mesajlarını İşleme (POST /webhook/instagram)
-     * Strictly resolves tenant via verified Meta Page ID / Entry ID or fallback default store.
+     * Strictly resolves tenant via the verified Meta Page ID / Entry ID.
      * Client-supplied req.body.storeId or req.query.storeId is COMPLETELY IGNORED!
      */
     static async handleWebhook(req, res) {
-        const defaultStore = db_1.db.prepare("SELECT id, name, slug, status FROM stores WHERE slug = 'default' OR id = 1 LIMIT 1").get();
-        if (!defaultStore) {
-            res.status(404).json({ success: false, error: 'Varsayılan mağaza veritabanında bulunamadı.' });
-            return;
-        }
         if (!WebhookController.verifySignature(req)) {
             res.status(401).json({ success: false, error: 'Geçersiz Webhook İmzası (Signature Verification Failed).' });
             return;
@@ -247,7 +242,7 @@ class WebhookController {
             return;
         for (const entry of body.entry) {
             const entryMetaId = String(entry.id || '');
-            const matchedStore = WebhookController.resolveStoreByMetaId(entryMetaId) || defaultStore;
+            const matchedStore = WebhookController.resolveStoreByMetaId(entryMetaId);
             if (!matchedStore || matchedStore.status !== 'active') {
                 console.warn(`[WebhookController] ⛔ Target store ${matchedStore?.slug || 'unknown'} is suspended or inactive. Skipping webhook event.`);
                 continue;

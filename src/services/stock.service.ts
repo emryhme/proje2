@@ -1,5 +1,4 @@
 import { db } from '../database/db';
-import { GoogleSheetsService } from './google-sheets.service';
 
 export interface ProductStockRow {
   shortCode: string;   // KISA KOD (Örn: KGMLW)
@@ -26,9 +25,7 @@ export class StockService {
   /**
    * SQLite veritabanındaki mağazaya özel ürün satırlarını getirir.
    */
-  public static async fetchAllSheetRows(storeId: number): Promise<ProductStockRow[]>;
-  public static async fetchAllSheetRows(): Promise<ProductStockRow[]>;
-  public static async fetchAllSheetRows(storeId?: any): Promise<ProductStockRow[]> {
+  public static async fetchAllSheetRows(storeId: number): Promise<ProductStockRow[]> {
     this.validateStoreId(storeId);
     try {
       const stmt = db.prepare(`
@@ -47,29 +44,15 @@ export class StockService {
   /**
    * Mağazaya özel benzersiz ürünlerin güncel stok listesini getirir.
    */
-  public static async getAllProducts(storeId: number): Promise<ProductStockRow[]>;
-  public static async getAllProducts(): Promise<ProductStockRow[]>;
-  public static async getAllProducts(storeId?: any): Promise<ProductStockRow[]> {
+  public static async getAllProducts(storeId: number): Promise<ProductStockRow[]> {
     return await this.fetchAllSheetRows(storeId);
   }
 
   /**
    * Mağaza bazında akıllı stok sorgulama yapar.
    */
-  public static async checkStock(storeId: number, queryInput: string): Promise<{ exists: boolean; inStock: boolean; product?: any }>;
-  public static async checkStock(queryInput: string): Promise<{ exists: boolean; inStock: boolean; product?: any }>;
-  public static async checkStock(storeIdOrQuery: any, queryInput?: string): Promise<{ exists: boolean; inStock: boolean; product?: any }> {
-    let storeId: number;
-    let rawQuery: string;
-
-    if (typeof storeIdOrQuery === 'number') {
-      storeId = storeIdOrQuery;
-      rawQuery = (queryInput || '').trim().toUpperCase();
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return { exists: false, inStock: false };
-    }
-
+  public static async checkStock(storeId: number, queryInput: string): Promise<{ exists: boolean; inStock: boolean; product?: any }> {
+    const rawQuery = queryInput.trim().toUpperCase();
     this.validateStoreId(storeId);
     const rows = await this.fetchAllSheetRows(storeId);
 
@@ -135,24 +118,8 @@ export class StockService {
   /**
    * Stok Eksiltme (Mağazaya Özel)
    */
-  public static async deductStock(storeId: number, productCode: string, quantity: number, size?: string): Promise<boolean>;
-  public static async deductStock(productCode: string, quantity: number, size?: string): Promise<boolean>;
-  public static async deductStock(storeIdOrCode: any, quantityOrCode?: any, sizeOrQty?: any, size?: string): Promise<boolean> {
-    let storeId: number;
-    let productCode: string;
-    let quantity: number;
-    let targetSize: string;
-
-    if (typeof storeIdOrCode === 'number') {
-      storeId = storeIdOrCode;
-      productCode = String(quantityOrCode || '');
-      quantity = Number(sizeOrQty) || 1;
-      targetSize = size ? size.trim().toUpperCase() : '';
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return false;
-    }
-
+  public static async deductStock(storeId: number, productCode: string, quantity: number, size?: string): Promise<boolean> {
+    const targetSize = size ? size.trim().toUpperCase() : '';
     this.validateStoreId(storeId);
     try {
       const targetCode = productCode.trim().toUpperCase();
@@ -196,13 +163,6 @@ export class StockService {
 
       console.log(`[StockService SQLite] 📦 Stok Düşüldü (Store: ${storeId}, ${targetCode}): -${quantity} (Etkilenen Satır: ${result.changes})`);
 
-      if (storeId === 1) {
-        const updatedProd = db.prepare(`SELECT stock, product_code FROM products WHERE store_id = 1 AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)`).get(targetCode, targetCode) as any;
-        if (updatedProd && updatedProd.stock !== undefined) {
-          GoogleSheetsService.updateProductStock(updatedProd.product_code || targetCode, updatedProd.stock).catch(() => {});
-        }
-      }
-
       return result.changes > 0;
     } catch (e: any) {
       console.error(`[StockService SQLite] ❌ Stok düşülemedi (Store: ${storeId}):`, e.message);
@@ -213,24 +173,8 @@ export class StockService {
   /**
    * Stok İade Etme / Artırma (Mağazaya Özel)
    */
-  public static async restoreStock(storeId: number, productCode: string, quantity: number, size?: string): Promise<boolean>;
-  public static async restoreStock(productCode: string, quantity: number, size?: string): Promise<boolean>;
-  public static async restoreStock(storeIdOrCode: any, quantityOrCode?: any, sizeOrQty?: any, size?: string): Promise<boolean> {
-    let storeId: number;
-    let productCode: string;
-    let quantity: number;
-    let targetSize: string;
-
-    if (typeof storeIdOrCode === 'number') {
-      storeId = storeIdOrCode;
-      productCode = String(quantityOrCode || '');
-      quantity = Number(sizeOrQty) || 1;
-      targetSize = size ? size.trim().toUpperCase() : '';
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return false;
-    }
-
+  public static async restoreStock(storeId: number, productCode: string, quantity: number, size?: string): Promise<boolean> {
+    const targetSize = size ? size.trim().toUpperCase() : '';
     this.validateStoreId(storeId);
     try {
       const targetCode = productCode.trim().toUpperCase();
@@ -273,13 +217,6 @@ export class StockService {
       } catch (e) {}
 
       console.log(`[StockService SQLite] 🔄 Stok İade Edildi (Store: ${storeId}, ${targetCode}): +${quantity}`);
-
-      if (storeId === 1) {
-        const updatedProd = db.prepare(`SELECT stock, product_code FROM products WHERE store_id = 1 AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)`).get(targetCode, targetCode) as any;
-        if (updatedProd && updatedProd.stock !== undefined) {
-          GoogleSheetsService.updateProductStock(updatedProd.product_code || targetCode, updatedProd.stock).catch(() => {});
-        }
-      }
 
       return result.changes > 0;
     } catch (e: any) {
@@ -357,20 +294,8 @@ export class StockService {
   /**
    * SQLite Veritabanından Ürün Siler (Mağazaya Özel)
    */
-  public static async deleteProduct(storeId: number, productCode: string): Promise<boolean>;
-  public static async deleteProduct(productCode: string): Promise<boolean>;
-  public static async deleteProduct(storeIdOrCode: any, productCode?: string): Promise<boolean> {
-    let storeId: number;
-    let targetCode: string;
-
-    if (typeof storeIdOrCode === 'number') {
-      storeId = storeIdOrCode;
-      targetCode = String(productCode || '');
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return false;
-    }
-
+  public static async deleteProduct(storeId: number, productCode: string): Promise<boolean> {
+    const targetCode = productCode;
     this.validateStoreId(storeId);
     try {
       const target = targetCode.trim().toUpperCase();
@@ -384,9 +309,6 @@ export class StockService {
 
       console.log(`[StockService SQLite] 🗑️ Ürün silindi (Store: ${storeId}): ${target}`);
 
-      if (storeId === 1) {
-        GoogleSheetsService.deleteProductRow(target).catch(() => {});
-      }
       return res.changes > 0;
     } catch (e: any) {
       console.error(`[StockService SQLite] ❌ Ürün silinemedi (Store: ${storeId}):`, e.message);
@@ -397,22 +319,9 @@ export class StockService {
   /**
    * SQLite Veritabanında Ürün Stok Miktarını Günceller (Mağazaya Özel)
    */
-  public static async updateStock(storeId: number, productCode: string, newStock: number): Promise<boolean>;
-  public static async updateStock(productCode: string, newStock: number): Promise<boolean>;
-  public static async updateStock(storeIdOrCode: any, productCodeOrStock?: any, newStock?: number): Promise<boolean> {
-    let storeId: number;
-    let targetCode: string;
-    let stockNum: number;
-
-    if (typeof storeIdOrCode === 'number') {
-      storeId = storeIdOrCode;
-      targetCode = String(productCodeOrStock || '').trim().toUpperCase();
-      stockNum = Number(newStock);
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return false;
-    }
-
+  public static async updateStock(storeId: number, productCode: string, newStock: number): Promise<boolean> {
+    const targetCode = productCode.trim().toUpperCase();
+    const stockNum = Number(newStock);
     this.validateStoreId(storeId);
 
     if (isNaN(stockNum) || stockNum < 0) {
@@ -445,9 +354,6 @@ export class StockService {
 
       console.log(`[StockService SQLite] 📦 Ürün (${target}) Stoğu Güncellendi (Store: ${storeId}): ${stockNum}`);
 
-      if (storeId === 1) {
-        GoogleSheetsService.updateProductStock(target, stockNum).catch(() => {});
-      }
       return res.changes > 0;
     } catch (e: any) {
       console.error(`[StockService SQLite] ❌ Ürün stoğu güncellenemedi (Store: ${storeId}):`, e.message);

@@ -7,7 +7,6 @@ exports.GeminiService = void 0;
 const axios_1 = __importDefault(require("axios"));
 const env_1 = require("../config/env");
 const stock_service_1 = require("./stock.service");
-const google_sheets_service_1 = require("./google-sheets.service");
 /**
  * Google Gemini Yapay Zeka Tabanlı Multi-Tenant Akıllı Ürün Oluşturucu Servisi
  */
@@ -20,7 +19,7 @@ class GeminiService {
     /**
      * Doğal dil komutundan Gemini AI kullanarak ürün dizisi oluşturur ve veritabanına kaydedici (Store Isolated).
      */
-    static async createProductFromPrompt(prompt, storeId = 1) {
+    static async createProductFromPrompt(prompt, storeId) {
         this.validateStoreId(storeId);
         try {
             const apiKey = env_1.env.geminiApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -43,7 +42,6 @@ class GeminiService {
             if (!parsedProducts || parsedProducts.length === 0) {
                 return { success: false, error: 'Ürün bilgisi ayrıştırılamadı.' };
             }
-            const rowsToAppend = [];
             const savedProducts = [];
             for (const item of parsedProducts) {
                 const cleanShortCode = (item.shortCode || 'SKG').toUpperCase().trim();
@@ -72,18 +70,6 @@ class GeminiService {
                     stock: cleanStock,
                     category: cleanCategory
                 });
-                rowsToAppend.push([
-                    cleanShortCode,
-                    cleanProductCode,
-                    cleanName,
-                    cleanColor,
-                    cleanSize,
-                    String(cleanStock),
-                    cleanCategory
-                ]);
-            }
-            if (storeId === 1) {
-                google_sheets_service_1.GoogleSheetsService.appendProductRowsBatch(rowsToAppend).catch(() => { });
             }
             const totalStockAdded = savedProducts.reduce((acc, p) => acc + p.stock, 0);
             const sizesStr = savedProducts.map(p => p.size).join(', ');

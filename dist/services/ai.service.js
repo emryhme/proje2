@@ -23,7 +23,7 @@ class AIService {
     static getApiKey() {
         return (process.env.OPENAI_API_KEY || env_1.env.openaiApiKey || '').trim().replace(/^["']|["']$/g, '');
     }
-    static getSessionContext(senderId, storeSlug = 'default', storeId = 1, channel = 'instagram') {
+    static getSessionContext(senderId, storeSlug, storeId, channel = 'instagram') {
         this.validateStoreId(storeId);
         const key = `${storeId}:${storeSlug}:${channel}:${senderId}`;
         if (!this.sessions.has(key)) {
@@ -331,7 +331,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             `).run(storeId, senderId, rewardCode, loyaltyThreshold);
                         earnedNewLoyaltyReward = true;
                         const autoDmText = `🎉 TEBRİKLER / VIP ÖDÜL KAZANDINIZ!\nSayın ${customerName.trim()}, profilinize özel %20 VIP İNDİRİM tanımlanmıştır! (Ödül Kodu: ${rewardCode})\nKeyifli alışverişler dileriz! 🎁✨`;
-                        facebook_service_1.FacebookService.sendMessage(senderId, autoDmText).catch(e => console.error('[Auto Reward DM Error]:', e.message));
+                        facebook_service_1.FacebookService.sendMessage(senderId, autoDmText, storeId).catch(e => console.error('[Auto Reward DM Error]:', e.message));
                     }
                     const combinedProductCode = ctx.cart.map(i => `${i.productCode} (${i.size}) x${i.quantity}`).join(', ');
                     const combinedProductName = ctx.cart.map(i => `${i.productName} (${i.size})`).join(', ');
@@ -385,7 +385,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             func: async (input) => {
                 try {
                     let data = typeof input === 'object' ? input : JSON.parse(input);
-                    await telegram_service_1.TelegramService.notifyOrder({
+                    await telegram_service_1.TelegramService.notifyOrder(storeId, {
                         customerName: data.customerName || ctx.customerName || 'Müşteri',
                         customerPhone: data.customerPhone || ctx.customerPhone || '',
                         address: data.address || ctx.address || '',
@@ -475,7 +475,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     /**
      * Mesaj İşleme Ana Metodu (Strict Store Isolation & Security)
      */
-    static async processMessage(senderId, userMessage, storeSlug = 'default', storeId = 1, channel = 'instagram') {
+    static async processMessage(senderId, userMessage, storeSlug, storeId, channel = 'instagram') {
         this.validateStoreId(storeId);
         const apiKey = this.getApiKey();
         if (!apiKey) {

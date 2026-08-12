@@ -20,7 +20,7 @@ export class AdminCopilotService {
     return env.openaiApiKey || env.geminiApiKey || 'DUMMY_KEY';
   }
 
-  public static async processAdminCommand(userPrompt: string, storeId: number = 1): Promise<string> {
+  public static async processAdminCommand(userPrompt: string, storeId: number): Promise<string> {
     this.validateStoreId(storeId);
     const apiKey = this.getApiKey();
 

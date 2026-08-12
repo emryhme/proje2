@@ -54,7 +54,7 @@ export class AIService {
     return (process.env.OPENAI_API_KEY || env.openaiApiKey || '').trim().replace(/^["']|["']$/g, '');
   }
 
-  public static getSessionContext(senderId: string, storeSlug: string = 'default', storeId: number = 1, channel: string = 'instagram'): SessionContext {
+  public static getSessionContext(senderId: string, storeSlug: string, storeId: number, channel: string = 'instagram'): SessionContext {
     this.validateStoreId(storeId);
     const key = `${storeId}:${storeSlug}:${channel}:${senderId}`;
     if (!this.sessions.has(key)) {
@@ -375,7 +375,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             earnedNewLoyaltyReward = true;
 
             const autoDmText = `🎉 TEBRİKLER / VIP ÖDÜL KAZANDINIZ!\nSayın ${customerName.trim()}, profilinize özel %20 VIP İNDİRİM tanımlanmıştır! (Ödül Kodu: ${rewardCode})\nKeyifli alışverişler dileriz! 🎁✨`;
-            FacebookService.sendMessage(senderId, autoDmText).catch(e => console.error('[Auto Reward DM Error]:', e.message));
+            FacebookService.sendMessage(senderId, autoDmText, storeId).catch(e => console.error('[Auto Reward DM Error]:', e.message));
           }
 
           const combinedProductCode = ctx.cart.map(i => `${i.productCode} (${i.size}) x${i.quantity}`).join(', ');
@@ -435,7 +435,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       func: async (input: string) => {
         try {
           let data: any = typeof input === 'object' ? input : JSON.parse(input);
-          await TelegramService.notifyOrder({
+          await TelegramService.notifyOrder(storeId, {
             customerName: data.customerName || ctx.customerName || 'Müşteri',
             customerPhone: data.customerPhone || ctx.customerPhone || '',
             address: data.address || ctx.address || '',
@@ -528,8 +528,8 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
   public static async processMessage(
     senderId: string, 
     userMessage: string, 
-    storeSlug: string = 'default', 
-    storeId: number = 1,
+    storeSlug: string,
+    storeId: number,
     channel: string = 'instagram'
   ): Promise<{
     reply: string;

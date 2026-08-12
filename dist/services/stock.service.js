@@ -2,7 +2,6 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.StockService = void 0;
 const db_1 = require("../database/db");
-const google_sheets_service_1 = require("./google-sheets.service");
 /**
  * SQLite (barons.db) Destekli Ultra Hızlı Multi-Tenant Stok Yönetim Servisi
  */
@@ -12,6 +11,9 @@ class StockService {
             throw new Error('Store ID zorunludur ve geçerli bir pozitif sayı olmalıdır.');
         }
     }
+    /**
+     * SQLite veritabanındaki mağazaya özel ürün satırlarını getirir.
+     */
     static async fetchAllSheetRows(storeId) {
         this.validateStoreId(storeId);
         try {
@@ -28,20 +30,17 @@ class StockService {
             return [];
         }
     }
+    /**
+     * Mağazaya özel benzersiz ürünlerin güncel stok listesini getirir.
+     */
     static async getAllProducts(storeId) {
         return await this.fetchAllSheetRows(storeId);
     }
-    static async checkStock(storeIdOrQuery, queryInput) {
-        let storeId;
-        let rawQuery;
-        if (typeof storeIdOrQuery === 'number') {
-            storeId = storeIdOrQuery;
-            rawQuery = (queryInput || '').trim().toUpperCase();
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return { exists: false, inStock: false };
-        }
+    /**
+     * Mağaza bazında akıllı stok sorgulama yapar.
+     */
+    static async checkStock(storeId, queryInput) {
+        const rawQuery = queryInput.trim().toUpperCase();
         this.validateStoreId(storeId);
         const rows = await this.fetchAllSheetRows(storeId);
         if (rows.length === 0) {
@@ -96,21 +95,11 @@ class StockService {
             }
         };
     }
-    static async deductStock(storeIdOrCode, quantityOrCode, sizeOrQty, size) {
-        let storeId;
-        let productCode;
-        let quantity;
-        let targetSize;
-        if (typeof storeIdOrCode === 'number') {
-            storeId = storeIdOrCode;
-            productCode = String(quantityOrCode || '');
-            quantity = Number(sizeOrQty) || 1;
-            targetSize = size ? size.trim().toUpperCase() : '';
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return false;
-        }
+    /**
+     * Stok Eksiltme (Mağazaya Özel)
+     */
+    static async deductStock(storeId, productCode, quantity, size) {
+        const targetSize = size ? size.trim().toUpperCase() : '';
         this.validateStoreId(storeId);
         try {
             const targetCode = productCode.trim().toUpperCase();
@@ -152,12 +141,6 @@ class StockService {
             }
             catch (e) { }
             console.log(`[StockService SQLite] 📦 Stok Düşüldü (Store: ${storeId}, ${targetCode}): -${quantity} (Etkilenen Satır: ${result.changes})`);
-            if (storeId === 1) {
-                const updatedProd = db_1.db.prepare(`SELECT stock, product_code FROM products WHERE store_id = 1 AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)`).get(targetCode, targetCode);
-                if (updatedProd && updatedProd.stock !== undefined) {
-                    google_sheets_service_1.GoogleSheetsService.updateProductStock(updatedProd.product_code || targetCode, updatedProd.stock).catch(() => { });
-                }
-            }
             return result.changes > 0;
         }
         catch (e) {
@@ -165,21 +148,11 @@ class StockService {
             return false;
         }
     }
-    static async restoreStock(storeIdOrCode, quantityOrCode, sizeOrQty, size) {
-        let storeId;
-        let productCode;
-        let quantity;
-        let targetSize;
-        if (typeof storeIdOrCode === 'number') {
-            storeId = storeIdOrCode;
-            productCode = String(quantityOrCode || '');
-            quantity = Number(sizeOrQty) || 1;
-            targetSize = size ? size.trim().toUpperCase() : '';
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return false;
-        }
+    /**
+     * Stok İade Etme / Artırma (Mağazaya Özel)
+     */
+    static async restoreStock(storeId, productCode, quantity, size) {
+        const targetSize = size ? size.trim().toUpperCase() : '';
         this.validateStoreId(storeId);
         try {
             const targetCode = productCode.trim().toUpperCase();
@@ -221,12 +194,6 @@ class StockService {
             }
             catch (e) { }
             console.log(`[StockService SQLite] 🔄 Stok İade Edildi (Store: ${storeId}, ${targetCode}): +${quantity}`);
-            if (storeId === 1) {
-                const updatedProd = db_1.db.prepare(`SELECT stock, product_code FROM products WHERE store_id = 1 AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)`).get(targetCode, targetCode);
-                if (updatedProd && updatedProd.stock !== undefined) {
-                    google_sheets_service_1.GoogleSheetsService.updateProductStock(updatedProd.product_code || targetCode, updatedProd.stock).catch(() => { });
-                }
-            }
             return result.changes > 0;
         }
         catch (e) {
@@ -282,17 +249,11 @@ class StockService {
             return { success: false, productCode: data.productCode || data.shortCode };
         }
     }
-    static async deleteProduct(storeIdOrCode, productCode) {
-        let storeId;
-        let targetCode;
-        if (typeof storeIdOrCode === 'number') {
-            storeId = storeIdOrCode;
-            targetCode = String(productCode || '');
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return false;
-        }
+    /**
+     * SQLite Veritabanından Ürün Siler (Mağazaya Özel)
+     */
+    static async deleteProduct(storeId, productCode) {
+        const targetCode = productCode;
         this.validateStoreId(storeId);
         try {
             const target = targetCode.trim().toUpperCase();
@@ -304,9 +265,6 @@ class StockService {
             }
             catch (e) { }
             console.log(`[StockService SQLite] 🗑️ Ürün silindi (Store: ${storeId}): ${target}`);
-            if (storeId === 1) {
-                google_sheets_service_1.GoogleSheetsService.deleteProductRow(target).catch(() => { });
-            }
             return res.changes > 0;
         }
         catch (e) {
@@ -314,19 +272,12 @@ class StockService {
             return false;
         }
     }
-    static async updateStock(storeIdOrCode, productCodeOrStock, newStock) {
-        let storeId;
-        let targetCode;
-        let stockNum;
-        if (typeof storeIdOrCode === 'number') {
-            storeId = storeIdOrCode;
-            targetCode = String(productCodeOrStock || '').trim().toUpperCase();
-            stockNum = Number(newStock);
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return false;
-        }
+    /**
+     * SQLite Veritabanında Ürün Stok Miktarını Günceller (Mağazaya Özel)
+     */
+    static async updateStock(storeId, productCode, newStock) {
+        const targetCode = productCode.trim().toUpperCase();
+        const stockNum = Number(newStock);
         this.validateStoreId(storeId);
         if (isNaN(stockNum) || stockNum < 0) {
             console.warn(`[StockService SQLite] ❌ Geçersiz stok miktarı (Store: ${storeId}): ${newStock}`);
@@ -355,9 +306,6 @@ class StockService {
             }
             catch (e) { }
             console.log(`[StockService SQLite] 📦 Ürün (${target}) Stoğu Güncellendi (Store: ${storeId}): ${stockNum}`);
-            if (storeId === 1) {
-                google_sheets_service_1.GoogleSheetsService.updateProductStock(target, stockNum).catch(() => { });
-            }
             return res.changes > 0;
         }
         catch (e) {

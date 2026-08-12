@@ -20,20 +20,8 @@ export class InventoryService {
   /**
    * getStock - Fetches total, reserved, and net available stock for a product in a specific store (Strict Store Isolation)
    */
-  public static getStock(storeId: number, productCode: string): StockCheckResult;
-  public static getStock(productCode: string): StockCheckResult;
-  public static getStock(storeIdOrCode: any, productCode?: string): StockCheckResult {
-    let storeId: number;
-    let pCode: string;
-
-    if (typeof storeIdOrCode === 'number') {
-      storeId = storeIdOrCode;
-      pCode = (productCode || '').trim().toUpperCase();
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return { available: false, stock: 0, reserved: 0, netAvailable: 0 };
-    }
-
+  public static getStock(storeId: number, productCode: string): StockCheckResult {
+    const pCode = productCode.trim().toUpperCase();
     this.validateStoreId(storeId);
     
     // Check inventory table first for this exact store
@@ -61,22 +49,9 @@ export class InventoryService {
   /**
    * checkAvailability - Checks if requested quantity is available for storeId
    */
-  public static checkAvailability(storeId: number, productCode: string, quantity: number): boolean;
-  public static checkAvailability(productCode: string, quantity: number): boolean;
-  public static checkAvailability(storeIdOrCode: any, quantityOrCode?: any, quantity?: number): boolean {
-    let storeId: number;
-    let pCode: string;
-    let q: number;
-
-    if (typeof storeIdOrCode === 'number') {
-      storeId = storeIdOrCode;
-      pCode = String(quantityOrCode || '');
-      q = Number(quantity) || 1;
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return false;
-    }
-
+  public static checkAvailability(storeId: number, productCode: string, quantity: number): boolean {
+    const pCode = productCode;
+    const q = Number(quantity) || 1;
     this.validateStoreId(storeId);
     const res = this.getStock(storeId, pCode);
     return res.netAvailable >= Math.max(1, q);
@@ -85,22 +60,9 @@ export class InventoryService {
   /**
    * reserveStock - Temporarily reserves stock for cart / checkout (Strict Store Isolation)
    */
-  public static reserveStock(storeId: number, productCode: string, quantity: number): boolean;
-  public static reserveStock(productCode: string, quantity: number): boolean;
-  public static reserveStock(storeIdOrCode: any, quantityOrCode?: any, quantity?: number): boolean {
-    let storeId: number;
-    let pCode: string;
-    let q: number;
-
-    if (typeof storeIdOrCode === 'number') {
-      storeId = storeIdOrCode;
-      pCode = String(quantityOrCode || '').trim().toUpperCase();
-      q = Number(quantity) || 1;
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return false;
-    }
-
+  public static reserveStock(storeId: number, productCode: string, quantity: number): boolean {
+    const pCode = productCode.trim().toUpperCase();
+    const q = Number(quantity) || 1;
     this.validateStoreId(storeId);
 
     if (!this.checkAvailability(storeId, pCode, q)) {
@@ -131,22 +93,9 @@ export class InventoryService {
   /**
    * releaseStock - Releases temporary stock reservation for storeId
    */
-  public static releaseStock(storeId: number, productCode: string, quantity: number): void;
-  public static releaseStock(productCode: string, quantity: number): void;
-  public static releaseStock(storeIdOrCode: any, quantityOrCode?: any, quantity?: number): void {
-    let storeId: number;
-    let pCode: string;
-    let q: number;
-
-    if (typeof storeIdOrCode === 'number') {
-      storeId = storeIdOrCode;
-      pCode = String(quantityOrCode || '').trim().toUpperCase();
-      q = Number(quantity) || 1;
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return;
-    }
-
+  public static releaseStock(storeId: number, productCode: string, quantity: number): void {
+    const pCode = productCode.trim().toUpperCase();
+    const q = Number(quantity) || 1;
     this.validateStoreId(storeId);
 
     db.prepare(`
@@ -159,22 +108,9 @@ export class InventoryService {
   /**
    * deductStock - Permanently deducts stock upon order confirmation (Strict Store Isolation)
    */
-  public static deductStock(storeId: number, productCode: string, quantity: number): boolean;
-  public static deductStock(productCode: string, quantity: number): boolean;
-  public static deductStock(storeIdOrCode: any, quantityOrCode?: any, quantity?: number): boolean {
-    let storeId: number;
-    let pCode: string;
-    let q: number;
-
-    if (typeof storeIdOrCode === 'number') {
-      storeId = storeIdOrCode;
-      pCode = String(quantityOrCode || '').trim().toUpperCase();
-      q = Number(quantity) || 1;
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return false;
-    }
-
+  public static deductStock(storeId: number, productCode: string, quantity: number): boolean {
+    const pCode = productCode.trim().toUpperCase();
+    const q = Number(quantity) || 1;
     this.validateStoreId(storeId);
 
     const result = db.prepare(`
@@ -196,22 +132,9 @@ export class InventoryService {
   /**
    * restoreStock - Restores stock upon order cancellation or return (Strict Store Isolation)
    */
-  public static restoreStock(storeId: number, productCode: string, quantity: number): void;
-  public static restoreStock(productCode: string, quantity: number): void;
-  public static restoreStock(storeIdOrCode: any, quantityOrCode?: any, quantity?: number): void {
-    let storeId: number;
-    let pCode: string;
-    let q: number;
-
-    if (typeof storeIdOrCode === 'number') {
-      storeId = storeIdOrCode;
-      pCode = String(quantityOrCode || '').trim().toUpperCase();
-      q = Number(quantity) || 1;
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return;
-    }
-
+  public static restoreStock(storeId: number, productCode: string, quantity: number): void {
+    const pCode = productCode.trim().toUpperCase();
+    const q = Number(quantity) || 1;
     this.validateStoreId(storeId);
 
     db.prepare(`

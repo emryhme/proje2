@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { env } from '../config/env';
 import { StockService } from './stock.service';
-import { GoogleSheetsService } from './google-sheets.service';
 
 export interface AIProductItem {
   shortCode: string;
@@ -33,7 +32,7 @@ export class GeminiService {
   /**
    * Doğal dil komutundan Gemini AI kullanarak ürün dizisi oluşturur ve veritabanına kaydedici (Store Isolated).
    */
-  public static async createProductFromPrompt(prompt: string, storeId: number = 1): Promise<AIBatchResult> {
+  public static async createProductFromPrompt(prompt: string, storeId: number): Promise<AIBatchResult> {
     this.validateStoreId(storeId);
     try {
       const apiKey = env.geminiApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
@@ -59,7 +58,6 @@ export class GeminiService {
         return { success: false, error: 'Ürün bilgisi ayrıştırılamadı.' };
       }
 
-      const rowsToAppend: string[][] = [];
       const savedProducts: AIProductItem[] = [];
 
       for (const item of parsedProducts) {
@@ -92,19 +90,6 @@ export class GeminiService {
           category: cleanCategory
         });
 
-        rowsToAppend.push([
-          cleanShortCode,
-          cleanProductCode,
-          cleanName,
-          cleanColor,
-          cleanSize,
-          String(cleanStock),
-          cleanCategory
-        ]);
-      }
-
-      if (storeId === 1) {
-        GoogleSheetsService.appendProductRowsBatch(rowsToAppend).catch(() => {});
       }
 
       const totalStockAdded = savedProducts.reduce((acc, p) => acc + p.stock, 0);

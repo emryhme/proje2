@@ -2,7 +2,6 @@ import axios from 'axios';
 import { env } from '../config/env';
 import { db } from '../database/db';
 import { StockService } from './stock.service';
-import { GoogleSheetsService } from './google-sheets.service';
 import { TelegramService } from './telegram.service';
 import { FacebookService } from './facebook.service';
 
@@ -68,23 +67,7 @@ export class OrderService {
   /**
    * Sipariş oluşturur (Strict Store Isolation & Transaction Support)
    */
-  public static async createOrder(storeId: number, data: OrderData): Promise<SavedOrder>;
-  public static async createOrder(data: OrderData): Promise<SavedOrder>;
-  public static async createOrder(storeIdOrData: any, dataInput?: OrderData): Promise<SavedOrder> {
-    let storeId: number;
-    let data: OrderData;
-
-    if (typeof storeIdOrData === 'number') {
-      storeId = storeIdOrData;
-      data = dataInput!;
-    } else if (storeIdOrData && typeof storeIdOrData.storeId === 'number') {
-      storeId = storeIdOrData.storeId;
-      data = storeIdOrData;
-    } else {
-      this.validateStoreId(undefined); // Throws Error immediately!
-      throw new Error('Store ID zorunludur');
-    }
-
+  public static async createOrder(storeId: number, data: OrderData): Promise<SavedOrder> {
     this.validateStoreId(storeId);
 
     const orderId = this.generateOrderId(data.productCode, data.size, data.customerPhone);
@@ -216,11 +199,6 @@ export class OrderService {
     const calcResult = createOrderTx();
     console.log(`[OrderService SQLite] 🛍️ Sipariş Veritabanına Atomik İşlemle Kaydedildi (Store: ${storeId}): ${orderId}`);
 
-    if (storeId === 1) {
-      const rowValues = [firstName, lastName, data.customerPhone, data.address, quantity, data.productCode, createdAt, orderId, status, senderId];
-      GoogleSheetsService.appendOrderRow(rowValues).catch(() => {});
-    }
-
     return {
       orderId,
       customerName: data.customerName,
@@ -243,17 +221,7 @@ export class OrderService {
   /**
    * Siparişleri SQLite veritabanından mağaza bazında getirir (Strict Store Isolation).
    */
-  public static async getOrders(storeId: number): Promise<SavedOrder[]>;
-  public static async getOrders(): Promise<SavedOrder[]>;
-  public static async getOrders(storeIdOrAny?: any): Promise<SavedOrder[]> {
-    let storeId: number;
-    if (typeof storeIdOrAny === 'number') {
-      storeId = storeIdOrAny;
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return [];
-    }
-
+  public static async getOrders(storeId: number): Promise<SavedOrder[]> {
     this.validateStoreId(storeId);
 
     try {
@@ -307,20 +275,8 @@ export class OrderService {
   /**
    * Mağazaya özel tek sipariş sorgulama
    */
-  public static async getOrder(storeId: number, orderId: string): Promise<SavedOrder | null>;
-  public static async getOrder(orderId: string): Promise<SavedOrder | null>;
-  public static async getOrder(storeIdOrId: any, orderId?: string): Promise<SavedOrder | null> {
-    let storeId: number;
-    let targetOrderId: string;
-
-    if (typeof storeIdOrId === 'number') {
-      storeId = storeIdOrId;
-      targetOrderId = String(orderId || '');
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return null;
-    }
-
+  public static async getOrder(storeId: number, orderId: string): Promise<SavedOrder | null> {
+    const targetOrderId = orderId;
     this.validateStoreId(storeId);
 
     const r = db.prepare(`
@@ -369,24 +325,10 @@ export class OrderService {
   /**
    * Sipariş Onay / Red İşlemi (Mağazaya Özel)
    */
-  public static async updateOrderStatus(storeId: number, orderId: string, status: 'OK' | 'DEC', reason?: string): Promise<boolean>;
-  public static async updateOrderStatus(orderId: string, status: 'OK' | 'DEC', reason?: string): Promise<boolean>;
-  public static async updateOrderStatus(storeIdOrId: any, orderIdOrStatus?: any, statusOrReason?: any, reason?: string): Promise<boolean> {
-    let storeId: number;
-    let targetOrderId: string;
-    let targetStatus: 'OK' | 'DEC';
-    let targetReason: string | undefined;
-
-    if (typeof storeIdOrId === 'number') {
-      storeId = storeIdOrId;
-      targetOrderId = String(orderIdOrStatus || '');
-      targetStatus = statusOrReason;
-      targetReason = reason;
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return false;
-    }
-
+  public static async updateOrderStatus(storeId: number, orderId: string, status: 'OK' | 'DEC', reason?: string): Promise<boolean> {
+    const targetOrderId = orderId;
+    const targetStatus = status;
+    const targetReason = reason;
     this.validateStoreId(storeId);
 
     try {
@@ -414,7 +356,7 @@ export class OrderService {
             const defaultReason = 'Siparişiniz operasyonel nedenlerle onaylanamamıştır.';
             const cleanReason = targetReason && targetReason.trim() ? targetReason.trim() : defaultReason;
             const dmMessage = `Sayın ${customerName},\n\nSiparişiniz (#${targetOrderId}) maalesef onaylanamamıştır.\n\nİptal / Red Nedeni:\n${cleanReason}\n\nAnlayışınız için teşekkür eder, keyifli günler dileriz. 🌸`;
-            FacebookService.sendMessage(senderId, dmMessage).catch(() => {});
+            FacebookService.sendMessage(senderId, dmMessage, storeId).catch(() => {});
           }
         } else if (targetStatus === 'OK') {
           if (prevStatus === 'DEC') {
@@ -422,9 +364,6 @@ export class OrderService {
           }
         }
 
-        if (storeId === 1) {
-          GoogleSheetsService.updateOrderStatus(targetOrderId, targetStatus).catch(() => {});
-        }
         return true;
       }
       return false;
@@ -437,20 +376,8 @@ export class OrderService {
   /**
    * Sipariş Silme (Mağazaya Özel)
    */
-  public static async deleteOrder(storeId: number, orderId: string): Promise<boolean>;
-  public static async deleteOrder(orderId: string): Promise<boolean>;
-  public static async deleteOrder(storeIdOrId: any, orderId?: string): Promise<boolean> {
-    let storeId: number;
-    let targetOrderId: string;
-
-    if (typeof storeIdOrId === 'number') {
-      storeId = storeIdOrId;
-      targetOrderId = String(orderId || '');
-    } else {
-      this.validateStoreId(undefined); // Throws Error
-      return false;
-    }
-
+  public static async deleteOrder(storeId: number, orderId: string): Promise<boolean> {
+    const targetOrderId = orderId;
     this.validateStoreId(storeId);
 
     try {
@@ -471,9 +398,6 @@ export class OrderService {
           await StockService.restoreStock(storeId, existingOrder.product_code, Number(existingOrder.quantity) || 1, existingOrder.size);
         }
 
-        if (storeId === 1) {
-          GoogleSheetsService.deleteOrderRow(targetOrderId).catch(() => {});
-        }
         return true;
       }
       return false;

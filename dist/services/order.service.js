@@ -3,7 +3,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.OrderService = void 0;
 const db_1 = require("../database/db");
 const stock_service_1 = require("./stock.service");
-const google_sheets_service_1 = require("./google-sheets.service");
 const facebook_service_1 = require("./facebook.service");
 /**
  * SQLite (barons.db) Destekli Ultra Hızlı Multi-Tenant Sipariş Servisi
@@ -31,21 +30,10 @@ class OrderService {
         }
         return `BRN-${baseCode}-${lastThreePhone}-${timeStamp}`;
     }
-    static async createOrder(storeIdOrData, dataInput) {
-        let storeId;
-        let data;
-        if (typeof storeIdOrData === 'number') {
-            storeId = storeIdOrData;
-            data = dataInput;
-        }
-        else if (storeIdOrData && typeof storeIdOrData.storeId === 'number') {
-            storeId = storeIdOrData.storeId;
-            data = storeIdOrData;
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error immediately!
-            throw new Error('Store ID zorunludur');
-        }
+    /**
+     * Sipariş oluşturur (Strict Store Isolation & Transaction Support)
+     */
+    static async createOrder(storeId, data) {
         this.validateStoreId(storeId);
         const orderId = this.generateOrderId(data.productCode, data.size, data.customerPhone);
         const createdAt = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
@@ -134,10 +122,6 @@ class OrderService {
         });
         const calcResult = createOrderTx();
         console.log(`[OrderService SQLite] 🛍️ Sipariş Veritabanına Atomik İşlemle Kaydedildi (Store: ${storeId}): ${orderId}`);
-        if (storeId === 1) {
-            const rowValues = [firstName, lastName, data.customerPhone, data.address, quantity, data.productCode, createdAt, orderId, status, senderId];
-            google_sheets_service_1.GoogleSheetsService.appendOrderRow(rowValues).catch(() => { });
-        }
         return {
             orderId,
             customerName: data.customerName,
@@ -156,15 +140,10 @@ class OrderService {
             senderId
         };
     }
-    static async getOrders(storeIdOrAny) {
-        let storeId;
-        if (typeof storeIdOrAny === 'number') {
-            storeId = storeIdOrAny;
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return [];
-        }
+    /**
+     * Siparişleri SQLite veritabanından mağaza bazında getirir (Strict Store Isolation).
+     */
+    static async getOrders(storeId) {
         this.validateStoreId(storeId);
         try {
             const stmt = db_1.db.prepare(`
@@ -213,17 +192,11 @@ class OrderService {
             return [];
         }
     }
-    static async getOrder(storeIdOrId, orderId) {
-        let storeId;
-        let targetOrderId;
-        if (typeof storeIdOrId === 'number') {
-            storeId = storeIdOrId;
-            targetOrderId = String(orderId || '');
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return null;
-        }
+    /**
+     * Mağazaya özel tek sipariş sorgulama
+     */
+    static async getOrder(storeId, orderId) {
+        const targetOrderId = orderId;
         this.validateStoreId(storeId);
         const r = db_1.db.prepare(`
       SELECT 
@@ -266,21 +239,13 @@ class OrderService {
             senderId: r.senderId || ''
         };
     }
-    static async updateOrderStatus(storeIdOrId, orderIdOrStatus, statusOrReason, reason) {
-        let storeId;
-        let targetOrderId;
-        let targetStatus;
-        let targetReason;
-        if (typeof storeIdOrId === 'number') {
-            storeId = storeIdOrId;
-            targetOrderId = String(orderIdOrStatus || '');
-            targetStatus = statusOrReason;
-            targetReason = reason;
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return false;
-        }
+    /**
+     * Sipariş Onay / Red İşlemi (Mağazaya Özel)
+     */
+    static async updateOrderStatus(storeId, orderId, status, reason) {
+        const targetOrderId = orderId;
+        const targetStatus = status;
+        const targetReason = reason;
         this.validateStoreId(storeId);
         try {
             const existingOrder = db_1.db.prepare(`SELECT * FROM orders WHERE store_id = ? AND order_id = ?`).get(storeId, targetOrderId);
@@ -303,16 +268,13 @@ class OrderService {
                         const defaultReason = 'Siparişiniz operasyonel nedenlerle onaylanamamıştır.';
                         const cleanReason = targetReason && targetReason.trim() ? targetReason.trim() : defaultReason;
                         const dmMessage = `Sayın ${customerName},\n\nSiparişiniz (#${targetOrderId}) maalesef onaylanamamıştır.\n\nİptal / Red Nedeni:\n${cleanReason}\n\nAnlayışınız için teşekkür eder, keyifli günler dileriz. 🌸`;
-                        facebook_service_1.FacebookService.sendMessage(senderId, dmMessage).catch(() => { });
+                        facebook_service_1.FacebookService.sendMessage(senderId, dmMessage, storeId).catch(() => { });
                     }
                 }
                 else if (targetStatus === 'OK') {
                     if (prevStatus === 'DEC') {
                         await stock_service_1.StockService.deductStock(storeId, targetProductCode, qty, existingOrder.size);
                     }
-                }
-                if (storeId === 1) {
-                    google_sheets_service_1.GoogleSheetsService.updateOrderStatus(targetOrderId, targetStatus).catch(() => { });
                 }
                 return true;
             }
@@ -323,17 +285,11 @@ class OrderService {
             return false;
         }
     }
-    static async deleteOrder(storeIdOrId, orderId) {
-        let storeId;
-        let targetOrderId;
-        if (typeof storeIdOrId === 'number') {
-            storeId = storeIdOrId;
-            targetOrderId = String(orderId || '');
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return false;
-        }
+    /**
+     * Sipariş Silme (Mağazaya Özel)
+     */
+    static async deleteOrder(storeId, orderId) {
+        const targetOrderId = orderId;
         this.validateStoreId(storeId);
         try {
             const existingOrder = db_1.db.prepare(`SELECT * FROM orders WHERE store_id = ? AND order_id = ?`).get(storeId, targetOrderId);
@@ -349,9 +305,6 @@ class OrderService {
                 catch (e) { }
                 if (existingOrder.status !== 'DEC') {
                     await stock_service_1.StockService.restoreStock(storeId, existingOrder.product_code, Number(existingOrder.quantity) || 1, existingOrder.size);
-                }
-                if (storeId === 1) {
-                    google_sheets_service_1.GoogleSheetsService.deleteOrderRow(targetOrderId).catch(() => { });
                 }
                 return true;
             }

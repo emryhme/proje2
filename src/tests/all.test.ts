@@ -219,6 +219,22 @@ async function runTestSuite() {
   const storeAHasStoreBItem = storeAProds.some(p => p.name === 'T-Shirt B');
   assert(storeAProds.length > 0 && !storeAHasStoreBItem, 'Store A product stock query cannot see Store B products');
 
+  let missingStoreIdRejected = false;
+  try {
+    await (StockService.getAllProducts as any)();
+  } catch {
+    missingStoreIdRejected = true;
+  }
+  assert(missingStoreIdRejected, 'Stock service rejects calls without an explicit store ID');
+
+  let missingOrderStoreIdRejected = false;
+  try {
+    await (OrderService.getOrders as any)();
+  } catch {
+    missingOrderStoreIdRejected = true;
+  }
+  assert(missingOrderStoreIdRejected, 'Order service rejects calls without an explicit store ID');
+
   console.log('\n2️⃣2️⃣ WEBHOOK SECURITY ATTACK TEST 6: Cross-Tenant Order ID Lookup Protection');
   db.prepare("INSERT INTO orders (order_id, store_id, first_name, customer_phone, address, product_code, total_price, status) VALUES ('ORD99901', 200, 'Beta Customer', '0555', 'Address', 'TSH-M', 450, 'completed')").run();
   const crossOrderLookup = db.prepare("SELECT * FROM orders WHERE store_id = 100 AND order_id = 'ORD99901'").get();

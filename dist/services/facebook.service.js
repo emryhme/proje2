@@ -5,7 +5,6 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.FacebookService = void 0;
 const axios_1 = __importDefault(require("axios"));
-const env_1 = require("../config/env");
 const db_1 = require("../database/db");
 /**
  * Facebook Graph API (Instagram DM / Messenger) Yanıt Gönderme Servisi (Store Scoped)
@@ -15,16 +14,11 @@ class FacebookService {
      * Müşteriye yanıt mesajı gönderir (Per-Store Credential Support).
      */
     static async sendMessage(recipientId, text, storeId) {
-        let accessToken = env_1.env.fbPageAccessToken;
-        if (storeId) {
-            try {
-                const setting = db_1.db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'facebook_page_access_token'").get(storeId);
-                if (setting && setting.value && setting.value.trim()) {
-                    accessToken = setting.value.trim();
-                }
-            }
-            catch { }
+        if (!Number.isInteger(storeId) || storeId <= 0) {
+            throw new Error('Store ID zorunludur.');
         }
+        const setting = db_1.db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'facebook_page_access_token'").get(storeId);
+        const accessToken = String(setting?.value || '').trim();
         if (!accessToken) {
             console.warn(`[FacebookService] ⚠️ FB Page Access Token eksik (Store: ${storeId || 'default'}), mesaj konsola yazdırılıyor:`);
             console.log(`[FB Mock -> ${recipientId}]: ${text}`);

@@ -11,17 +11,11 @@ class InventoryService {
             throw new Error('Store ID zorunludur ve geçerli bir pozitif sayı olmalıdır.');
         }
     }
-    static getStock(storeIdOrCode, productCode) {
-        let storeId;
-        let pCode;
-        if (typeof storeIdOrCode === 'number') {
-            storeId = storeIdOrCode;
-            pCode = (productCode || '').trim().toUpperCase();
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return { available: false, stock: 0, reserved: 0, netAvailable: 0 };
-        }
+    /**
+     * getStock - Fetches total, reserved, and net available stock for a product in a specific store (Strict Store Isolation)
+     */
+    static getStock(storeId, productCode) {
+        const pCode = productCode.trim().toUpperCase();
         this.validateStoreId(storeId);
         // Check inventory table first for this exact store
         let inv = db_1.db.prepare('SELECT stock, reserved_stock FROM inventory WHERE store_id = ? AND UPPER(product_code) = ?').get(storeId, pCode);
@@ -41,36 +35,22 @@ class InventoryService {
             netAvailable: net
         };
     }
-    static checkAvailability(storeIdOrCode, quantityOrCode, quantity) {
-        let storeId;
-        let pCode;
-        let q;
-        if (typeof storeIdOrCode === 'number') {
-            storeId = storeIdOrCode;
-            pCode = String(quantityOrCode || '');
-            q = Number(quantity) || 1;
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return false;
-        }
+    /**
+     * checkAvailability - Checks if requested quantity is available for storeId
+     */
+    static checkAvailability(storeId, productCode, quantity) {
+        const pCode = productCode;
+        const q = Number(quantity) || 1;
         this.validateStoreId(storeId);
         const res = this.getStock(storeId, pCode);
         return res.netAvailable >= Math.max(1, q);
     }
-    static reserveStock(storeIdOrCode, quantityOrCode, quantity) {
-        let storeId;
-        let pCode;
-        let q;
-        if (typeof storeIdOrCode === 'number') {
-            storeId = storeIdOrCode;
-            pCode = String(quantityOrCode || '').trim().toUpperCase();
-            q = Number(quantity) || 1;
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return false;
-        }
+    /**
+     * reserveStock - Temporarily reserves stock for cart / checkout (Strict Store Isolation)
+     */
+    static reserveStock(storeId, productCode, quantity) {
+        const pCode = productCode.trim().toUpperCase();
+        const q = Number(quantity) || 1;
         this.validateStoreId(storeId);
         if (!this.checkAvailability(storeId, pCode, q)) {
             return false;
@@ -94,19 +74,12 @@ class InventoryService {
         }
         return true;
     }
-    static releaseStock(storeIdOrCode, quantityOrCode, quantity) {
-        let storeId;
-        let pCode;
-        let q;
-        if (typeof storeIdOrCode === 'number') {
-            storeId = storeIdOrCode;
-            pCode = String(quantityOrCode || '').trim().toUpperCase();
-            q = Number(quantity) || 1;
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return;
-        }
+    /**
+     * releaseStock - Releases temporary stock reservation for storeId
+     */
+    static releaseStock(storeId, productCode, quantity) {
+        const pCode = productCode.trim().toUpperCase();
+        const q = Number(quantity) || 1;
         this.validateStoreId(storeId);
         db_1.db.prepare(`
       UPDATE inventory 
@@ -114,19 +87,12 @@ class InventoryService {
       WHERE store_id = ? AND UPPER(product_code) = ?
     `).run(q, storeId, pCode);
     }
-    static deductStock(storeIdOrCode, quantityOrCode, quantity) {
-        let storeId;
-        let pCode;
-        let q;
-        if (typeof storeIdOrCode === 'number') {
-            storeId = storeIdOrCode;
-            pCode = String(quantityOrCode || '').trim().toUpperCase();
-            q = Number(quantity) || 1;
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return false;
-        }
+    /**
+     * deductStock - Permanently deducts stock upon order confirmation (Strict Store Isolation)
+     */
+    static deductStock(storeId, productCode, quantity) {
+        const pCode = productCode.trim().toUpperCase();
+        const q = Number(quantity) || 1;
         this.validateStoreId(storeId);
         const result = db_1.db.prepare(`
       UPDATE products 
@@ -141,19 +107,12 @@ class InventoryService {
     `).run(q, q, storeId, pCode);
         return result.changes > 0;
     }
-    static restoreStock(storeIdOrCode, quantityOrCode, quantity) {
-        let storeId;
-        let pCode;
-        let q;
-        if (typeof storeIdOrCode === 'number') {
-            storeId = storeIdOrCode;
-            pCode = String(quantityOrCode || '').trim().toUpperCase();
-            q = Number(quantity) || 1;
-        }
-        else {
-            this.validateStoreId(undefined); // Throws Error
-            return;
-        }
+    /**
+     * restoreStock - Restores stock upon order cancellation or return (Strict Store Isolation)
+     */
+    static restoreStock(storeId, productCode, quantity) {
+        const pCode = productCode.trim().toUpperCase();
+        const q = Number(quantity) || 1;
         this.validateStoreId(storeId);
         db_1.db.prepare(`
       UPDATE products 

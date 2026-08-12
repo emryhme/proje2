@@ -5,6 +5,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 Object.defineProperty(exports, "__esModule", { value: true });
 const crypto_1 = __importDefault(require("crypto"));
 const stock_service_1 = require("../services/stock.service");
+const order_service_1 = require("../services/order.service");
 const ai_service_1 = require("../services/ai.service");
 const webhook_controller_1 = require("../controllers/webhook.controller");
 const auth_middleware_1 = require("../middleware/auth.middleware");
@@ -192,6 +193,22 @@ async function runTestSuite() {
     const storeAProds = await stock_service_1.StockService.getAllProducts(100);
     const storeAHasStoreBItem = storeAProds.some(p => p.name === 'T-Shirt B');
     assert(storeAProds.length > 0 && !storeAHasStoreBItem, 'Store A product stock query cannot see Store B products');
+    let missingStoreIdRejected = false;
+    try {
+        await stock_service_1.StockService.getAllProducts();
+    }
+    catch {
+        missingStoreIdRejected = true;
+    }
+    assert(missingStoreIdRejected, 'Stock service rejects calls without an explicit store ID');
+    let missingOrderStoreIdRejected = false;
+    try {
+        await order_service_1.OrderService.getOrders();
+    }
+    catch {
+        missingOrderStoreIdRejected = true;
+    }
+    assert(missingOrderStoreIdRejected, 'Order service rejects calls without an explicit store ID');
     console.log('\n2️⃣2️⃣ WEBHOOK SECURITY ATTACK TEST 6: Cross-Tenant Order ID Lookup Protection');
     db_1.db.prepare("INSERT INTO orders (order_id, store_id, first_name, customer_phone, address, product_code, total_price, status) VALUES ('ORD99901', 200, 'Beta Customer', '0555', 'Address', 'TSH-M', 450, 'completed')").run();
     const crossOrderLookup = db_1.db.prepare("SELECT * FROM orders WHERE store_id = 100 AND order_id = 'ORD99901'").get();
