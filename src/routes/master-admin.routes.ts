@@ -3,6 +3,7 @@ import { db } from '../database/db';
 import { AuthMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
 
 const router = Router();
+const ALLOWED_PLANS = ['Starter Store', 'Pro Store', 'Enterprise Store'];
 
 // MASTER ADMIN API ENDPOINTS (/api/master-admin/*)
 // Strictly enforced with AuthMiddleware.requireMasterAdmin
@@ -102,7 +103,7 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
       return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
     }
 
-    const owner = db.prepare("SELECT id, full_name, email, phone, tc_no, status, created_at FROM users WHERE id = ?").get(store.owner_id) as any;
+    const owner = db.prepare("SELECT id, full_name, email, phone, status, created_at FROM users WHERE id = ?").get(store.owner_id) as any;
     const membership = db.prepare("SELECT * FROM memberships WHERE user_id = ? AND store_id = ?").get(store.owner_id, targetStoreId) as any;
     const application = db.prepare("SELECT * FROM merchant_applications WHERE LOWER(email) = LOWER(?)").get(owner?.email || '') as any;
 
@@ -263,8 +264,11 @@ router.post('/api/master-admin/stores/:storeId/activate', AuthMiddleware.authent
 router.post('/api/master-admin/stores/:storeId/change-plan', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, (req: AuthenticatedRequest, res) => {
   try {
     const targetStoreId = Number(req.params.storeId);
-    const { plan } = req.body || {};
-    if (!plan) {
+    if (targetStoreId === 1) {
+      return res.status(400).json({ success: false, error: 'Master Admin store plan cannot be changed.' });
+    }
+    const plan = String(req.body?.plan || '').trim();
+    if (!ALLOWED_PLANS.includes(plan)) {
       return res.status(400).json({ success: false, error: 'Yeni paket adÃƒâ€Ã‚Â± zorunludur.' });
     }
 

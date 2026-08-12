@@ -24,7 +24,6 @@
     <li><a href="index.html"><i class="fa-solid fa-chart-pie"></i> Dashboard</a></li>
     <li class="active"><a href="merchants.html"><i class="fa-solid fa-store"></i> Tüccarlar & Mağazalar</a></li>
     <li><a href="applications.html"><i class="fa-solid fa-file-signature"></i> Başvuru Yönetimi</a></li>
-    <li><a href="/admin/index.html" target="_blank"><i class="fa-solid fa-arrow-up-right-from-square"></i> Tüccar Paneli (Demo)</a></li>
   </ul>
 
   <div class="sidebar-footer">
@@ -39,10 +38,10 @@
     </div>
 
     <div class="user-profile" onclick="logoutMasterAdmin()">
-      <div class="user-avatar">TS</div>
+      <div class="user-avatar" id="masterUserAvatar">MA</div>
       <div style="font-size:12px;">
-        <strong style="display:block; color:white;">Tony Stark</strong>
-        <span style="color:#818cf8;">Platform Owner</span>
+        <strong style="display:block; color:white;" id="masterUserName">Yükleniyor...</strong>
+        <span style="color:#818cf8;" id="masterUserRole">Platform Yöneticisi</span>
       </div>
       <i class="fa-solid fa-right-from-bracket" style="color:#ef4444; margin-left:8px;" title="Çıkış Yap"></i>
     </div>
@@ -79,10 +78,6 @@
           <strong style="display:block; font-size:14px; color:white; margin-top:2px;" id="detailOwnerPhone">-</strong>
         </div>
 
-        <div>
-          <span style="font-size:11px; color:var(--text-muted); font-weight:700;">T.C. KİMLİK NO</span>
-          <strong style="display:block; font-size:14px; color:white; margin-top:2px;" id="detailOwnerTc">-</strong>
-        </div>
 
         <div>
           <span style="font-size:11px; color:var(--text-muted); font-weight:700;">PAKET</span>

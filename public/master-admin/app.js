@@ -101,6 +101,26 @@ function checkMasterAuth() {
   }
 }
 
+function renderMasterUser() {
+  const rawUser = localStorage.getItem('barons_admin_user');
+  if (!rawUser) return;
+
+  try {
+    const user = JSON.parse(rawUser);
+    const name = String(user.name || user.email || 'Platform Yöneticisi');
+    const initials = name.split(/\s+|@/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'MA';
+    const avatar = document.getElementById('masterUserAvatar');
+    const nameElement = document.getElementById('masterUserName');
+    const roleElement = document.getElementById('masterUserRole');
+
+    if (avatar) avatar.textContent = initials;
+    if (nameElement) nameElement.textContent = name;
+    if (roleElement) roleElement.textContent = user.role === 'OWNER' ? 'Platform Yöneticisi' : user.role || 'Platform Yöneticisi';
+  } catch (error) {
+    // checkMasterAuth handles invalid session data and redirects to login.
+  }
+}
+
 function logoutMasterAdmin() {
   localStorage.removeItem('barons_admin_token');
   localStorage.removeItem('barons_admin_user');
@@ -172,7 +192,9 @@ async function loadDashboardData() {
         }
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    showToast('Gösterge paneli verileri yüklenemedi. Lütfen sayfayı yenileyin.', 'error');
+  }
 }
 
 // 2. Merchants List Loader
@@ -187,7 +209,7 @@ async function loadMerchantsList() {
     const data = await apiFetch(`/api/master-admin/merchants?search=${encodeURIComponent(search)}&status=${encodeURIComponent(status)}`);
     if (data && data.success && Array.isArray(data.merchants)) {
       if (data.merchants.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding: 1.5rem; color: #94a3b8;">Filtrelere uygun tüccar bulunamadı.</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 1.5rem; color: #94a3b8;">Filtrelere uygun tüccar bulunamadı.</td></tr>`;
         return;
       }
       tableBody.innerHTML = data.merchants.map(m => `
@@ -210,7 +232,8 @@ async function loadMerchantsList() {
       `).join('');
     }
   } catch (e) {
-    tableBody.innerHTML = `<tr><td colspan="9" style="text-align:center; padding: 1.5rem; color: #ef4444;">Tüccarlar yüklenirken hata oluştu.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 1.5rem; color: #ef4444;">Tüccarlar yüklenirken hata oluştu. Lütfen tekrar deneyin.</td></tr>`;
+    showToast('Tüccar listesi yüklenemedi. Lütfen tekrar deneyin.', 'error');
   }
 }
 
@@ -237,7 +260,6 @@ async function loadMerchantDetailData() {
       document.getElementById('detailOwnerName').textContent = o.full_name || 'Bilinmiyor';
       document.getElementById('detailOwnerEmail').textContent = o.email || '-';
       document.getElementById('detailOwnerPhone').textContent = o.phone || '-';
-      document.getElementById('detailOwnerTc').textContent = o.tc_no || '-';
       document.getElementById('detailPlan').textContent = d.application?.plan || 'Pro Store';
       document.getElementById('detailStatusBadge').className = `badge ${s.status}`;
       document.getElementById('detailStatusBadge').textContent = s.status;
@@ -288,7 +310,9 @@ async function loadMerchantDetailData() {
           : logs.map(l => `<tr><td>#${l.id}</td><td><span class="badge active">${escapeHtml(l.action)}</span></td><td>${escapeHtml(l.entity_type)}</td><td>${escapeHtml(l.created_at)}</td></tr>`).join('');
       }
     }
-  } catch (e) {}
+  } catch (e) {
+    showToast('Mağaza detayları yüklenemedi. Lütfen tekrar deneyin.', 'error');
+  }
 }
 
 // 4. Applications Loader
@@ -300,7 +324,7 @@ async function loadMasterApplications() {
     const data = await apiFetch('/api/master-admin/applications');
     if (data && data.success && Array.isArray(data.applications)) {
       if (data.applications.length === 0) {
-        tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 1.5rem; color: #94a3b8;">Başvuru kaydı bulunmamaktadır.</td></tr>`;
+        tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 1.5rem; color: #94a3b8;">Başvuru kaydı bulunmamaktadır.</td></tr>`;
         return;
       }
       tableBody.innerHTML = data.applications.map(a => `
@@ -322,7 +346,8 @@ async function loadMasterApplications() {
       `).join('');
     }
   } catch (e) {
-    tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 1.5rem; color: #ef4444;">Başvurular alınamadı.</td></tr>`;
+    tableBody.innerHTML = `<tr><td colspan="7" style="text-align:center; padding: 1.5rem; color: #ef4444;">Başvurular alınamadı. Lütfen tekrar deneyin.</td></tr>`;
+    showToast('Başvurular yüklenemedi. Lütfen tekrar deneyin.', 'error');
   }
 }
 
@@ -336,7 +361,9 @@ async function approveAppAction(id) {
     showToast(data.message || 'Başvuru onaylandı.', 'success');
     if (window.location.pathname.includes('applications.html')) loadMasterApplications();
     else loadDashboardData();
-  } catch (e) {}
+  } catch (e) {
+    showToast(e.message || 'Başvuru onaylanamadı. Lütfen tekrar deneyin.', 'error');
+  }
 }
 
 async function rejectAppAction(id) {
@@ -346,7 +373,9 @@ async function rejectAppAction(id) {
     showToast(data.message || 'Başvuru reddedildi.', 'info');
     if (window.location.pathname.includes('applications.html')) loadMasterApplications();
     else loadDashboardData();
-  } catch (e) {}
+  } catch (e) {
+    showToast(e.message || 'Başvuru reddedilemedi. Lütfen tekrar deneyin.', 'error');
+  }
 }
 
 async function suspendStoreAction(storeId) {
@@ -356,7 +385,9 @@ async function suspendStoreAction(storeId) {
     showToast(data.message || 'Mağaza askıya alındı.', 'warning');
     if (window.location.pathname.includes('merchants.html')) loadMerchantsList();
     if (window.location.pathname.includes('merchant.html')) loadMerchantDetailData();
-  } catch (e) {}
+  } catch (e) {
+    showToast(e.message || 'Mağaza askıya alınamadı. Lütfen tekrar deneyin.', 'error');
+  }
 }
 
 async function activateStoreAction(storeId) {
@@ -366,12 +397,20 @@ async function activateStoreAction(storeId) {
     showToast(data.message || 'Mağaza aktifleştirildi!', 'success');
     if (window.location.pathname.includes('merchants.html')) loadMerchantsList();
     if (window.location.pathname.includes('merchant.html')) loadMerchantDetailData();
-  } catch (e) {}
+  } catch (e) {
+    showToast(e.message || 'Mağaza aktifleştirilemedi. Lütfen tekrar deneyin.', 'error');
+  }
 }
 
 async function promptChangePlan(storeId) {
-  const newPlan = prompt('Yeni Paket Adını Girin (Örn: Starter Store, Pro Store, Enterprise Store):', 'Enterprise Store');
-  if (!newPlan) return;
+  const choices = ['Starter Store', 'Pro Store', 'Enterprise Store'];
+  const selection = prompt('Paket seçin:\n1 - Starter Store\n2 - Pro Store\n3 - Enterprise Store', '2');
+  if (selection === null) return;
+  const newPlan = choices[Number(selection) - 1];
+  if (!newPlan) {
+    showToast('Geçerli bir paket seçin.', 'warning');
+    return;
+  }
   try {
     const data = await apiFetch(`/api/master-admin/stores/${storeId}/change-plan`, {
       method: 'POST',
@@ -379,12 +418,15 @@ async function promptChangePlan(storeId) {
     });
     showToast(data.message || 'Paket güncellendi.', 'success');
     if (window.location.pathname.includes('merchant.html')) loadMerchantDetailData();
-  } catch (e) {}
+  } catch (e) {
+    showToast(e.message || 'Paket güncellenemedi. Lütfen tekrar deneyin.', 'error');
+  }
 }
 
 // Global App Init
 document.addEventListener('DOMContentLoaded', () => {
   checkMasterAuth();
+  renderMasterUser();
 
   const path = window.location.pathname;
   if (path.includes('index.html') || path.endsWith('/master-admin') || path.endsWith('/master-admin/')) {

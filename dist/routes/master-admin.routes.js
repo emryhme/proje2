@@ -4,6 +4,7 @@ const express_1 = require("express");
 const db_1 = require("../database/db");
 const auth_middleware_1 = require("../middleware/auth.middleware");
 const router = (0, express_1.Router)();
+const ALLOWED_PLANS = ['Starter Store', 'Pro Store', 'Enterprise Store'];
 // MASTER ADMIN API ENDPOINTS (/api/master-admin/*)
 // Strictly enforced with AuthMiddleware.requireMasterAdmin
 // ==========================================
@@ -91,7 +92,7 @@ router.get('/api/master-admin/merchants/:storeId', auth_middleware_1.AuthMiddlew
         if (!store) {
             return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
         }
-        const owner = db_1.db.prepare("SELECT id, full_name, email, phone, tc_no, status, created_at FROM users WHERE id = ?").get(store.owner_id);
+        const owner = db_1.db.prepare("SELECT id, full_name, email, phone, status, created_at FROM users WHERE id = ?").get(store.owner_id);
         const membership = db_1.db.prepare("SELECT * FROM memberships WHERE user_id = ? AND store_id = ?").get(store.owner_id, targetStoreId);
         const application = db_1.db.prepare("SELECT * FROM merchant_applications WHERE LOWER(email) = LOWER(?)").get(owner?.email || '');
         const productsCount = db_1.db.prepare("SELECT COUNT(*) as count FROM products WHERE store_id = ?").get(targetStoreId).count;
@@ -235,8 +236,11 @@ router.post('/api/master-admin/stores/:storeId/activate', auth_middleware_1.Auth
 router.post('/api/master-admin/stores/:storeId/change-plan', auth_middleware_1.AuthMiddleware.authenticate, auth_middleware_1.AuthMiddleware.requireMasterAdmin, (req, res) => {
     try {
         const targetStoreId = Number(req.params.storeId);
-        const { plan } = req.body || {};
-        if (!plan) {
+        if (targetStoreId === 1) {
+            return res.status(400).json({ success: false, error: 'Master Admin store plan cannot be changed.' });
+        }
+        const plan = String(req.body?.plan || '').trim();
+        if (!ALLOWED_PLANS.includes(plan)) {
             return res.status(400).json({ success: false, error: 'Yeni paket adÃƒâ€Ã‚Â± zorunludur.' });
         }
         const store = db_1.db.prepare('SELECT * FROM stores WHERE id = ?').get(targetStoreId);

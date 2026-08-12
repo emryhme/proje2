@@ -128,7 +128,11 @@ app.get(['/admin/login', '/admin/login.html'], (req, res) => {
 
 // Static Master Admin UI Server (Platform Owner Panel)
 app.use('/master-admin', express.static(path.resolve(__dirname, '../public/master-admin')));
-app.get(['/master-admin', '/master-admin/'], (req, res) => {
+// Keep the trailing slash on the console root so relative static assets resolve correctly.
+app.get('/master-admin', (req, res) => {
+  res.redirect(302, '/master-admin/');
+});
+app.get('/master-admin/', (req, res) => {
   res.sendFile(path.resolve(__dirname, '../public/master-admin/index.html'));
 });
 app.get(['/master-admin/login', '/master-admin/login.html'], (req, res) => {
