@@ -6,7 +6,7 @@
     <title>AI Test Simülatörü — ISC Works Admin Panel</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="styles.css">
     <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         .simulator-layout {
@@ -236,6 +236,15 @@
             color: #94a3b8;
             font-weight: 600;
         }
+        /* ISCWORKS dark SaaS theme */
+        .simulator-layout { gap: 16px; }
+        .chat-card, .debug-card { background: linear-gradient(145deg, rgba(25,26,33,.96), rgba(18,19,24,.96)); border-color: rgba(255,255,255,.08); border-radius: 14px; }
+        .chat-header, .chat-input-area, .quick-prompts { background: rgba(255,255,255,.025); border-color: rgba(255,255,255,.08); }
+        .chat-messages { background: #101116; }
+        .message-bubble.assistant { background:#1d1e25; border-color:rgba(255,255,255,.08); }.message-bubble.user { background:#fff; color:#0a0a0c; }
+        .chat-input-area input { background:#101116; border-color:rgba(255,255,255,.1); }.quick-prompt-btn { background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.1); color:#c4c7cf; }.quick-prompt-btn:hover { background:rgba(255,255,255,.1); color:#fff; border-color:rgba(255,255,255,.2); }
+        .trace-item { background:#101116; border-color:rgba(255,255,255,.1); border-left-color:#fff; }.trace-header { color:#ddd8ff; }
+        @media(max-width:600px) { .chat-card { height:600px; }.chat-header { align-items:flex-start; gap:10px; flex-direction:column; }.chat-input-area { padding:12px; }.message-bubble { max-width:92%; }.debug-card { padding:13px; } }
     </style>
 </head>
 <body>
