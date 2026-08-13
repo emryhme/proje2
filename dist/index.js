@@ -945,7 +945,7 @@ app.post('/api/test-simulator/run-tests', AuthMiddleware.authenticate, AuthMiddl
 
 */
 // Start Express Application Server
-app.listen(env_1.env.port, () => {
+app.listen(env_1.env.port, '127.0.0.1', () => {
     console.log(`
   Ã„Å¸Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ iscworks bot - Enterprise Multi-Tenant RBAC Backend SUNUCUSU BAÃƒâ€¦Ã‚ÂLATILDI!
   -----------------------------------------------------------------------
