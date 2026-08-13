@@ -289,6 +289,22 @@ class OrderService {
                     if (prevStatus === 'DEC') {
                         await stock_service_1.StockService.deductStock(storeId, targetProductCode, qty, existingOrder.size);
                     }
+                    if (prevStatus !== 'OK') {
+                        const senderId = String(existingOrder.sender_id || existingOrder.senderId || '').trim();
+                        if (senderId) {
+                            const customerName = `${existingOrder.first_name || ''} ${existingOrder.last_name || ''}`.trim() || 'Müşterimiz';
+                            const productName = String(existingOrder.product_name || existingOrder.product_code || 'Ürününüz');
+                            const size = String(existingOrder.size || '').trim();
+                            const approvalMessage = `Sayın ${customerName},\n\n🎉 ${targetOrderId} numaralı siparişiniz onaylandı!\n\n📦 Ürün: ${productName}${size ? ` (${size} beden)` : ''}\n🔢 Adet: ${qty}\n\nSiparişiniz hazırlanarak kargo sürecine alınacaktır. Bizi tercih ettiğiniz için teşekkür ederiz. ✨`;
+                            const notificationSent = await facebook_service_1.FacebookService.sendMessage(senderId, approvalMessage, storeId);
+                            if (!notificationSent) {
+                                console.warn(`[OrderService] Sipariş onaylandı ancak Instagram DM gönderilemedi (Store: ${storeId}, Order: ${targetOrderId}, Sender: ${senderId}).`);
+                            }
+                        }
+                        else {
+                            console.warn(`[OrderService] Sipariş onaylandı ancak sender_id boş olduğu için Instagram DM gönderilemedi (Store: ${storeId}, Order: ${targetOrderId}).`);
+                        }
+                    }
                 }
                 return true;
             }
