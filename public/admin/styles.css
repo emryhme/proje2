@@ -1038,6 +1038,7 @@ body { background: var(--bg); color: var(--text); }
 .logo-mark { width: 34px; height: 34px; border-radius: 10px; background: #fff; color: #0a0a0c; }
 .logo-mark { background:transparent url('../assets/iscworks-business-logo-cropped.png') center/contain no-repeat; }
 .logo-mark > * { display:none; }
+.logo { gap:0; font-size:0; }
 .logo span { color: #9094a0; }
 .section-title { color: #686c78; margin: 22px 12px 8px; letter-spacing: .11em; }
 .nav-item { color: #9da1ad; border: 1px solid transparent; border-radius: 9px; transition: all .25s ease; }
