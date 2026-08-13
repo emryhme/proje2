@@ -522,7 +522,10 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             `).run(storeId, senderId, rewardCode, loyaltyThreshold);
                         earnedNewLoyaltyReward = true;
                         const autoDmText = `🎉 TEBRİKLER / VIP ÖDÜL KAZANDINIZ!\nSayın ${customerName.trim()}, profilinize özel %20 VIP İNDİRİM tanımlanmıştır! (Ödül Kodu: ${rewardCode})\nKeyifli alışverişler dileriz! 🎁✨`;
-                        facebook_service_1.FacebookService.sendMessage(senderId, autoDmText, storeId).catch(e => console.error('[Auto Reward DM Error]:', e.message));
+                        const autoRewardNotificationSent = await facebook_service_1.FacebookService.sendMessage(senderId, autoDmText, storeId);
+                        if (!autoRewardNotificationSent) {
+                            console.warn(`[Auto Reward DM] VIP ödülü tanımlandı ancak Instagram DM gönderilemedi (Store: ${storeId}, Sender: ${senderId}, Code: ${rewardCode}).`);
+                        }
                     }
                     const primaryItem = ctx.cart[0];
                     if (ctx.cart.length !== 1) {

@@ -1727,7 +1727,12 @@ async function handleRewardSubmit(e) {
       body: JSON.stringify(payload)
     });
     if (data && data.success) {
-      showToast('💎 VIP Sadakat Ödülü başarıyla eklendi!', 'success');
+      showToast(
+        data.notificationSent
+          ? '💎 VIP Sadakat Ödülü eklendi ve müşteriye Instagram DM gönderildi!'
+          : '⚠️ VIP ödülü eklendi fakat Instagram DM gönderilemedi.',
+        data.notificationSent ? 'success' : 'warning'
+      );
       const form = document.getElementById('rewardForm');
       if (form) form.reset();
       fetchData();

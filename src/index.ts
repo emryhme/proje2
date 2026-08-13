@@ -605,7 +605,7 @@ app.get('/api/rewards', AuthMiddleware.authenticate, AuthMiddleware.requireRole(
   }
 });
 
-app.post('/api/rewards', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER']), (req: AuthenticatedRequest, res) => {
+app.post('/api/rewards', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER']), async (req: AuthenticatedRequest, res) => {
   try {
     const storeId = req.auth!.storeId;
     const { senderId, rewardCode, discountPercent, minQualifyingAmount } = req.body;
@@ -625,6 +625,18 @@ app.post('/api/rewards', AuthMiddleware.authenticate, AuthMiddleware.requireRole
     stmt.run(storeId, sId, code, percent, minAmt);
 
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'CREATE_REWARD', 'user_rewards', sId);
+    const rewardMessage = `🎉 Tebrikler! Instagram hesabınıza özel %${percent} VIP indirim tanımlandı.\n\n🎁 Ödül kodunuz: ${code}\n🛍️ Minimum kullanım tutarı: ${minAmt.toLocaleString('tr-TR')} TL\n\nBir sonraki uygun siparişinizde indirim hakkınızı kullanabilirsiniz. ✨`;
+    const notificationSent = await FacebookService.sendMessage(sId, rewardMessage, storeId);
+    if (!notificationSent) {
+      console.warn(`[VIP Reward] Ödül tanımlandı ancak Instagram DM gönderilemedi (Store: ${storeId}, Sender: ${sId}, Code: ${code}).`);
+    }
+    return res.json({
+      success: true,
+      notificationSent,
+      message: notificationSent
+        ? `Müşteri (${sId}) için %${percent} VIP indirim tanımlandı ve Instagram DM gönderildi.`
+        : `Müşteri (${sId}) için %${percent} VIP indirim tanımlandı ancak Instagram DM gönderilemedi.`
+    });
     res.json({ success: true, message: `MÃƒÆ’Ã‚Â¼Ãƒâ€¦Ã…Â¸teri (${sId}) iÃƒÆ’Ã‚Â§in %${percent} VIP indirim tanÃƒâ€Ã‚Â±mlandÃƒâ€Ã‚Â±.` });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message });

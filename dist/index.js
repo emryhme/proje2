@@ -11,6 +11,7 @@ const order_service_1 = require("./services/order.service");
 const stock_service_1 = require("./services/stock.service");
 const gemini_service_1 = require("./services/gemini.service");
 const admin_copilot_service_1 = require("./services/admin-copilot.service");
+const facebook_service_1 = require("./services/facebook.service");
 const db_1 = require("./database/db");
 const auth_middleware_1 = require("./middleware/auth.middleware");
 // Initialize schema, migrations, and seed data once before serving requests.
@@ -551,7 +552,7 @@ app.get('/api/rewards', auth_middleware_1.AuthMiddleware.authenticate, auth_midd
         res.status(500).json({ success: false, error: e.message });
     }
 });
-app.post('/api/rewards', auth_middleware_1.AuthMiddleware.authenticate, auth_middleware_1.AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER']), (req, res) => {
+app.post('/api/rewards', auth_middleware_1.AuthMiddleware.authenticate, auth_middleware_1.AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER']), async (req, res) => {
     try {
         const storeId = req.auth.storeId;
         const { senderId, rewardCode, discountPercent, minQualifyingAmount } = req.body;
@@ -568,6 +569,18 @@ app.post('/api/rewards', auth_middleware_1.AuthMiddleware.authenticate, auth_mid
     `);
         stmt.run(storeId, sId, code, percent, minAmt);
         auth_middleware_1.AuthMiddleware.logAudit(storeId, req.auth.userId, 'CREATE_REWARD', 'user_rewards', sId);
+        const rewardMessage = `🎉 Tebrikler! Instagram hesabınıza özel %${percent} VIP indirim tanımlandı.\n\n🎁 Ödül kodunuz: ${code}\n🛍️ Minimum kullanım tutarı: ${minAmt.toLocaleString('tr-TR')} TL\n\nBir sonraki uygun siparişinizde indirim hakkınızı kullanabilirsiniz. ✨`;
+        const notificationSent = await facebook_service_1.FacebookService.sendMessage(sId, rewardMessage, storeId);
+        if (!notificationSent) {
+            console.warn(`[VIP Reward] Ödül tanımlandı ancak Instagram DM gönderilemedi (Store: ${storeId}, Sender: ${sId}, Code: ${code}).`);
+        }
+        return res.json({
+            success: true,
+            notificationSent,
+            message: notificationSent
+                ? `Müşteri (${sId}) için %${percent} VIP indirim tanımlandı ve Instagram DM gönderildi.`
+                : `Müşteri (${sId}) için %${percent} VIP indirim tanımlandı ancak Instagram DM gönderilemedi.`
+        });
         res.json({ success: true, message: `MÃƒÆ’Ã‚Â¼Ãƒâ€¦Ã…Â¸teri (${sId}) iÃƒÆ’Ã‚Â§in %${percent} VIP indirim tanÃƒâ€Ã‚Â±mlandÃƒâ€Ã‚Â±.` });
     }
     catch (e) {
