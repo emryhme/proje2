@@ -193,7 +193,7 @@ export class AdminCopilotService {
     const boundModel = model.bindTools(tools);
 
     const systemPrompt = new SystemMessage(`
-Sen Mağaza Yönetici ve Copilot Asistanısın (F.R.I.D.A.Y.).
+Sen Mağaza Yönetici ve Copilot Asistanısın (S.E.T.T).
 Kullanıcın Patron'dur.
 
 VERİTABANI VE ARAÇ YETKİLERİN:

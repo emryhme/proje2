@@ -515,7 +515,7 @@ function updateMetrics() {
   if (metricCards.length >= 4) {
     const aiValElem = metricCards[3].querySelector('.metric-value');
     const aiSubElem = metricCards[3].querySelector('.metric-sub');
-    if (aiValElem) aiValElem.textContent = 'F.R.I.D.A.Y.';
+    if (aiValElem) aiValElem.textContent = 'S.E.T.T';
     if (aiSubElem) aiSubElem.textContent = 'Yönetici Asistanı';
   }
 
@@ -878,7 +878,7 @@ function renderProductsTable() {
         <td colspan="9" class="loading-cell" style="padding: 35px 20px; text-align: center; color: #94a3b8;">
           <i class="fa-solid fa-box-open" style="font-size: 24px; margin-bottom: 8px; display: block; color: #64748b;"></i>
           Mağazanızda henüz stoklu ürün bulunmuyor.<br>
-          <small style="color: #64748b; font-size: 11px;">"Yeni Ürün Girişi" sayfasından veya F.R.I.D.A.Y. AI Asistanı ile mağazanıza sıfırdan ürün ekleyebilirsiniz.</small>
+          <small style="color: #64748b; font-size: 11px;">"Yeni Ürün Girişi" sayfasından veya S.E.T.T AI Asistanı ile mağazanıza sıfırdan ürün ekleyebilirsiniz.</small>
         </td>
       </tr>
     `;
@@ -1849,7 +1849,7 @@ async function sendAdminChatMessage() {
       <i class="fa-solid fa-robot"></i>
     </div>
     <div style="background:#1e293b; color:#94a3b8; padding:0.85rem 1.1rem; border-radius:12px; border-top-left-radius:2px; font-size:0.92rem; border:1px solid #334155;">
-      <i class="fa-solid fa-spinner fa-spin"></i> F.R.I.D.A.Y. emrinizi işliyor...
+      <i class="fa-solid fa-spinner fa-spin"></i> S.E.T.T emrinizi işliyor...
     </div>
   `;
   chatWindow.appendChild(loadingBubble);
@@ -1858,15 +1858,13 @@ async function sendAdminChatMessage() {
   if (sendBtn) sendBtn.disabled = true;
 
   try {
-    const res = await fetch(`${API_BASE}/api/ai/admin-copilot`, {
+    const data = await apiFetch('/api/ai/admin-copilot', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ prompt })
     });
-    const data = await res.json();
     loadingBubble.remove();
 
-    const replyText = (data && data.reply) ? data.reply : '❌ Bir hata oluştu.';
+    const replyText = data?.reply || data?.error || '❌ S.E.T.T yanıt oluşturamadı.';
 
     // Append AI Response Bubble
     const aiBubble = document.createElement('div');
@@ -1887,7 +1885,7 @@ async function sendAdminChatMessage() {
 
   } catch (err) {
     if (loadingBubble) loadingBubble.remove();
-    showToast('AI Asistan bağlantı hatası.', 'error');
+    showToast(`❌ S.E.T.T hatası: ${err?.message || 'Sunucuya bağlanılamadı.'}`, 'error');
   } finally {
     if (sendBtn) sendBtn.disabled = false;
   }
@@ -1997,7 +1995,7 @@ function getOrCreateSystemSettingsModal() {
       <div id="tabContentAi" style="display:block;">
         <div class="form-group" style="margin-bottom:14px;">
           <label>Yapay Zeka Asistan Adı</label>
-          <input type="text" id="sysBotName" placeholder="Örn: F.R.I.D.A.Y." value="F.R.I.D.A.Y.">
+          <input type="text" id="sysBotName" placeholder="Örn: S.E.T.T" value="S.E.T.T">
         </div>
 
         <div class="form-group" style="margin-bottom:14px;">
@@ -2091,7 +2089,10 @@ async function loadSystemSettingsIntoModal() {
     const data = await apiFetch(`${API_BASE}/api/settings`);
     if (data.success && data.settings) {
       const s = data.settings;
-      if (document.getElementById('sysBotName')) document.getElementById('sysBotName').value = s.bot_name || 'F.R.I.D.A.Y.';
+      if (document.getElementById('sysBotName')) {
+        const savedBotName = String(s.bot_name || '').trim();
+        document.getElementById('sysBotName').value = !savedBotName || savedBotName === 'F.R.I.D.A.Y.' ? 'S.E.T.T' : savedBotName;
+      }
       if (document.getElementById('sysBotTone')) document.getElementById('sysBotTone').value = s.bot_tone || 'luxury';
       if (document.getElementById('sysBotSystemPrompt')) document.getElementById('sysBotSystemPrompt').value = s.bot_system_prompt || '';
     }
@@ -2105,7 +2106,7 @@ async function saveSystemSettingsModal() {
 
 async function saveSystemSettingsPage() {
   const payload = {
-    bot_name: document.getElementById('sysBotName')?.value || 'F.R.I.D.A.Y.',
+    bot_name: document.getElementById('sysBotName')?.value || 'S.E.T.T',
     bot_tone: document.getElementById('sysBotTone')?.value || 'luxury',
     bot_system_prompt: document.getElementById('sysBotSystemPrompt')?.value || '',
     // Secrets are server-managed or obtained through the Instagram OAuth flow.

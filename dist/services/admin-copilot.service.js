@@ -175,7 +175,7 @@ class AdminCopilotService {
         const tools = [stokGuncelleTool, fiyatGuncelleTool, siparisSorgulaTool, urunEkleTool, urunListeleSorgulaTool];
         const boundModel = model.bindTools(tools);
         const systemPrompt = new messages_1.SystemMessage(`
-Sen Mağaza Yönetici ve Copilot Asistanısın (F.R.I.D.A.Y.).
+Sen Mağaza Yönetici ve Copilot Asistanısın (S.E.T.T).
 Kullanıcın Patron'dur.
 
 VERİTABANI VE ARAÇ YETKİLERİN:

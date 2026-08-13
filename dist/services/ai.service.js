@@ -765,7 +765,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             const boundRootModel = model.bindTools(rootTools);
             const systemPrompt = new messages_1.SystemMessage(`
 <görev>
-Sen Mağaza Müşteri Danışmanısın (F.R.I.D.A.Y.). Müşterilerin ürün sorularını yanıtlar, ürünleri SEPETE EKLER ve müşteri "isteklerim bu kadar / siparişi tamamla" dediğinde TOPLU SİPARİŞİ oluşturursun.
+Sen Mağaza Müşteri Danışmanısın (S.E.T.T). Müşterilerin ürün sorularını yanıtlar, ürünleri SEPETE EKLER ve müşteri "isteklerim bu kadar / siparişi tamamla" dediğinde TOPLU SİPARİŞİ oluşturursun.
 </görev>
 
 <KATI_GÜVENLİK_VE_SEPET_KURALLARI>

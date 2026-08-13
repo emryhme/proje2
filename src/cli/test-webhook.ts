@@ -163,7 +163,7 @@ async function simulateIncomingMessage() {
     try {
       const res = await axios.post(`${BASE_URL}/webhook/instagram`, mockPayload);
       console.log(`✅ Sunucu Yanıtı: HTTP ${res.status} (${res.data})`);
-      console.log('🤖 F.R.I.D.A.Y. AI Ajanları mesajı işledi. Sunucu loglarını kontrol edin!\n');
+      console.log('🤖 S.E.T.T AI Ajanları mesajı işledi. Sunucu loglarını kontrol edin!\n');
     } catch (err: any) {
       console.error('❌ Webhook POST hatası:', err?.response?.data || err.message);
     }
