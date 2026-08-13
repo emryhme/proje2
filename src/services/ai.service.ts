@@ -37,6 +37,7 @@ interface SessionContext {
   address?: string;
   cart: CartItem[];
   checkoutConfirmed: boolean;
+  variantVerified: boolean;
 }
 
 /**
@@ -59,11 +60,12 @@ export class AIService {
     this.validateStoreId(storeId);
     const key = `${storeId}:${storeSlug}:${channel}:${senderId}`;
     if (!this.sessions.has(key)) {
-      this.sessions.set(key, { storeId, history: [], cart: [], checkoutConfirmed: false });
+      this.sessions.set(key, { storeId, history: [], cart: [], checkoutConfirmed: false, variantVerified: false });
     }
     const ctx = this.sessions.get(key)!;
     if (!ctx.cart) ctx.cart = [];
     if (typeof ctx.checkoutConfirmed !== 'boolean') ctx.checkoutConfirmed = false;
+    if (typeof ctx.variantVerified !== 'boolean') ctx.variantVerified = false;
     ctx.storeId = storeId;
     return ctx;
   }
@@ -190,11 +192,64 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     // beden geldikten sonra ilgili tam varyant sorgulanır.
     const fullCodeMatch = rows.find(row => containsExactCode(String(row.product_code || '')));
     const shortCodeMatch = rows.find(row => containsExactCode(String(row.short_code || '')));
-    if (fullCodeMatch?.product_code) {
-      ctx.productCode = String(fullCodeMatch.product_code).trim().toUpperCase();
-    } else if (shortCodeMatch?.short_code) {
-      ctx.productCode = String(shortCodeMatch.short_code).trim().toUpperCase();
+    const nextProductCode = fullCodeMatch?.product_code || shortCodeMatch?.short_code;
+    if (nextProductCode) {
+      const normalizedCode = String(nextProductCode).trim().toUpperCase();
+      if (ctx.productCode !== normalizedCode) {
+        ctx.productCode = normalizedCode;
+        delete ctx.size;
+        delete ctx.quantity;
+        ctx.variantVerified = false;
+      }
     }
+  }
+
+  /**
+   * Kısa kodla başlayan sipariş akışını model yerine backend yönetir.
+   * Böylece HBL gibi bir koddan HBL-M/HBL-S diye varsayım üretilemez.
+   */
+  private static getShortCodeOrderReply(storeId: number, ctx: SessionContext, userText: string): string | null {
+    const shortCode = String(ctx.productCode || '').trim().toUpperCase();
+    if (!shortCode || ctx.variantVerified) return null;
+
+    const variants = db.prepare(`
+      SELECT product_code, short_code, name, size, price, stock
+      FROM products
+      WHERE store_id = ? AND UPPER(short_code) = ?
+      ORDER BY size ASC
+    `).all(storeId, shortCode) as any[];
+
+    // Tam ürün koduyla başlayan normal akışa müdahale etme.
+    if (variants.length === 0 || !variants.some(row => String(row.product_code).toUpperCase() !== shortCode)) {
+      return null;
+    }
+
+    const normalizedText = String(userText || '').toUpperCase();
+    const containsExactValue = (value: string) => {
+      const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[^A-Z0-9])${escaped}($|[^A-Z0-9])`, 'i').test(normalizedText);
+    };
+    const selectedVariant = variants.find(row => containsExactValue(String(row.size || '').trim().toUpperCase()));
+    if (!selectedVariant) {
+      const sizes = [...new Set(variants.map(row => String(row.size).trim().toUpperCase()).filter(Boolean))];
+      return `${shortCode} kodlu ürün için mevcut bedenler: ${sizes.join(', ')}. Hangi bedeni istersiniz?`;
+    }
+
+    const variant = selectedVariant;
+
+    const price = Number(variant.price);
+    if (!Number.isFinite(price) || price < 0) {
+      return `${variant.product_code} için fiyat henüz tanımlı değil. Lütfen mağaza ile iletişime geçin.`;
+    }
+
+    ctx.productCode = String(variant.product_code).trim().toUpperCase();
+    ctx.size = String(variant.size).trim().toUpperCase();
+    ctx.variantVerified = true;
+    if (Number(variant.stock) <= 0) {
+      return `${variant.product_code} (${ctx.size}) şu an stokta yok. Başka bir beden tercih eder misiniz?`;
+    }
+
+    return `${variant.product_code} (${ctx.size}) stokta mevcut. Fiyatı ${price.toLocaleString('tr-TR')} TL. Kaç adet istersiniz?`;
   }
 
   /**
@@ -673,6 +728,20 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       await this.extractSessionDataWithAI(senderId, userMessage, apiKey, storeSlug, storeId, channel);
       const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
       this.hydrateProductCodeFromMessage(userMessage, storeId, ctx);
+
+      const deterministicOrderReply = this.getShortCodeOrderReply(storeId, ctx, userMessage);
+      if (deterministicOrderReply) {
+        ctx.history.push(new HumanMessage(userMessage), new AIMessage(deterministicOrderReply));
+        if (ctx.history.length > 16) {
+          ctx.history.splice(0, ctx.history.length - 16);
+        }
+        return {
+          reply: deterministicOrderReply,
+          tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
+          toolTraces: [],
+          cart: ctx.cart
+        };
+      }
 
       // Veritabanından Aktif Kampanyaları Çek (Store Isolated)
       const activeCampaigns = db.prepare(`
