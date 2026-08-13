@@ -112,8 +112,8 @@ export class AIService {
   /**
    * Yapay Zeka Destekli Akıllı Veri Ayıklama Motoru (AI Extractor)
    */
-  private static async extractSessionDataWithAI(senderId: string, userText: string, apiKey: string, storeSlug: string, storeId: number) {
-    const ctx = this.getSessionContext(senderId, storeSlug, storeId);
+  private static async extractSessionDataWithAI(senderId: string, userText: string, apiKey: string, storeSlug: string, storeId: number, channel: string) {
+    const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
 
     try {
       const extractorModel = new ChatOpenAI({
@@ -170,8 +170,8 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
   /**
    * Alt Düğüm Araçlarını Tanımlar (Strict Store Isolation)
    */
-  private static createLeafTools(senderId: string, storeSlug: string, storeId: number) {
-    const ctx = this.getSessionContext(senderId, storeSlug, storeId);
+  private static createLeafTools(senderId: string, storeSlug: string, storeId: number, channel: string) {
+    const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
 
     // STOK Tool
     const stokTool = new DynamicTool({
@@ -179,7 +179,45 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       description: 'Ürün kodu, BEDEN ve ADET bilgisi mevcutsa stok kontrolü yapar.',
       func: async (input: string) => {
         try {
-          const query = input || ctx.productCode || '';
+          let request: any = {};
+          try { request = typeof input === 'object' ? input : JSON.parse(input); } catch { request = { productCode: input }; }
+          const query = String(request.productCode || request.query || ctx.productCode || '').trim();
+          const requestedSize = String(request.size || ctx.size || '').trim().toUpperCase();
+
+          // Fiyat yalnızca ürünün tam varyantı (ürün kodu + beden) doğrulandığında verilir.
+          // Böylece farklı beden/varyantın fiyatı müşteriye gösterilmez.
+          if (query && requestedSize) {
+            const product = db.prepare(`
+              SELECT product_code, short_code, name, size, price, stock
+              FROM products
+              WHERE store_id = ?
+                AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)
+                AND UPPER(size) = ?
+              LIMIT 1
+            `).get(storeId, query.toUpperCase(), query.toUpperCase(), requestedSize) as any;
+
+            if (!product) {
+              return JSON.stringify({ exists: false, message: `${query} kodlu ${requestedSize} beden ürün bulunamadı.` });
+            }
+            const price = Number(product.price);
+            if (!Number.isFinite(price) || price < 0) {
+              return JSON.stringify({ exists: false, message: `${product.product_code} için geçerli bir fiyat tanımlı değil. Lütfen mağaza yöneticisiyle iletişime geçin.` });
+            }
+
+            ctx.productCode = product.product_code;
+            ctx.size = product.size;
+            return JSON.stringify({
+              exists: true,
+              inStock: Number(product.stock) > 0,
+              productName: product.name,
+              productCode: product.product_code,
+              size: product.size,
+              price,
+              stock: Number(product.stock),
+              message: Number(product.stock) > 0 ? 'Stokta mevcuttur.' : 'Stokta kalmamıştır.'
+            });
+          }
+
           const result = await StockService.checkStock(storeId, query);
           if (!result.exists) return JSON.stringify({ exists: false, message: 'Ürün bulunamadı.' });
           
@@ -193,7 +231,6 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             productName: result.product?.name,
             productCode: result.product?.productCode || ctx.productCode,
             size: result.product?.size || ctx.size,
-            price: result.product?.price || 299,
             availableSizes: result.product?.availableSizes,
             message: result.inStock ? 'Stokta mevcuttur.' : 'Stokta kalmamıştır.'
           });
@@ -222,38 +259,51 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
           const pCodeUpper = pCode.toUpperCase();
           const prod = db.prepare(`
             SELECT * FROM products 
-            WHERE store_id = ? AND UPPER(product_code) = ? AND UPPER(size) = ?
+            WHERE store_id = ?
+              AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)
+              AND UPPER(size) = ?
             LIMIT 1
-          `).get(storeId, pCodeUpper, pSize) as any;
+          `).get(storeId, pCodeUpper, pCodeUpper, pSize) as any;
           if (!prod) {
             return JSON.stringify({ success: false, message: `${pCode} kodlu ${pSize} beden ürünü bulunamadı.` });
           }
-          const unitPrice = (prod.price > 0) ? prod.price : 299;
+          const unitPrice = Number(prod.price);
           const productName = prod.name;
+
+          if (!Number.isFinite(unitPrice) || unitPrice < 0) {
+            return JSON.stringify({ success: false, message: `${productName} için geçerli bir fiyat tanımlı değil. Siparişe eklenemedi.` });
+          }
 
           if (Number(prod.stock) < pQty) {
             return JSON.stringify({ success: false, message: `${productName} (${pSize}) stokta tükendiği için sepete eklenemedi.` });
           }
 
-          const existingIdx = ctx.cart.findIndex(i => i.productCode === pCode && i.size === pSize);
+          const canonicalProductCode = String(prod.product_code).toUpperCase();
+          const existingIdx = ctx.cart.findIndex(i => i.productCode === canonicalProductCode && i.size === pSize);
           if (existingIdx >= 0) {
             ctx.cart[existingIdx].quantity += pQty;
           } else {
             ctx.cart.push({
-              productCode: pCode,
+              productCode: canonicalProductCode,
               productName: productName,
               size: pSize,
               quantity: pQty,
               unitPrice: unitPrice
             });
           }
-          ctx.productCode = pCode;
+          ctx.productCode = canonicalProductCode;
           ctx.size = pSize;
           ctx.quantity = pQty;
           ctx.checkoutConfirmed = false;
 
           const cartSubtotal = ctx.cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
-          const shippingFeeEstimate = cartSubtotal >= 1500 ? 0 : 49;
+          const shippingSetting = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'shipping_fee'").get(storeId) as any;
+          const thresholdSetting = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'free_shipping_threshold'").get(storeId) as any;
+          const shippingFee = Number(shippingSetting?.value);
+          const freeShippingThreshold = Number(thresholdSetting?.value);
+          const shippingFeeEstimate = Number.isFinite(freeShippingThreshold) && cartSubtotal >= freeShippingThreshold
+            ? 0
+            : (Number.isFinite(shippingFee) ? shippingFee : 49);
           const totalEstimate = cartSubtotal + shippingFeeEstimate;
 
           return JSON.stringify({
@@ -529,7 +579,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             }
             return res;
           } else {
-            return await stokTool.invoke(data.productCode || data.query || '');
+            return await stokTool.invoke(JSON.stringify(data));
           }
         } catch (e: any) {
           return JSON.stringify({ error: e.message });
@@ -590,7 +640,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     };
 
     try {
-      await this.extractSessionDataWithAI(senderId, userMessage, apiKey, storeSlug, storeId);
+      await this.extractSessionDataWithAI(senderId, userMessage, apiKey, storeSlug, storeId, channel);
       const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
 
       // Veritabanından Aktif Kampanyaları Çek (Store Isolated)
@@ -631,7 +681,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         temperature: 0.2
       });
 
-      const { stokTool, sepeteEkleTool, sepetGoruntuleTool, sepetOnaylaTool, kayitTool, mesajTool, guncelleTool } = this.createLeafTools(senderId, storeSlug, storeId);
+      const { stokTool, sepeteEkleTool, sepetGoruntuleTool, sepetOnaylaTool, kayitTool, mesajTool, guncelleTool } = this.createLeafTools(senderId, storeSlug, storeId, channel);
       const bilgilendirmeAgentTool = this.createBilgilendirmeSubAgent(model, mesajTool);
       const siparisAgentTool = this.createSiparisSubAgent(model, stokTool, sepeteEkleTool, sepetGoruntuleTool, sepetOnaylaTool, kayitTool, bilgilendirmeAgentTool);
       const stokManAgentTool = this.createStokManSubAgent(model, guncelleTool);
