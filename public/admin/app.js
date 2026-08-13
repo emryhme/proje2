@@ -1211,12 +1211,10 @@ async function updateOrderStatus(orderId, status) {
   }
 
   try {
-    const res = await fetch(`${API_BASE}/api/orders/status`, {
+    const data = await apiFetch('/api/orders/status', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ orderId, status: 'OK' })
     });
-    const data = await res.json();
 
     if (data.success) {
       showToast(`✅ Sipariş ${orderId} onaylandı! Müşteriye bildirim gönderildi.`, 'success');
@@ -1225,7 +1223,7 @@ async function updateOrderStatus(orderId, status) {
       showToast(`❌ Hata: ${data.error || 'Sipariş durumu güncellenemedi.'}`, 'error');
     }
   } catch (err) {
-    showToast('Sipariş güncellenirken sunucu hatası oluştu.', 'error');
+    showToast(`❌ Hata: ${err?.message || 'Sipariş güncellenirken sunucu hatası oluştu.'}`, 'error');
   }
 }
 
@@ -1514,12 +1512,10 @@ function openRejectionModal(orderId) {
       btnConfirm.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Gönderiliyor...`;
 
       try {
-        const res = await fetch(`${API_BASE}/api/orders/status`, {
+        const data = await apiFetch('/api/orders/status', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ orderId, status: 'DEC', reason })
         });
-        const data = await res.json();
         if (data.success) {
           showToast(`✅ Sipariş ${orderId} reddedildi ve müşteriye DM bildirimi yollandı.`, 'success');
           modal.style.display = 'none';
@@ -1528,7 +1524,7 @@ function openRejectionModal(orderId) {
           showToast(`❌ Hata: ${data.error || 'Sipariş reddedilemedi'}`, 'error');
         }
       } catch (e) {
-        showToast('Sunucu bağlantı hatası oluştu.', 'error');
+        showToast(`❌ Hata: ${e?.message || 'Sunucu bağlantı hatası oluştu.'}`, 'error');
       } finally {
         btnConfirm.disabled = false;
         btnConfirm.innerHTML = `<i class="fa-solid fa-paper-plane"></i> Reddet & DM Yolla`;
