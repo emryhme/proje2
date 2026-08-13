@@ -133,6 +133,35 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         }
     }
     /**
+     * Mesajdaki kodu, AI tahmininden bağımsız olarak yalnızca bu mağazanın ürünleriyle eşleştirir.
+     * Kısa kod (HBL) asla rastgele bir beden varyantına (HBL-M) dönüştürülmez.
+     */
+    static hydrateProductCodeFromMessage(userText, storeId, ctx) {
+        const rawText = String(userText || '').trim();
+        if (!rawText)
+            return;
+        const rows = db_1.db.prepare(`
+      SELECT product_code, short_code
+      FROM products
+      WHERE store_id = ?
+    `).all(storeId);
+        const normalizedText = rawText.toUpperCase();
+        const containsExactCode = (value) => {
+            const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            return new RegExp(`(^|[^A-Z0-9-])${escaped}($|[^A-Z0-9-])`, 'i').test(normalizedText);
+        };
+        // Tam kod yazıldıysa olduğu gibi koru. Aksi durumda yalnız kısa kodu sakla;
+        // beden geldikten sonra ilgili tam varyant sorgulanır.
+        const fullCodeMatch = rows.find(row => containsExactCode(String(row.product_code || '')));
+        const shortCodeMatch = rows.find(row => containsExactCode(String(row.short_code || '')));
+        if (fullCodeMatch?.product_code) {
+            ctx.productCode = String(fullCodeMatch.product_code).trim().toUpperCase();
+        }
+        else if (shortCodeMatch?.short_code) {
+            ctx.productCode = String(shortCodeMatch.short_code).trim().toUpperCase();
+        }
+    }
+    /**
      * Alt Düğüm Araçlarını Tanımlar (Strict Store Isolation)
      */
     static createLeafTools(senderId, storeSlug, storeId, channel) {
@@ -140,7 +169,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         // STOK Tool
         const stokTool = new tools_1.DynamicTool({
             name: 'STOK',
-            description: 'Ürün kodu, BEDEN ve ADET bilgisi mevcutsa stok kontrolü yapar.',
+            description: 'Ürün kodu ve BEDEN bilgisi mevcutsa doğru varyantın stok ve fiyatını kontrol eder.',
             func: async (input) => {
                 try {
                     let request = {};
@@ -577,6 +606,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         try {
             await this.extractSessionDataWithAI(senderId, userMessage, apiKey, storeSlug, storeId, channel);
             const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
+            this.hydrateProductCodeFromMessage(userMessage, storeId, ctx);
             // Veritabanından Aktif Kampanyaları Çek (Store Isolated)
             const activeCampaigns = db_1.db.prepare(`
         SELECT title, description, code, start_date, end_date 
@@ -603,6 +633,9 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             const cartText = ctx.cart.length > 0
                 ? ctx.cart.map(i => `• ${i.productName} (${i.size}) x${i.quantity} - ${i.unitPrice * i.quantity} TL`).join('\n')
                 : 'Sepetiniz şu an boş.';
+            const orderContext = ctx.productCode
+                ? `Müşteri ürün kodunu zaten verdi: ${ctx.productCode}. Bu kısa kod olabilir; ASLA kendin HBL-M gibi bir beden varyantı seçme veya önerme. Ürün kodunu tekrar sorma. Beden eksikse yalnız bedeni iste. Beden geldiyse SIPARIS action=stok ile ürün kodu ve bedeni gönder; doğrulanan stok/fiyat bilgisinden sonra yalnız adet iste.`
+                : 'Henüz doğrulanmış bir ürün kodu yok. Yalnızca ürün kodunu iste.';
             const model = new openai_1.ChatOpenAI({
                 openAIApiKey: apiKey,
                 modelName: env_1.env.openaiModel || 'gpt-4o',
@@ -620,15 +653,22 @@ Sen Mağaza Müşteri Danışmanısın (F.R.I.D.A.Y.). Müşterilerin ürün sor
 </görev>
 
 <KATI_GÜVENLİK_VE_SEPET_KURALLARI>
+<AKTIF_SIPARIS_BAGLAMI>
+${orderContext}
+Mevcut beden: ${ctx.size || 'yok'}
+Mevcut adet: ${ctx.quantity || 'yok'}
+</AKTIF_SIPARIS_BAGLAMI>
+
 ZORUNLU SIPARIS SIRASI — bu kural diğer tüm sipariş talimatlarının önündedir:
 1. Önce yalnız ürün kodunu iste. Kod olmadan beden, adet veya kişisel bilgi isteme.
-2. Koddan sonra yalnız beden iste; bedenden sonra yalnız adet iste.
-3. Ürün kodu, beden ve adet eksiksiz olmadan SEPETE_EKLE çağırma.
-4. Sepete ekledikten sonra sepet özetini, kargoyu ve toplamı göster. Açıkça "Sepetinizi onaylıyor musunuz?" diye sor.
-5. Müşteri açıkça onay vermeden SEPET_ONAYLA veya KAYIT çağırma.
-6. Açık onaydan sonra SEPET_ONAYLA çağır; ardından ad soyad, telefon numarası ve açık teslimat adresini sırayla iste.
-7. Ad soyad, en az 10 haneli telefon ve en az 10 karakterlik açık adres tamamlanmadan KAYIT çağırma; sipariş oluşturuldu deme.
-8. Müşteri sepeti onaylamadan kişisel bilgileri isteme veya kullanma.
+2. Koddan sonra yalnız beden iste. Kısa kod verildiyse asla kendin beden/varyant seçme.
+3. Beden gelir gelmez ürün kodu + beden ile STOK sorgusu yap; doğru varyantın stok ve fiyatını doğrula. Ardından yalnız adet iste.
+4. Ürün kodu, beden ve adet eksiksiz olmadan SEPETE_EKLE çağırma.
+5. Sepete ekledikten sonra sepet özetini, kargoyu ve toplamı göster. Açıkça "Sepetinizi onaylıyor musunuz?" diye sor.
+6. Müşteri açıkça onay vermeden SEPET_ONAYLA veya KAYIT çağırma.
+7. Açık onaydan sonra SEPET_ONAYLA çağır; ardından ad soyad, telefon numarası ve açık teslimat adresini sırayla iste.
+8. Ad soyad, en az 10 haneli telefon ve en az 10 karakterlik açık adres tamamlanmadan KAYIT çağırma; sipariş oluşturuldu deme.
+9. Müşteri sepeti onaylamadan kişisel bilgileri isteme veya kullanma.
 
 1. 🛒 **SEPET SİSTEMİ (ÇOKLU ÜRÜN DESTEĞİ):**
    - Müşteri bir ürün seçtiğinde SEPETE_EKLE aracını çağır ve ürünü sepete ekle.
