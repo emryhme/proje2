@@ -517,7 +517,19 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     }
     if (settings && typeof settings === 'object') {
       for (const [k, v] of Object.entries(settings)) {
-        db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)').run(storeId, String(k), String(v));
+        const settingKey = String(k);
+        let settingValue = String(v ?? '');
+        if (settingKey === 'bot_name') {
+          settingValue = settingValue.trim().slice(0, 40);
+          if (!settingValue) return res.status(400).json({ success: false, error: 'Yapay zeka asistan adı boş bırakılamaz.' });
+        } else if (settingKey === 'bot_tone') {
+          if (!['luxury', 'friendly', 'formal', 'patron'].includes(settingValue)) {
+            return res.status(400).json({ success: false, error: 'Geçersiz yapay zeka kişilik üslubu.' });
+          }
+        } else if (settingKey === 'bot_system_prompt') {
+          settingValue = settingValue.trim().slice(0, 4000);
+        }
+        db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)').run(storeId, settingKey, settingValue);
       }
     }
 

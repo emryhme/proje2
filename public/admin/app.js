@@ -2106,7 +2106,7 @@ async function saveSystemSettingsModal() {
 
 async function saveSystemSettingsPage() {
   const payload = {
-    bot_name: document.getElementById('sysBotName')?.value || 'S.E.T.T',
+    bot_name: document.getElementById('sysBotName')?.value.trim() || 'S.E.T.T',
     bot_tone: document.getElementById('sysBotTone')?.value || 'luxury',
     bot_system_prompt: document.getElementById('sysBotSystemPrompt')?.value || '',
     // Secrets are server-managed or obtained through the Instagram OAuth flow.
@@ -2118,7 +2118,8 @@ async function saveSystemSettingsPage() {
       body: JSON.stringify({ settings: payload })
     });
     if (data.success) {
-      showToast('✅ API Ayarları ve Yapay Zeka Kişiselleştirmesi başarıyla kaydedildi!', 'success');
+      showToast(`✅ Yapay zeka kişiselleştirmesi kaydedildi. Müşteri asistanı artık “${payload.bot_name}” adı ve seçilen üslupla yanıt verecek.`, 'success');
+      await loadSystemSettingsIntoModal();
     } else {
       showToast(`❌ Hata: ${data.error || 'Ayarlar kaydedilemedi'}`, 'error');
     }

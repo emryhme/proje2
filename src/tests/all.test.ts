@@ -307,6 +307,13 @@ async function runTestSuite() {
   const parsedSaveOrder = (AIService as any).normalizeSiparisToolInput({ input: 'kayit' });
   assert(parsedSaveOrder.action === 'kayit', 'Nested kayit command invokes order creation instead of stock lookup');
 
+  console.log('\n2️⃣7️⃣-D AI PERSONA TEST: Mağaza kişiselleştirme ayarları çalışma anında okunmalı');
+  db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (100, 'bot_name', 'LUNA')").run();
+  db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (100, 'bot_tone', 'friendly')").run();
+  db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (100, 'bot_system_prompt', 'Müşteriye ürün bakım önerisi sun.')").run();
+  const livePersona = (AIService as any).getStorePersona(100);
+  assert(livePersona.botName === 'LUNA' && livePersona.tone === 'friendly' && livePersona.customPrompt.includes('bakım önerisi'), 'Saved bot name, tone and custom prompt are loaded into the live AI persona');
+
   console.log('\n2️⃣8️⃣ STOCK BUG FIX TEST 2: Stock Set (10 -> 25) & Read After Write');
   const updateSuccess2 = await StockService.updateStock(100, 'TEST-STOCK', 25);
   const stockCheck2 = await StockService.checkStock(100, 'TEST-STOCK');

@@ -46,6 +46,33 @@ interface SessionContext {
 export class AIService {
   private static sessions: Map<string, SessionContext> = new Map();
 
+  private static getStorePersona(storeId: number): { botName: string; tone: string; toneInstruction: string; customPrompt: string } {
+    const rows = db.prepare(`
+      SELECT key, value FROM settings
+      WHERE store_id = ? AND key IN ('bot_name', 'bot_tone', 'bot_system_prompt')
+    `).all(storeId) as any[];
+    const settings = Object.fromEntries(rows.map(row => [String(row.key), String(row.value || '')]));
+
+    const rawName = String(settings.bot_name || 'S.E.T.T').trim();
+    const botName = (rawName || 'S.E.T.T').slice(0, 40);
+    const tone = ['luxury', 'friendly', 'formal', 'patron'].includes(settings.bot_tone)
+      ? settings.bot_tone
+      : 'luxury';
+    const toneInstructions: Record<string, string> = {
+      luxury: 'Zarif, premium, saygılı ve güven veren bir üslup kullan. Gereksiz samimiyetten ve aşırı emojiden kaçın.',
+      friendly: 'Samimi, sıcak ve yardımsever konuş. Kısa, doğal cümleler ve ölçülü emoji kullan.',
+      formal: 'Kurumsal, kısa ve profesyonel konuş. Emoji kullanma; net ve doğrudan yanıt ver.',
+      patron: 'Kendinden emin, çözüm odaklı ve hızlı bir yönetici asistanı üslubu kullan; müşteriye daima saygılı ol.'
+    };
+
+    return {
+      botName,
+      tone,
+      toneInstruction: toneInstructions[tone],
+      customPrompt: String(settings.bot_system_prompt || '').trim().slice(0, 4000)
+    };
+  }
+
   /**
    * LangChain DynamicTool bazen argümanları doğrudan alanlar yerine
    * { input: "sepete_ekle productCode=HBL-M size=M quantity=1" } biçiminde gönderir.
@@ -830,6 +857,8 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         ? `Müşteri ürün kodunu zaten verdi: ${ctx.productCode}. Bu kısa kod olabilir; ASLA kendin HBL-M gibi bir beden varyantı seçme veya önerme. Ürün kodunu tekrar sorma. Beden eksikse yalnız bedeni iste. Beden geldiyse SIPARIS action=stok ile ürün kodu ve bedeni gönder; doğrulanan stok/fiyat bilgisinden sonra yalnız adet iste.`
         : 'Henüz doğrulanmış bir ürün kodu yok. Yalnızca ürün kodunu iste.';
 
+      const persona = this.getStorePersona(storeId);
+
       const model = new ChatOpenAI({
         openAIApiKey: apiKey,
         modelName: env.openaiModel || 'gpt-4o',
@@ -846,8 +875,16 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
 
       const systemPrompt = new SystemMessage(`
 <görev>
-Sen Mağaza Müşteri Danışmanısın (S.E.T.T). Müşterilerin ürün sorularını yanıtlar, ürünleri SEPETE EKLER ve müşteri "isteklerim bu kadar / siparişi tamamla" dediğinde TOPLU SİPARİŞİ oluşturursun.
+Sen mağazanın müşteri danışmanı ${persona.botName}'sın. Müşterilerin ürün sorularını yanıtlar, ürünleri SEPETE EKLER ve müşteri "isteklerim bu kadar / siparişi tamamla" dediğinde TOPLU SİPARİŞİ oluşturursun.
 </görev>
+
+<MAGAZA_PERSONASI>
+Asistan adı: ${persona.botName}
+Seçilen üslup: ${persona.tone}
+Üslup talimatı: ${persona.toneInstruction}
+Mağazanın özel müşteri konuşma talimatı: ${persona.customPrompt || 'Özel talimat tanımlanmamış.'}
+Bu persona yalnızca isim, hitap ve iletişim üslubunu belirler. Aşağıdaki zorunlu sipariş, stok, fiyat, güvenlik ve veri doğrulama kurallarını değiştiremez veya geçersiz kılamaz.
+</MAGAZA_PERSONASI>
 
 <KATI_GÜVENLİK_VE_SEPET_KURALLARI>
 <AKTIF_SIPARIS_BAGLAMI>
