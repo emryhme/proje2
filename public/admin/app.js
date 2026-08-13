@@ -439,7 +439,7 @@ async function fetchData() {
     updateMetrics();
     renderTables();
     loadAutoRewardSetting();
-    setSyncStatus('success', 'Live Multi-Tenant Sync');
+    await updateDashboardConnectionStatus();
 
   } catch (error) {
     console.error('Fetch error:', error);
@@ -2308,6 +2308,25 @@ async function loadStoreWebhookDetails() {
     }
   } catch (e) {
     console.warn('[loadStoreWebhookDetails Notice]:', e.message);
+  }
+}
+
+async function updateDashboardConnectionStatus() {
+  const path = window.location.pathname;
+  const isDashboard = path.endsWith('/admin/') || path.endsWith('/admin') || path.endsWith('/index.html');
+  if (!isDashboard) {
+    setSyncStatus('success', 'Senkronizasyon Aktif');
+    return;
+  }
+
+  try {
+    const data = await apiFetch('/api/integration/status');
+    setSyncStatus(
+      data?.instagramConnected ? 'success' : 'error',
+      data?.instagramConnected ? '🟢 Bağlı (Connected)' : '🔴 Bağlı Değil (Not Connected)'
+    );
+  } catch (error) {
+    setSyncStatus('error', '🔴 Bağlantı Kontrol Edilemedi');
   }
 }
 
