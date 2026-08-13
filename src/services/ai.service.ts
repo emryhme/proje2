@@ -90,7 +90,9 @@ export class AIService {
   public static persistMessage(conversationId: number, senderType: 'user' | 'assistant', text: string): void {
     try {
       db.prepare('INSERT INTO messages (conversation_id, sender_type, text) VALUES (?, ?, ?)').run(conversationId, senderType, text);
-    } catch {}
+    } catch (error: any) {
+      console.error(`[AI Conversation] Mesaj kaydedilemedi (conversation=${conversationId}, sender=${senderType}):`, error?.message || error);
+    }
   }
 
   public static logAiUsage(storeId: number, conversationId: number, model: string, inputTokens: number, outputTokens: number, latency: number) {

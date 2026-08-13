@@ -60,7 +60,9 @@ class AIService {
         try {
             db_1.db.prepare('INSERT INTO messages (conversation_id, sender_type, text) VALUES (?, ?, ?)').run(conversationId, senderType, text);
         }
-        catch { }
+        catch (error) {
+            console.error(`[AI Conversation] Mesaj kaydedilemedi (conversation=${conversationId}, sender=${senderType}):`, error?.message || error);
+        }
     }
     static logAiUsage(storeId, conversationId, model, inputTokens, outputTokens, latency) {
         this.validateStoreId(storeId);

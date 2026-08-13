@@ -300,7 +300,13 @@ class WebhookController {
      */
     static async processAndReply(senderId, text, storeSlug, storeId) {
         try {
-            const { reply } = await ai_service_1.AIService.processMessage(senderId, text, storeSlug, storeId);
+            const conversationId = ai_service_1.AIService.getOrCreateConversation(storeId, `instagram:${senderId}`);
+            ai_service_1.AIService.persistMessage(conversationId, 'user', text);
+            const { reply, toolTraces } = await ai_service_1.AIService.processMessage(senderId, text, storeSlug, storeId);
+            ai_service_1.AIService.persistMessage(conversationId, 'assistant', reply);
+            for (const trace of toolTraces) {
+                console.log(`[AI Tool] Store=${storeId} Sender=${senderId} Tool=${trace.toolName} Status=${trace.status} Args=${JSON.stringify(trace.args)} Result=${String(trace.result).slice(0, 500)}`);
+            }
             await facebook_service_1.FacebookService.sendMessage(senderId, reply, storeId);
         }
         catch (error) {

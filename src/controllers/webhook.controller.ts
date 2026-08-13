@@ -331,7 +331,15 @@ export class WebhookController {
    */
   private static async processAndReply(senderId: string, text: string, storeSlug: string, storeId: number) {
     try {
-      const { reply } = await AIService.processMessage(senderId, text, storeSlug, storeId);
+      const conversationId = AIService.getOrCreateConversation(storeId, `instagram:${senderId}`);
+      AIService.persistMessage(conversationId, 'user', text);
+
+      const { reply, toolTraces } = await AIService.processMessage(senderId, text, storeSlug, storeId);
+      AIService.persistMessage(conversationId, 'assistant', reply);
+
+      for (const trace of toolTraces) {
+        console.log(`[AI Tool] Store=${storeId} Sender=${senderId} Tool=${trace.toolName} Status=${trace.status} Args=${JSON.stringify(trace.args)} Result=${String(trace.result).slice(0, 500)}`);
+      }
       await FacebookService.sendMessage(senderId, reply, storeId);
     } catch (error: any) {
       console.error(`[WebhookController] ❌ Mesaj işleme hatası (Store: ${storeSlug}/${storeId}, Sender: ${senderId}):`, error?.message || error);
