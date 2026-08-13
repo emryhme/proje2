@@ -168,6 +168,31 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
   }
 
   /**
+   * Mesajdaki kodu, AI tahmininden bağımsız olarak yalnızca bu mağazanın ürünleriyle eşleştirir.
+   * Böylece müşteri geçerli bir kod verdiğinde akış yeniden kod istemez.
+   */
+  private static hydrateProductCodeFromMessage(userText: string, storeId: number, ctx: SessionContext): void {
+    const rawText = String(userText || '').trim();
+    if (!rawText) return;
+
+    const product = db.prepare(`
+      SELECT product_code
+      FROM products
+      WHERE store_id = ?
+        AND (
+          INSTR(UPPER(?), UPPER(product_code)) > 0
+          OR INSTR(UPPER(?), UPPER(short_code)) > 0
+        )
+      ORDER BY LENGTH(product_code) DESC
+      LIMIT 1
+    `).get(storeId, rawText, rawText) as any;
+
+    if (product?.product_code) {
+      ctx.productCode = String(product.product_code).trim().toUpperCase();
+    }
+  }
+
+  /**
    * Alt Düğüm Araçlarını Tanımlar (Strict Store Isolation)
    */
   private static createLeafTools(senderId: string, storeSlug: string, storeId: number, channel: string) {
@@ -642,6 +667,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     try {
       await this.extractSessionDataWithAI(senderId, userMessage, apiKey, storeSlug, storeId, channel);
       const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
+      this.hydrateProductCodeFromMessage(userMessage, storeId, ctx);
 
       // Veritabanından Aktif Kampanyaları Çek (Store Isolated)
       const activeCampaigns = db.prepare(`
@@ -675,6 +701,10 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         ? ctx.cart.map(i => `• ${i.productName} (${i.size}) x${i.quantity} - ${i.unitPrice * i.quantity} TL`).join('\n')
         : 'Sepetiniz şu an boş.';
 
+      const orderContext = ctx.productCode
+        ? `Müşteri ürün kodunu zaten verdi: ${ctx.productCode}. Ürün kodunu tekrar sorma. Yalnızca beden bilgisi eksikse bedeni, beden varsa adet bilgisini iste.`
+        : 'Henüz doğrulanmış bir ürün kodu yok. Yalnızca ürün kodunu iste.';
+
       const model = new ChatOpenAI({
         openAIApiKey: apiKey,
         modelName: env.openaiModel || 'gpt-4o',
@@ -695,6 +725,12 @@ Sen Mağaza Müşteri Danışmanısın (F.R.I.D.A.Y.). Müşterilerin ürün sor
 </görev>
 
 <KATI_GÜVENLİK_VE_SEPET_KURALLARI>
+<AKTIF_SIPARIS_BAGLAMI>
+${orderContext}
+Mevcut beden: ${ctx.size || 'yok'}
+Mevcut adet: ${ctx.quantity || 'yok'}
+</AKTIF_SIPARIS_BAGLAMI>
+
 ZORUNLU SIPARIS SIRASI — bu kural diğer tüm sipariş talimatlarının önündedir:
 1. Önce yalnız ürün kodunu iste. Kod olmadan beden, adet veya kişisel bilgi isteme.
 2. Koddan sonra yalnız beden iste; bedenden sonra yalnız adet iste.
