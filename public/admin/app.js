@@ -439,7 +439,7 @@ async function fetchData() {
     updateMetrics();
     renderTables();
     loadAutoRewardSetting();
-    await updateDashboardConnectionStatus();
+    await updateInstagramConnectionStatus();
 
   } catch (error) {
     console.error('Fetch error:', error);
@@ -2286,10 +2286,10 @@ async function loadStoreWebhookDetails() {
       if (statusBadge) {
         if (data.instagramConnected) {
           statusBadge.className = 'status-badge in-stock';
-          statusBadge.innerHTML = '🟢 Bağlı (Connected)';
+          statusBadge.innerHTML = 'Instagram Bağlı';
         } else {
           statusBadge.className = 'status-badge out-stock';
-          statusBadge.innerHTML = '🔴 Bağlı Değil (Not Connected)';
+          statusBadge.innerHTML = 'Instagram Bağlı Değil';
         }
       }
 
@@ -2311,22 +2311,15 @@ async function loadStoreWebhookDetails() {
   }
 }
 
-async function updateDashboardConnectionStatus() {
-  const path = window.location.pathname;
-  const isDashboard = path.endsWith('/admin/') || path.endsWith('/admin') || path.endsWith('/index.html');
-  if (!isDashboard) {
-    setSyncStatus('success', 'Senkronizasyon Aktif');
-    return;
-  }
-
+async function updateInstagramConnectionStatus() {
   try {
     const data = await apiFetch('/api/integration/status');
     setSyncStatus(
       data?.instagramConnected ? 'success' : 'error',
-      data?.instagramConnected ? '🟢 Bağlı (Connected)' : '🔴 Bağlı Değil (Not Connected)'
+      data?.instagramConnected ? 'Instagram Bağlı' : 'Instagram Bağlı Değil'
     );
   } catch (error) {
-    setSyncStatus('error', '🔴 Bağlantı Kontrol Edilemedi');
+    setSyncStatus('error', 'Instagram Bağlantısı Kontrol Edilemedi');
   }
 }
 
