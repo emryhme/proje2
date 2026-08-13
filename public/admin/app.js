@@ -216,6 +216,14 @@ function setupUserDropdown() {
     } catch (e) {}
   }
 
+  const roleDisplayLabels = {
+    OWNER: 'Mağaza Sahibi',
+    ADMIN: 'Yönetici',
+    MANAGER: 'Mağaza Müdürü',
+    STAFF: 'Mağaza Personeli'
+  };
+  roleTitle = roleDisplayLabels[roleTitle] || roleTitle;
+
   let dropdown = document.getElementById('userProfileDropdown');
   if (!dropdown) {
     dropdown = document.createElement('div');
