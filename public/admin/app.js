@@ -144,10 +144,35 @@ function applyCurrentUserProfile() {
   const avatar = document.querySelector('.user .avatar');
   const nameElement = document.querySelector('.user-text strong');
   const roleElement = document.querySelector('.user-text span');
+  const brand = document.querySelector('.logo');
+  let ownerNameElement = brand?.querySelector('.admin-owner-name') || brand?.querySelector('span');
+  let storeLabel = 'MaÄŸazam';
+
+  if (rawUser) {
+    try {
+      const user = JSON.parse(rawUser);
+      storeLabel = user.storeName || user.title || storeLabel;
+    } catch (error) {
+      // A valid session is handled by checkAuthStatus.
+    }
+  }
+
+  brand?.childNodes.forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) node.remove();
+  });
+
+  if (!ownerNameElement && brand) {
+    ownerNameElement = document.createElement('span');
+    brand.appendChild(ownerNameElement);
+  }
 
   if (avatar) avatar.textContent = initials;
   if (nameElement) nameElement.textContent = displayName;
   if (roleElement) roleElement.textContent = roleLabels[role] || role;
+  if (ownerNameElement) {
+    ownerNameElement.className = 'admin-owner-name';
+    ownerNameElement.textContent = storeLabel;
+  }
 }
 
 function checkAuthStatus() {
