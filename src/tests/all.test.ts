@@ -301,6 +301,12 @@ async function runTestSuite() {
   const listedVariantOrder = (await OrderService.getOrders(100)).find(order => order.orderId === savedVariantOrder.orderId);
   assert(Boolean(listedVariantOrder) && listedVariantOrder?.productCode === 'HBL-M' && listedVariantOrder?.size === 'M', 'Created HBL-M order is returned by the admin orders listing');
 
+  console.log('\n2️⃣7️⃣-C AI TOOL INPUT TEST: DynamicTool input komutu doğru action olarak ayrıştırılmalı');
+  const parsedAddToCart = (AIService as any).normalizeSiparisToolInput({ input: 'sepete_ekle productCode=GMA-S size=S quantity=1' });
+  assert(parsedAddToCart.action === 'sepete_ekle' && parsedAddToCart.productCode === 'GMA-S' && parsedAddToCart.size === 'S' && parsedAddToCart.quantity === '1', 'Nested sepete_ekle command is parsed into structured tool arguments');
+  const parsedSaveOrder = (AIService as any).normalizeSiparisToolInput({ input: 'kayit' });
+  assert(parsedSaveOrder.action === 'kayit', 'Nested kayit command invokes order creation instead of stock lookup');
+
   console.log('\n2️⃣8️⃣ STOCK BUG FIX TEST 2: Stock Set (10 -> 25) & Read After Write');
   const updateSuccess2 = await StockService.updateStock(100, 'TEST-STOCK', 25);
   const stockCheck2 = await StockService.checkStock(100, 'TEST-STOCK');

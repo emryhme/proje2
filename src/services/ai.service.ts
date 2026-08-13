@@ -46,6 +46,38 @@ interface SessionContext {
 export class AIService {
   private static sessions: Map<string, SessionContext> = new Map();
 
+  /**
+   * LangChain DynamicTool bazen argümanları doğrudan alanlar yerine
+   * { input: "sepete_ekle productCode=HBL-M size=M quantity=1" } biçiminde gönderir.
+   * Her iki biçimi de tek ve güvenilir SIPARIS komutuna dönüştürür.
+   */
+  private static normalizeSiparisToolInput(input: any): any {
+    let data: any = input;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data); } catch { data = { input: data }; }
+    }
+    if (!data || typeof data !== 'object') data = {};
+
+    if (typeof data.input !== 'string' || !data.input.trim()) return data;
+
+    const command = data.input.trim();
+    if (command.startsWith('{')) {
+      try { return { ...data, ...JSON.parse(command) }; } catch {}
+    }
+
+    const parsed: any = {};
+    const actionMatch = command.match(/^([a-z_]+)/i);
+    if (actionMatch) parsed.action = actionMatch[1].toLowerCase();
+
+    const pairPattern = /([a-zA-Z][a-zA-Z0-9_]*)=("[^"]*"|'[^']*'|\S+)/g;
+    let match: RegExpExecArray | null;
+    while ((match = pairPattern.exec(command)) !== null) {
+      parsed[match[1]] = match[2].replace(/^("|')|("|')$/g, '');
+    }
+
+    return { ...data, ...parsed };
+  }
+
   private static validateStoreId(storeId: any): void {
     if (typeof storeId !== 'number' || isNaN(storeId) || storeId <= 0) {
       throw new Error('Store ID zorunludur ve geçerli bir pozitif sayı olmalıdır.');
@@ -665,7 +697,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       description: 'Sipariş akışını yürütür. action yalnızca stok, sepete_ekle, sepet_goruntule, sepet_onayla veya kayit olabilir. sepete_ekle için productCode, size ve quantity zorunludur. sepet_onayla yalnız müşteri açıkça sepeti onayladığında, kayit yalnız onay sonrası tam müşteri bilgileri varken kullanılır.',
       func: async (input: string) => {
         try {
-          let data: any = typeof input === 'object' ? input : JSON.parse(input);
+          const data = this.normalizeSiparisToolInput(input);
           const action = data.action || 'stok';
           if (action === 'sepete_ekle') {
             return await sepeteEkleTool.invoke(JSON.stringify(data));
