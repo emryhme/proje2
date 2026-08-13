@@ -299,6 +299,7 @@ function setupEventListeners() {
       if (state.soundEnabled) {
         if (icon) icon.className = 'fa-solid fa-bell text-gold';
         showToast('🔔 Sesli sipariş bildirimleri açıldı.', 'success');
+        playNotificationSound('preview');
         if ('Notification' in window && Notification.permission !== 'granted') {
           Notification.requestPermission();
         }
@@ -374,28 +375,83 @@ function setupEventListeners() {
   }
 }
 
-// Web Audio API Tabanlı Hoş İki Tonlu Sipariş Çanı
-function playNewOrderSound() {
+// Tarayıcıda dosya indirmeden çalışan, yüksek ve çok tonlu bildirim alarmı.
+let notificationAudioContext = null;
+
+function playNotificationSound(type = 'order') {
   if (!state.soundEnabled) return;
+
   try {
-    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const osc = audioCtx.createOscillator();
-    const gain = audioCtx.createGain();
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return;
 
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(587.33, audioCtx.currentTime);
-    osc.frequency.exponentialRampToValueAtTime(880, audioCtx.currentTime + 0.15);
+    notificationAudioContext ||= new AudioContextClass();
+    const audioCtx = notificationAudioContext;
+    const notes = type === 'preview'
+      ? [
+          { frequency: 659.25, delay: 0, duration: 0.18, volume: 0.72 },
+          { frequency: 880, delay: 0.16, duration: 0.28, volume: 0.82 }
+        ]
+      : [
+          { frequency: 659.25, delay: 0, duration: 0.24, volume: 0.78 },
+          { frequency: 783.99, delay: 0.18, duration: 0.24, volume: 0.82 },
+          { frequency: 987.77, delay: 0.36, duration: 0.38, volume: 0.92 },
+          { frequency: 783.99, delay: 0.82, duration: 0.24, volume: 0.82 },
+          { frequency: 987.77, delay: 1, duration: 0.48, volume: 0.96 }
+        ];
 
-    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+    const scheduleAlarm = () => {
+      const masterGain = audioCtx.createGain();
+      const compressor = audioCtx.createDynamicsCompressor();
+      masterGain.gain.setValueAtTime(0.9, audioCtx.currentTime);
+      compressor.threshold.setValueAtTime(-18, audioCtx.currentTime);
+      compressor.knee.setValueAtTime(18, audioCtx.currentTime);
+      compressor.ratio.setValueAtTime(8, audioCtx.currentTime);
+      compressor.attack.setValueAtTime(0.003, audioCtx.currentTime);
+      compressor.release.setValueAtTime(0.2, audioCtx.currentTime);
+      masterGain.connect(compressor);
+      compressor.connect(audioCtx.destination);
 
-    osc.connect(gain);
-    gain.connect(audioCtx.destination);
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.6);
+      notes.forEach(({ frequency, delay, duration, volume }) => {
+        const startAt = audioCtx.currentTime + 0.03 + delay;
+        const stopAt = startAt + duration;
+        const noteGain = audioCtx.createGain();
+        const mainOscillator = audioCtx.createOscillator();
+        const sparkleOscillator = audioCtx.createOscillator();
+
+        mainOscillator.type = 'triangle';
+        mainOscillator.frequency.setValueAtTime(frequency, startAt);
+        sparkleOscillator.type = 'sine';
+        sparkleOscillator.frequency.setValueAtTime(frequency * 2, startAt);
+
+        noteGain.gain.setValueAtTime(0.0001, startAt);
+        noteGain.gain.exponentialRampToValueAtTime(volume, startAt + 0.015);
+        noteGain.gain.exponentialRampToValueAtTime(0.0001, stopAt);
+
+        mainOscillator.connect(noteGain);
+        sparkleOscillator.connect(noteGain);
+        noteGain.connect(masterGain);
+        mainOscillator.start(startAt);
+        sparkleOscillator.start(startAt);
+        mainOscillator.stop(stopAt);
+        sparkleOscillator.stop(stopAt);
+      });
+    };
+
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume().then(scheduleAlarm).catch((error) => {
+        console.warn('Audio resume error:', error);
+      });
+    } else {
+      scheduleAlarm();
+    }
   } catch (e) {
     console.warn('Audio sound error:', e);
   }
+}
+
+function playNewOrderSound() {
+  playNotificationSound('order');
 }
 
 function triggerDesktopNotification(order) {
