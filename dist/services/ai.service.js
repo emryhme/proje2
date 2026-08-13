@@ -93,6 +93,12 @@ class AIService {
             const extractionPrompt = `
 Müşterinin gönderdiği mesajdan ad-soyad, telefon, adres, ürün kodu, beden ve adet verilerini ayıkla.
 
+KATI ÜRÜN KODU KURALI:
+- Müşteri yalnız "HBL" yazdıysa productCode "HBL" olmalıdır; bunu HBL-M, HBL-S gibi bir varyanta dönüştürme.
+- Beden yalnız açıkça söylendiyse size alanına yazılmalıdır.
+- "HBL M" veya "HBL-M" açıkça yazıldıysa productCode "HBL", size "M" olarak ayrıştırılmalıdır.
+- Ürün koduna beden ekleme; tam varyant kodunu backend ürün kodu + beden ile oluşturacaktır.
+
 Müşteri Mesajı: "${userText}"
 
 Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null ver):
@@ -206,7 +212,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         if (Number(variant.stock) <= 0) {
             return `${variant.product_code} (${ctx.size}) şu an stokta yok. Başka bir beden tercih eder misiniz?`;
         }
-        return `${variant.product_code} (${ctx.size}) stokta mevcut. Fiyatı ${price.toLocaleString('tr-TR')} TL. Kaç adet istersiniz?`;
+        return `${shortCode} kodlu ürünün ${ctx.size} bedeni stokta mevcut. Fiyatı ${price.toLocaleString('tr-TR')} TL. Kaç adet istersiniz?`;
     }
     /**
      * Alt Düğüm Araçlarını Tanımlar (Strict Store Isolation)

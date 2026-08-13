@@ -70,7 +70,6 @@ export class OrderService {
   public static async createOrder(storeId: number, data: OrderData): Promise<SavedOrder> {
     this.validateStoreId(storeId);
 
-    const orderId = this.generateOrderId(data.productCode, data.size, data.customerPhone);
     const createdAt = new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' });
     const status = 'BEKLEMEDE';
     const senderId = data.senderId || '';
@@ -81,6 +80,14 @@ export class OrderService {
 
     const quantity = Math.max(1, Number(data.quantity) || 1);
     const pCode = (data.productCode || '').trim().toUpperCase();
+    const requestedSize = (data.size || '').trim().toUpperCase();
+    if (!pCode || !requestedSize) {
+      throw new Error('PRODUCT_VARIANT_REQUIRED: Ürün kodu ve beden zorunludur.');
+    }
+
+    let canonicalProductCode = pCode;
+    let canonicalProductName = data.productName || pCode;
+    let orderId = '';
 
     let unitPrice = data.unitPrice || 0;
     let shippingFee = 0;
@@ -98,9 +105,19 @@ export class OrderService {
       // 2. Mağazaya Özel Ürün Fiyatı ve Stok Kontrolü
       const singleCode = pCode.split(/[,()/\s]/)[0].trim().toUpperCase();
       const prodObj = db.prepare(`
-        SELECT id, price, stock FROM products 
-        WHERE store_id = ? AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)
-      `).get(storeId, singleCode, singleCode) as any;
+        SELECT id, product_code, name, size, price, stock FROM products
+        WHERE store_id = ?
+          AND (UPPER(product_code) = ? OR (UPPER(short_code) = ? AND UPPER(size) = ?))
+        LIMIT 1
+      `).get(storeId, singleCode, singleCode, requestedSize) as any;
+
+      if (!prodObj || String(prodObj.size || '').trim().toUpperCase() !== requestedSize) {
+        throw new Error(`PRODUCT_VARIANT_NOT_FOUND: ${singleCode}-${requestedSize} ürünü bulunamadı.`);
+      }
+
+      canonicalProductCode = String(prodObj.product_code).trim().toUpperCase();
+      canonicalProductName = String(prodObj.name || data.productName || canonicalProductCode);
+      orderId = this.generateOrderId(canonicalProductCode, requestedSize, data.customerPhone);
 
       if (prodObj && prodObj.price > 0) {
         unitPrice = prodObj.price; // Yetkili fiyat veritabanından alınır
@@ -110,7 +127,7 @@ export class OrderService {
 
       const availableStock = prodObj ? Number(prodObj.stock) || 0 : 0;
       if (availableStock < quantity) {
-        throw new Error(`INSUFFICIENT_STOCK: İstenen ürün (${pCode}) stokta yetersiz! Mevcut Stok: ${availableStock}, İstenen: ${quantity}`);
+        throw new Error(`INSUFFICIENT_STOCK: İstenen ürün (${canonicalProductCode}) stokta yetersiz! Mevcut Stok: ${availableStock}, İstenen: ${quantity}`);
       }
 
       shippingFee = data.shippingFee !== undefined ? data.shippingFee : (unitPrice * quantity >= 1500 ? 0 : 49);
@@ -121,8 +138,8 @@ export class OrderService {
       const stockRes = db.prepare(`
         UPDATE products 
         SET stock = stock - ?, updated_at = CURRENT_TIMESTAMP 
-        WHERE store_id = ? AND (UPPER(product_code) = ? OR UPPER(short_code) = ?) AND stock >= ?
-      `).run(quantity, storeId, singleCode, singleCode, quantity);
+        WHERE store_id = ? AND id = ? AND stock >= ?
+      `).run(quantity, storeId, prodObj.id, quantity);
 
       if (stockRes.changes === 0) {
         throw new Error(`INSUFFICIENT_STOCK: Stok düşürme işlemi başarısız (Stok yetersiz veya çakışma var).`);
@@ -134,7 +151,7 @@ export class OrderService {
           UPDATE inventory 
           SET stock = MAX(0, stock - ?), updated_at = CURRENT_TIMESTAMP 
           WHERE store_id = ? AND UPPER(product_code) = ?
-        `).run(quantity, storeId, singleCode);
+        `).run(quantity, storeId, canonicalProductCode);
       } catch (e) {}
 
       // 4. Siparişi Veritabanına Ekle
@@ -151,9 +168,9 @@ export class OrderService {
         lastName,
         data.customerPhone,
         data.address,
-        data.productCode,
-        data.productName || data.productCode,
-        data.size,
+        canonicalProductCode,
+        canonicalProductName,
+        requestedSize,
         quantity,
         unitPrice,
         shippingFee,
@@ -173,9 +190,9 @@ export class OrderService {
           orderId,
           storeId,
           prodObj ? prodObj.id : 0,
-          data.productName || data.productCode,
-          data.productCode,
-          data.size,
+          canonicalProductName,
+          canonicalProductCode,
+          requestedSize,
           unitPrice,
           quantity,
           unitPrice * quantity
@@ -204,9 +221,9 @@ export class OrderService {
       customerName: data.customerName,
       customerPhone: data.customerPhone,
       address: data.address,
-      productCode: data.productCode,
-      productName: data.productName,
-      size: data.size,
+      productCode: canonicalProductCode,
+      productName: canonicalProductName,
+      size: requestedSize,
       quantity: quantity,
       unitPrice: calcResult.unitPrice,
       shippingFee: calcResult.shippingFee,
