@@ -254,6 +254,19 @@ async function runTestSuite() {
     assert(noSizeReply.includes('Hangi bedeni istersiniz?') && variantCtx.productCode === 'HBL', 'Product short code waits for an explicit size instead of reading M from Müşteri');
     const explicitSizeReply = ai_service_1.AIService.getShortCodeOrderReply(100, variantCtx, 'M beden istiyorum');
     assert(explicitSizeReply.includes('M bedeni stokta mevcut') && variantCtx.productCode === 'HBL-M', 'Explicit M size resolves HBL-M variant');
+    console.log('\n2️⃣7️⃣-B ORDER VARIANT TEST: Kısa kod + beden siparişi panele kaydedilmeli');
+    const savedVariantOrder = await order_service_1.OrderService.createOrder(100, {
+        customerName: 'Test Müşteri',
+        customerPhone: '05551234567',
+        address: 'Test Mahallesi Test Sokak No 1',
+        productCode: 'HBL-M',
+        productName: 'HBL Test',
+        size: 'M',
+        quantity: 1,
+        senderId: 'variant-order-test'
+    });
+    const listedVariantOrder = (await order_service_1.OrderService.getOrders(100)).find(order => order.orderId === savedVariantOrder.orderId);
+    assert(Boolean(listedVariantOrder) && listedVariantOrder?.productCode === 'HBL-M' && listedVariantOrder?.size === 'M', 'Created HBL-M order is returned by the admin orders listing');
     console.log('\n2️⃣8️⃣ STOCK BUG FIX TEST 2: Stock Set (10 -> 25) & Read After Write');
     const updateSuccess2 = await stock_service_1.StockService.updateStock(100, 'TEST-STOCK', 25);
     const stockCheck2 = await stock_service_1.StockService.checkStock(100, 'TEST-STOCK');

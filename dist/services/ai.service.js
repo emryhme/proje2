@@ -485,18 +485,24 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
                         const autoDmText = `🎉 TEBRİKLER / VIP ÖDÜL KAZANDINIZ!\nSayın ${customerName.trim()}, profilinize özel %20 VIP İNDİRİM tanımlanmıştır! (Ödül Kodu: ${rewardCode})\nKeyifli alışverişler dileriz! 🎁✨`;
                         facebook_service_1.FacebookService.sendMessage(senderId, autoDmText, storeId).catch(e => console.error('[Auto Reward DM Error]:', e.message));
                     }
-                    const combinedProductCode = ctx.cart.map(i => `${i.productCode} (${i.size}) x${i.quantity}`).join(', ');
-                    const combinedProductName = ctx.cart.map(i => `${i.productName} (${i.size})`).join(', ');
+                    const primaryItem = ctx.cart[0];
+                    if (ctx.cart.length !== 1) {
+                        return JSON.stringify({
+                            success: false,
+                            orderCreated: false,
+                            message: 'Sipariş kaydı şu anda her seferinde tek ürün varyantı için oluşturulabilir. Lütfen ürünleri ayrı siparişler olarak tamamlayın.'
+                        });
+                    }
                     const order = await order_service_1.OrderService.createOrder(storeId, {
                         storeId: storeId,
                         customerName: customerName,
                         customerPhone: customerPhone,
                         address: address,
-                        productCode: combinedProductCode,
-                        productName: combinedProductName,
-                        size: ctx.cart.map(i => i.size).join(','),
-                        quantity: totalQuantity,
-                        unitPrice: subtotal / Math.max(1, totalQuantity),
+                        productCode: primaryItem.productCode,
+                        productName: primaryItem.productName,
+                        size: primaryItem.size,
+                        quantity: primaryItem.quantity,
+                        unitPrice: primaryItem.unitPrice,
                         senderId: senderId
                     });
                     db_1.db.prepare(`
