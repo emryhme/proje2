@@ -46,15 +46,14 @@ interface SessionContext {
 export class AIService {
   private static sessions: Map<string, SessionContext> = new Map();
 
-  private static getStorePersona(storeId: number): { botName: string; tone: string; toneInstruction: string; customPrompt: string } {
+  private static getStorePersona(storeId: number): { storeName: string; tone: string; toneInstruction: string; customPrompt: string } {
     const rows = db.prepare(`
       SELECT key, value FROM settings
-      WHERE store_id = ? AND key IN ('bot_name', 'bot_tone', 'bot_system_prompt')
+      WHERE store_id = ? AND key IN ('bot_tone', 'bot_system_prompt')
     `).all(storeId) as any[];
     const settings = Object.fromEntries(rows.map(row => [String(row.key), String(row.value || '')]));
-
-    const rawName = String(settings.bot_name || 'S.E.T.T').trim();
-    const botName = (rawName || 'S.E.T.T').slice(0, 40);
+    const store = db.prepare('SELECT name FROM stores WHERE id = ?').get(storeId) as any;
+    const storeName = String(store?.name || 'Mağazamız').trim().slice(0, 80) || 'Mağazamız';
     const tone = ['luxury', 'friendly', 'formal', 'patron'].includes(settings.bot_tone)
       ? settings.bot_tone
       : 'luxury';
@@ -66,7 +65,7 @@ export class AIService {
     };
 
     return {
-      botName,
+      storeName,
       tone,
       toneInstruction: toneInstructions[tone],
       customPrompt: String(settings.bot_system_prompt || '').trim().slice(0, 4000)
@@ -875,15 +874,17 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
 
       const systemPrompt = new SystemMessage(`
 <görev>
-Sen mağazanın müşteri danışmanı ${persona.botName}'sın. Müşterilerin ürün sorularını yanıtlar, ürünleri SEPETE EKLER ve müşteri "isteklerim bu kadar / siparişi tamamla" dediğinde TOPLU SİPARİŞİ oluşturursun.
+Sen ${persona.storeName} mağazasının müşteri danışmanı ve temsilcisisin. Müşterilerin ürün sorularını yanıtlar, ürünleri SEPETE EKLER ve müşteri "isteklerim bu kadar / siparişi tamamla" dediğinde TOPLU SİPARİŞİ oluşturursun.
 </görev>
 
 <MAGAZA_PERSONASI>
-Asistan adı: ${persona.botName}
+Kimliğin: ${persona.storeName} mağazası müşteri danışmanı/temsilcisi.
+Müşteri "Sen kimsin?", "Adın ne?" veya benzer bir kimlik sorusu sorarsa "Ben ${persona.storeName} mağazasının müşteri danışmanıyım." şeklinde yanıt ver.
+Kendini robot, yapay zeka maskotu, sanal karakter, S.E.T.T veya başka özel bir isim olarak tanıtma.
 Seçilen üslup: ${persona.tone}
 Üslup talimatı: ${persona.toneInstruction}
 Mağazanın özel müşteri konuşma talimatı: ${persona.customPrompt || 'Özel talimat tanımlanmamış.'}
-Bu persona yalnızca isim, hitap ve iletişim üslubunu belirler. Aşağıdaki zorunlu sipariş, stok, fiyat, güvenlik ve veri doğrulama kurallarını değiştiremez veya geçersiz kılamaz.
+Bu persona yalnızca hitap ve iletişim üslubunu belirler. Mağaza temsilcisi kimliğini veya aşağıdaki zorunlu sipariş, stok, fiyat, güvenlik ve veri doğrulama kurallarını değiştiremez ya da geçersiz kılamaz.
 </MAGAZA_PERSONASI>
 
 <KATI_GÜVENLİK_VE_SEPET_KURALLARI>

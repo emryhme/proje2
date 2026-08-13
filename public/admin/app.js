@@ -1994,11 +1994,6 @@ function getOrCreateSystemSettingsModal() {
       <!-- Tab 1: AI Customization -->
       <div id="tabContentAi" style="display:block;">
         <div class="form-group" style="margin-bottom:14px;">
-          <label>Yapay Zeka Asistan Adı</label>
-          <input type="text" id="sysBotName" placeholder="Örn: S.E.T.T" value="S.E.T.T">
-        </div>
-
-        <div class="form-group" style="margin-bottom:14px;">
           <label>Yapay Zeka Ses Tonu & Kişilik Üslubu</label>
           <select id="sysBotTone" class="select" style="width:100%; height:40px; font-size:12px;">
             <option value="luxury">Lüks Parfüm Danışmanı & Saygılı (Önerilen)</option>
@@ -2089,10 +2084,6 @@ async function loadSystemSettingsIntoModal() {
     const data = await apiFetch(`${API_BASE}/api/settings`);
     if (data.success && data.settings) {
       const s = data.settings;
-      if (document.getElementById('sysBotName')) {
-        const savedBotName = String(s.bot_name || '').trim();
-        document.getElementById('sysBotName').value = !savedBotName || savedBotName === 'F.R.I.D.A.Y.' ? 'S.E.T.T' : savedBotName;
-      }
       if (document.getElementById('sysBotTone')) document.getElementById('sysBotTone').value = s.bot_tone || 'luxury';
       if (document.getElementById('sysBotSystemPrompt')) document.getElementById('sysBotSystemPrompt').value = s.bot_system_prompt || '';
     }
@@ -2106,7 +2097,6 @@ async function saveSystemSettingsModal() {
 
 async function saveSystemSettingsPage() {
   const payload = {
-    bot_name: document.getElementById('sysBotName')?.value.trim() || 'S.E.T.T',
     bot_tone: document.getElementById('sysBotTone')?.value || 'luxury',
     bot_system_prompt: document.getElementById('sysBotSystemPrompt')?.value || '',
     // Secrets are server-managed or obtained through the Instagram OAuth flow.
@@ -2118,7 +2108,7 @@ async function saveSystemSettingsPage() {
       body: JSON.stringify({ settings: payload })
     });
     if (data.success) {
-      showToast(`✅ Yapay zeka kişiselleştirmesi kaydedildi. Müşteri asistanı artık “${payload.bot_name}” adı ve seçilen üslupla yanıt verecek.`, 'success');
+      showToast('✅ Müşteri temsilcisi üslubu ve mağaza konuşma kuralları kaydedildi.', 'success');
       await loadSystemSettingsIntoModal();
     } else {
       showToast(`❌ Hata: ${data.error || 'Ayarlar kaydedilemedi'}`, 'error');
