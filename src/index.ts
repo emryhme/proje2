@@ -10,6 +10,7 @@ import { AIService } from './services/ai.service';
 import { GeminiService } from './services/gemini.service';
 import { AdminCopilotService } from './services/admin-copilot.service';
 import { FacebookService } from './services/facebook.service';
+import { DemoAIService } from './services/demo-ai.service';
 import { extractProductCode } from './utils/regex.util';
 import { db, hashPassword, initDatabase, needsPasswordRehash, verifyPassword } from './database/db';
 import { AuthMiddleware, AuthenticatedRequest } from './middleware/auth.middleware';
@@ -29,6 +30,44 @@ app.use(express.json({
   }
 }));
 app.use(express.urlencoded({ extended: true }));
+
+const demoAiRequests = new Map<string, number[]>();
+let demoAiGlobalRequests: number[] = [];
+app.post('/api/demo/ai', async (req, res) => {
+  const forwardedIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  const clientKey = forwardedIp || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  demoAiGlobalRequests = demoAiGlobalRequests.filter(timestamp => now - timestamp < 60_000);
+  if (demoAiGlobalRequests.length >= 120) {
+    return res.status(429).json({ success: false, error: 'Demo yapay zeka şu anda yoğun. Lütfen bir dakika sonra yeniden deneyin.' });
+  }
+  const recentRequests = (demoAiRequests.get(clientKey) || []).filter(timestamp => now - timestamp < 60_000);
+  if (recentRequests.length >= 12) {
+    return res.status(429).json({ success: false, error: 'Demo mesaj limiti doldu. Lütfen bir dakika sonra yeniden deneyin.' });
+  }
+  recentRequests.push(now);
+  demoAiGlobalRequests.push(now);
+  demoAiRequests.set(clientKey, recentRequests);
+  if (demoAiRequests.size > 5_000) {
+    for (const [key, timestamps] of demoAiRequests) {
+      if (!timestamps.some(timestamp => now - timestamp < 60_000)) demoAiRequests.delete(key);
+    }
+  }
+
+  try {
+    const message = String(req.body?.message || '').trim();
+    const history = Array.isArray(req.body?.history) ? req.body.history : [];
+    if (!message || message.length > 800) {
+      return res.status(400).json({ success: false, error: 'Mesaj 1-800 karakter arasında olmalıdır.' });
+    }
+    const reply = await DemoAIService.reply(message, history);
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ success: true, reply, demo: true });
+  } catch (error: any) {
+    console.error('[Demo AI] Gemini request failed:', error?.response?.data || error?.message || error);
+    return res.status(502).json({ success: false, error: 'Demo yapay zekası şu anda yanıt veremiyor. Lütfen tekrar deneyin.' });
+  }
+});
 
 import authRouter from './routes/auth.routes';
 app.use(authRouter);

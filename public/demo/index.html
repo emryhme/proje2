@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="icon" type="image/png" href="/favicon.png">
+  <title>ISCWORKS Demo Paneli</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css">
+  <link rel="stylesheet" href="styles.css?v=20260814-demo-v1">
+</head>
+<body>
+  <div class="demo-ribbon"><i class="fa-solid fa-flask"></i> DEMO MODU · Bu paneldeki hiçbir işlem gerçek veritabanını etkilemez.</div>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <a class="logo" href="/"><span>ISC</span>WORKS <b>DEMO</b></a>
+      <nav>
+        <button class="nav-item active" data-page="dashboard"><i class="fa-solid fa-grid-2"></i><span>Dashboard</span></button>
+        <button class="nav-item" data-page="stocks"><i class="fa-solid fa-boxes-stacked"></i><span>Stoklar</span><em id="stockNavCount">6</em></button>
+        <button class="nav-item" data-page="orders"><i class="fa-solid fa-bag-shopping"></i><span>Siparişler</span><em>8</em></button>
+        <button class="nav-item" data-page="campaigns"><i class="fa-solid fa-bullhorn"></i><span>Kampanyalar</span></button>
+        <div class="nav-title">YAPAY ZEKA</div>
+        <button class="nav-item" data-page="ai"><i class="fa-solid fa-sparkles"></i><span>Gemini AI Demo</span><i class="live-dot"></i></button>
+      </nav>
+      <div class="demo-store">
+        <div class="store-avatar">LM</div>
+        <div><strong>Luna Moda</strong><small>Sanal demo mağazası</small></div>
+      </div>
+      <a class="exit-demo" href="/"><i class="fa-solid fa-arrow-left"></i> Ana sayfaya dön</a>
+    </aside>
+
+    <main class="main">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu"><i class="fa-solid fa-bars"></i></button>
+        <div><h1 id="pageTitle">Dashboard</h1><p id="pageSubtitle">Sabit ve yapay verilerle hazırlanmış mağaza özeti</p></div>
+        <div class="top-actions"><span class="demo-status"><i></i> Demo Sistem Aktif</span><button class="icon-btn" id="resetDemo" title="Demo verilerini sıfırla"><i class="fa-solid fa-rotate-left"></i></button><div class="avatar">MS</div></div>
+      </header>
+
+      <section class="page active" id="page-dashboard">
+        <div class="welcome"><div><span class="eyebrow">14 AĞUSTOS 2026 · DEMO MAĞAZA</span><h2>Merhaba, Luna Moda 👋</h2><p>Satış operasyonunun bugünkü yapay görünümü burada.</p></div><button class="primary-btn" data-go="ai"><i class="fa-solid fa-sparkles"></i> Gemini’ye Sor</button></div>
+        <div class="metrics">
+          <article><div class="metric-icon purple"><i class="fa-solid fa-turkish-lira-sign"></i></div><span>Demo Ciro</span><strong>₺84.750</strong><small class="up"><i class="fa-solid fa-arrow-trend-up"></i> %18,2 bu ay</small></article>
+          <article><div class="metric-icon blue"><i class="fa-solid fa-bag-shopping"></i></div><span>Demo Sipariş</span><strong>128</strong><small class="up">+24 bu hafta</small></article>
+          <article><div class="metric-icon orange"><i class="fa-solid fa-box"></i></div><span>Toplam Stok</span><strong id="dashboardStock">140</strong><small>6 sanal varyant</small></article>
+          <article><div class="metric-icon green"><i class="fa-solid fa-comments"></i></div><span>Dönüşüm</span><strong>%18,4</strong><small class="up">+%3,1 gelişim</small></article>
+        </div>
+        <div class="dashboard-grid">
+          <article class="panel chart-panel"><div class="panel-head"><div><h3>Satış Performansı</h3><p>Son 7 gün · tamamen örnek veri</p></div><span class="pill">₺24.680</span></div><div class="chart" id="salesChart"></div><div class="chart-labels"><span>Pzt</span><span>Sal</span><span>Çar</span><span>Per</span><span>Cum</span><span>Cmt</span><span>Paz</span></div></article>
+          <article class="panel activity-panel"><div class="panel-head"><div><h3>Canlı Akış</h3><p>Örnek mağaza hareketleri</p></div><i class="pulse"></i></div><div id="activityFeed"></div></article>
+        </div>
+        <article class="panel"><div class="panel-head"><div><h3>Son Demo Siparişleri</h3><p>Gerçek müşteri bilgisi içermez</p></div><button class="text-btn" data-go="orders">Tümünü gör <i class="fa-solid fa-arrow-right"></i></button></div><div class="table-wrap"><table><thead><tr><th>Sipariş</th><th>Müşteri</th><th>Ürün</th><th>Tutar</th><th>Durum</th></tr></thead><tbody id="dashboardOrders"></tbody></table></div></article>
+      </section>
+
+      <section class="page" id="page-stocks">
+        <div class="page-actions"><div class="search"><i class="fa-solid fa-magnifying-glass"></i><input id="stockSearch" placeholder="Ürün adı veya kodu ara"></div><button class="primary-btn" id="addDemoProduct"><i class="fa-solid fa-plus"></i> Demo Ürün Ekle</button></div>
+        <div class="notice"><i class="fa-solid fa-shield-halved"></i><div><strong>Güvenli demo alanı</strong><span>Buradaki stok değişiklikleri yalnızca bu sekmede tutulur ve sayfa yenilendiğinde silinir.</span></div></div>
+        <article class="panel"><div class="panel-head"><div><h3>Demo Stok Listesi</h3><p id="stockSummary">6 varyant · 140 adet toplam stok</p></div></div><div class="table-wrap"><table><thead><tr><th>Ürün Kodu</th><th>Ürün</th><th>Beden</th><th>Fiyat</th><th>Stok</th><th>İşlem</th></tr></thead><tbody id="stockTable"></tbody></table></div></article>
+      </section>
+
+      <section class="page" id="page-orders">
+        <div class="notice"><i class="fa-solid fa-circle-info"></i><div><strong>Örnek siparişler</strong><span>İsimler ve adresler kurgusaldır. Durum değişiklikleri gerçek sistemlere gönderilmez.</span></div></div>
+        <article class="panel"><div class="panel-head"><div><h3>Sipariş Yönetimi</h3><p>8 yapay sipariş kaydı</p></div><div class="segmented"><button class="active">Tümü</button><button>Bekleyen</button><button>Onaylı</button></div></div><div class="table-wrap"><table><thead><tr><th>Sipariş</th><th>Müşteri</th><th>Ürün</th><th>Tarih</th><th>Tutar</th><th>Durum</th><th></th></tr></thead><tbody id="ordersTable"></tbody></table></div></article>
+      </section>
+
+      <section class="page" id="page-campaigns">
+        <div class="welcome compact"><div><span class="eyebrow">DEMO KAMPANYALAR</span><h2>Satış ivmesini deneyin</h2><p>Tüm kampanya anahtarları yalnızca görsel demodur.</p></div><button class="primary-btn" id="newCampaign"><i class="fa-solid fa-plus"></i> Demo Kampanya</button></div>
+        <div class="campaign-grid" id="campaignGrid"></div>
+      </section>
+
+      <section class="page" id="page-ai">
+        <div class="ai-layout">
+          <aside class="ai-info"><div class="ai-orb"><i class="fa-solid fa-sparkles"></i></div><span class="eyebrow">GEMINI 2.5 FLASH</span><h2>Demo mağazanızı analiz edin</h2><p>Gemini yalnızca bu sayfadaki yapay ürün, stok ve kampanya verileriyle yanıt verir. Gerçek veritabanına veya müşteri verilerine erişemez.</p><div class="suggestions"><button data-prompt="HBL ürünlerinin stok durumunu özetle">HBL stoklarını özetle</button><button data-prompt="Hangi demo kampanyalar aktif?">Kampanyaları göster</button><button data-prompt="Demo satış performansını yorumla">Satışı yorumla</button></div></aside>
+          <article class="chat-panel"><div class="chat-head"><div class="gemini-mark"><i class="fa-solid fa-gem"></i></div><div><strong>ISCWORKS Gemini Demo</strong><span><i></i> Çevrimiçi · Salt okunur</span></div><button id="clearChat" title="Sohbeti temizle"><i class="fa-solid fa-trash-can"></i></button></div><div class="messages" id="chatMessages"><div class="message assistant"><div class="msg-avatar"><i class="fa-solid fa-sparkles"></i></div><div>Merhaba! Luna Moda demo mağazasının yapay verileri hakkında bana soru sorabilirsiniz. Ürün, stok, kampanya veya satış performansını birlikte inceleyebiliriz.</div></div></div><form class="chat-form" id="chatForm"><textarea id="chatInput" maxlength="800" rows="1" placeholder="Örn: HBL-M stokta kaç adet var?"></textarea><button type="submit"><i class="fa-solid fa-arrow-up"></i></button></form><div class="chat-foot">Gemini yanıtları hata içerebilir · Demo işlemleri kalıcı değildir</div></article>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="app.js?v=20260814-demo-v1"></script>
+</body>
+</html>

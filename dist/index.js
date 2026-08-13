@@ -12,6 +12,7 @@ const stock_service_1 = require("./services/stock.service");
 const gemini_service_1 = require("./services/gemini.service");
 const admin_copilot_service_1 = require("./services/admin-copilot.service");
 const facebook_service_1 = require("./services/facebook.service");
+const demo_ai_service_1 = require("./services/demo-ai.service");
 const db_1 = require("./database/db");
 const auth_middleware_1 = require("./middleware/auth.middleware");
 // Initialize schema, migrations, and seed data once before serving requests.
@@ -26,6 +27,44 @@ app.use(express_1.default.json({
     }
 }));
 app.use(express_1.default.urlencoded({ extended: true }));
+const demoAiRequests = new Map();
+let demoAiGlobalRequests = [];
+app.post('/api/demo/ai', async (req, res) => {
+    const forwardedIp = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+    const clientKey = forwardedIp || req.socket.remoteAddress || 'unknown';
+    const now = Date.now();
+    demoAiGlobalRequests = demoAiGlobalRequests.filter(timestamp => now - timestamp < 60_000);
+    if (demoAiGlobalRequests.length >= 120) {
+        return res.status(429).json({ success: false, error: 'Demo yapay zeka şu anda yoğun. Lütfen bir dakika sonra yeniden deneyin.' });
+    }
+    const recentRequests = (demoAiRequests.get(clientKey) || []).filter(timestamp => now - timestamp < 60_000);
+    if (recentRequests.length >= 12) {
+        return res.status(429).json({ success: false, error: 'Demo mesaj limiti doldu. Lütfen bir dakika sonra yeniden deneyin.' });
+    }
+    recentRequests.push(now);
+    demoAiGlobalRequests.push(now);
+    demoAiRequests.set(clientKey, recentRequests);
+    if (demoAiRequests.size > 5_000) {
+        for (const [key, timestamps] of demoAiRequests) {
+            if (!timestamps.some(timestamp => now - timestamp < 60_000))
+                demoAiRequests.delete(key);
+        }
+    }
+    try {
+        const message = String(req.body?.message || '').trim();
+        const history = Array.isArray(req.body?.history) ? req.body.history : [];
+        if (!message || message.length > 800) {
+            return res.status(400).json({ success: false, error: 'Mesaj 1-800 karakter arasında olmalıdır.' });
+        }
+        const reply = await demo_ai_service_1.DemoAIService.reply(message, history);
+        res.setHeader('Cache-Control', 'no-store');
+        return res.json({ success: true, reply, demo: true });
+    }
+    catch (error) {
+        console.error('[Demo AI] Gemini request failed:', error?.response?.data || error?.message || error);
+        return res.status(502).json({ success: false, error: 'Demo yapay zekası şu anda yanıt veremiyor. Lütfen tekrar deneyin.' });
+    }
+});
 const auth_routes_1 = __importDefault(require("./routes/auth.routes"));
 app.use(auth_routes_1.default);
 // ==========================================

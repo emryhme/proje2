@@ -6,6 +6,7 @@ import { AIService } from '../services/ai.service';
 import { AdminCopilotService } from '../services/admin-copilot.service';
 import { GeminiService } from '../services/gemini.service';
 import { WebhookController } from '../controllers/webhook.controller';
+import { DemoAIService } from '../services/demo-ai.service';
 import { AuthMiddleware } from '../middleware/auth.middleware';
 import { db, hashPassword, initDatabase, needsPasswordRehash, verifyPassword } from '../database/db';
 
@@ -339,6 +340,14 @@ async function runTestSuite() {
   db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (100, 'bot_system_prompt', 'Müşteriye ürün bakım önerisi sun.')").run();
   const livePersona = (AIService as any).getStorePersona(100);
   assert(livePersona.storeName === 'Store Alpha' && livePersona.tone === 'friendly' && livePersona.customPrompt.includes('bakım önerisi'), 'Store identity, saved tone and custom prompt are loaded into the live AI persona without creating a mascot');
+
+  console.log('\n2️⃣7️⃣-E PUBLIC DEMO ISOLATION TEST: Demo AI must use fixed fictional snapshot');
+  assert(
+    DemoAIService.snapshot.storeName === 'Luna Moda Demo' &&
+    DemoAIService.snapshot.products.length === 6 &&
+    DemoAIService.snapshot.products.every(product => typeof product.stock === 'number'),
+    'Public demo AI is constrained to a fixed fictional store snapshot instead of tenant database records'
+  );
 
   console.log('\n2️⃣8️⃣ STOCK BUG FIX TEST 2: Stock Set (10 -> 25) & Read After Write');
   const updateSuccess2 = await StockService.updateStock(100, 'TEST-STOCK', 25);
