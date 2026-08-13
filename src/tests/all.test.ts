@@ -276,6 +276,17 @@ async function runTestSuite() {
   const invRow1 = db.prepare("SELECT stock FROM inventory WHERE store_id = 100 AND product_code = 'TEST-STOCK'").get() as any;
   assert(updateSuccess1 === true && prodRow1?.stock === 15 && invRow1?.stock === 15, 'Stock updated to 15 in both products and inventory tables');
 
+  console.log('\n2️⃣7️⃣-A AI VARIANT TEST: "Müşteri" kelimesi M beden sayılmamalı');
+  await StockService.addProduct({ storeId: 100, shortCode: 'HBL', productCode: 'HBL-S', name: 'HBL Test', size: 'S', stock: 10, price: 250 });
+  await StockService.addProduct({ storeId: 100, shortCode: 'HBL', productCode: 'HBL-M', name: 'HBL Test', size: 'M', stock: 10, price: 250 });
+  const variantCtx = AIService.getSessionContext('variant-test', 'store-alpha', 100, 'TEST');
+  variantCtx.productCode = 'HBL';
+  variantCtx.variantVerified = false;
+  const noSizeReply = (AIService as any).getShortCodeOrderReply(100, variantCtx, 'HBL\n\nMüşteri bu ürünü sipariş etmek istiyor.');
+  assert(noSizeReply.includes('Hangi bedeni istersiniz?') && variantCtx.productCode === 'HBL', 'Product short code waits for an explicit size instead of reading M from Müşteri');
+  const explicitSizeReply = (AIService as any).getShortCodeOrderReply(100, variantCtx, 'M beden istiyorum');
+  assert(explicitSizeReply.includes('M bedeni stokta mevcut') && variantCtx.productCode === 'HBL-M', 'Explicit M size resolves HBL-M variant');
+
   console.log('\n2️⃣8️⃣ STOCK BUG FIX TEST 2: Stock Set (10 -> 25) & Read After Write');
   const updateSuccess2 = await StockService.updateStock(100, 'TEST-STOCK', 25);
   const stockCheck2 = await StockService.checkStock(100, 'TEST-STOCK');

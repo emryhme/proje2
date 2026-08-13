@@ -191,7 +191,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     const normalizedText = rawText.toUpperCase();
     const containsExactCode = (value: string) => {
       const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(`(^|[^A-Z0-9-])${escaped}($|[^A-Z0-9-])`, 'i').test(normalizedText);
+      return new RegExp(`(^|[^\\p{L}\\p{N}-])${escaped}($|[^\\p{L}\\p{N}-])`, 'iu').test(normalizedText);
     };
 
     // Tam kod yazıldıysa olduğu gibi koru. Aksi durumda yalnız kısa kodu sakla;
@@ -233,7 +233,9 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     const normalizedText = String(userText || '').toUpperCase();
     const containsExactValue = (value: string) => {
       const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(`(^|[^A-Z0-9])${escaped}($|[^A-Z0-9])`, 'i').test(normalizedText);
+      // Unicode harf sınırı kullanılır. Böylece M bedeni "Müşteri" kelimesindeki
+      // ilk M harfiyle yanlışlıkla eşleşmez; yalnız "M", "beden M" gibi bağımsız değerler kabul edilir.
+      return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'iu').test(normalizedText);
     };
     const selectedVariant = variants.find(row => containsExactValue(String(row.size || '').trim().toUpperCase()));
     if (!selectedVariant) {
