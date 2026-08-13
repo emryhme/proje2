@@ -2345,9 +2345,13 @@ async function loadStoreWebhookDetails() {
       const oauthStatus = document.getElementById('instagramOAuthStatus');
       const connectButton = document.getElementById('btnConnectInstagram');
       const disconnectButton = document.getElementById('btnDisconnectInstagram');
+      const commentAccessStatus = document.getElementById('instagramCommentAccessStatus');
+      const commentToggleButton = document.getElementById('btnToggleInstagramComments');
+      const commentPermissionGranted = Boolean(data.instagramCommentsPermissionGranted ?? data.instagramCommentsConnected);
+      const commentAutomationEnabled = Boolean(data.instagramCommentAutomationEnabled);
       if (oauthStatus) {
-        if (data.instagramCommentsConnected) {
-          oauthStatus.textContent = `Bağlı: @${data.instagramUsername || 'instagram hesabı'} • DM ve gönderi yorumları aktif`;
+        if (data.instagramConnected && commentPermissionGranted) {
+          oauthStatus.textContent = `Bağlı: @${data.instagramUsername || 'instagram hesabı'} • DM ve yorum izni verildi`;
           oauthStatus.style.color = '#34d399';
         } else if (data.instagramConnected) {
           oauthStatus.textContent = `Bağlı: @${data.instagramUsername || 'instagram hesabı'} • Yorum erişimi için yeniden yetkilendirin`;
@@ -2358,12 +2362,36 @@ async function loadStoreWebhookDetails() {
         }
       }
       if (connectButton) {
-        connectButton.style.display = data.instagramCommentsConnected ? 'none' : 'inline-flex';
+        connectButton.style.display = commentPermissionGranted ? 'none' : 'inline-flex';
         connectButton.innerHTML = data.instagramConnected
           ? '<i class="fa-brands fa-instagram"></i> Yorum Erişimini Etkinleştir'
           : '<i class="fa-brands fa-instagram"></i> Instagram\'ı Bağla';
       }
       if (disconnectButton) disconnectButton.style.display = data.instagramConnected ? 'inline-flex' : 'none';
+
+      if (commentAccessStatus) {
+        if (!data.instagramConnected) {
+          commentAccessStatus.textContent = 'Önce Instagram hesabını bağlayın.';
+          commentAccessStatus.style.color = '#94a3b8';
+        } else if (!commentPermissionGranted) {
+          commentAccessStatus.textContent = 'Yorum izni eksik. Yukarıdaki Yorum Erişimini Etkinleştir düğmesini kullanın.';
+          commentAccessStatus.style.color = '#fbbf24';
+        } else if (commentAutomationEnabled) {
+          commentAccessStatus.textContent = 'Açık • Yeni yorumlar yapay zeka tarafından işlenir.';
+          commentAccessStatus.style.color = '#34d399';
+        } else {
+          commentAccessStatus.textContent = 'Kapalı • Yorumlar işlenmez; DM mesajları çalışmaya devam eder.';
+          commentAccessStatus.style.color = '#f87171';
+        }
+      }
+      if (commentToggleButton) {
+        commentToggleButton.disabled = !data.instagramConnected || !commentPermissionGranted;
+        commentToggleButton.dataset.enabled = commentAutomationEnabled ? '1' : '0';
+        commentToggleButton.className = commentAutomationEnabled ? 'btn btn-secondary' : 'btn btn-primary';
+        commentToggleButton.innerHTML = commentAutomationEnabled
+          ? '<i class="fa-solid fa-comment-slash"></i> Yorumlara Erişimi Kapat'
+          : '<i class="fa-solid fa-comments"></i> Yorumlara Erişimi Aç';
+      }
 
       if (lastEvtElem) {
         lastEvtElem.textContent = data.lastWebhookAt || 'Henüz event gelmedi';
@@ -2409,6 +2437,25 @@ async function disconnectInstagramOAuth() {
     await loadStoreWebhookDetails();
   } catch (error) {
     showToast(`❌ ${error.message || 'Bağlantı kaldırılamadı.'}`, 'error');
+  }
+}
+
+async function toggleInstagramCommentAccess() {
+  const button = document.getElementById('btnToggleInstagramComments');
+  if (!button || button.disabled) return;
+  const currentlyEnabled = button.dataset.enabled === '1';
+
+  try {
+    button.disabled = true;
+    const data = await apiFetch('/api/integrations/instagram/comments', {
+      method: 'POST',
+      body: JSON.stringify({ enabled: !currentlyEnabled })
+    });
+    showToast(data.message || `Yorum erişimi ${currentlyEnabled ? 'kapatıldı' : 'açıldı'}.`, 'success');
+    await loadStoreWebhookDetails();
+  } catch (error) {
+    showToast(`❌ ${error.message || 'Yorum erişimi değiştirilemedi.'}`, 'error');
+    button.disabled = false;
   }
 }
 

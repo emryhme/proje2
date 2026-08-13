@@ -54,6 +54,8 @@ function disconnectInstagramAccount(instagramUserId) {
         db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").run(store.id);
         db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_webhook_subscribed_at'").run(store.id);
         db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_comment_access_enabled'").run(store.id);
+        db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_comment_permission_granted'").run(store.id);
+        db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_comment_automation_enabled'").run(store.id);
         db_1.db.prepare('UPDATE stores SET instagram_account_id = ?, instagram_username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('', '', store.id);
         auth_middleware_1.AuthMiddleware.logAudit(store.id, 0, 'INSTAGRAM_DEAUTHORIZED', 'stores', String(store.id));
     })();
@@ -143,6 +145,10 @@ router.get('/api/integrations/instagram/callback', async (req, res) => {
                 .run(oauthState.store_id, 'instagram_webhook_subscribed_at');
             db_1.db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, 'instagram_comment_access_enabled', '1')")
                 .run(oauthState.store_id);
+            db_1.db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, 'instagram_comment_permission_granted', '1')")
+                .run(oauthState.store_id);
+            db_1.db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, 'instagram_comment_automation_enabled', '1')")
+                .run(oauthState.store_id);
             auth_middleware_1.AuthMiddleware.logAudit(oauthState.store_id, oauthState.user_id, 'CONNECT_INSTAGRAM', 'stores', String(oauthState.store_id));
         })();
         return res.send(htmlResponse('Instagram bağlandı', username ? `@${username} hesabı mağazanıza bağlandı.` : 'Instagram hesabı mağazanıza bağlandı.', true));
@@ -158,10 +164,44 @@ router.post('/api/integrations/instagram/disconnect', auth_middleware_1.AuthMidd
         db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").run(storeId);
         db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_webhook_subscribed_at'").run(storeId);
         db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_comment_access_enabled'").run(storeId);
+        db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_comment_permission_granted'").run(storeId);
+        db_1.db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'instagram_comment_automation_enabled'").run(storeId);
         db_1.db.prepare('UPDATE stores SET instagram_account_id = ?, instagram_username = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run('', '', storeId);
         auth_middleware_1.AuthMiddleware.logAudit(storeId, req.auth.userId, 'DISCONNECT_INSTAGRAM', 'stores', String(storeId));
     })();
     return res.json({ success: true });
+});
+router.post('/api/integrations/instagram/comments', auth_middleware_1.AuthMiddleware.authenticate, auth_middleware_1.AuthMiddleware.requireRole(['OWNER', 'ADMIN']), (req, res) => {
+    const storeId = req.auth.storeId;
+    const enabled = req.body?.enabled === true;
+    const store = db_1.db.prepare('SELECT instagram_account_id FROM stores WHERE id = ?').get(storeId);
+    const hasToken = !!db_1.db.prepare("SELECT 1 FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").get(storeId);
+    const hasCommentPermission = !!db_1.db.prepare(`
+    SELECT 1 FROM settings
+    WHERE store_id = ?
+      AND key IN ('instagram_comment_permission_granted', 'instagram_comment_access_enabled')
+      AND value = '1'
+  `).get(storeId);
+    if (!store?.instagram_account_id || !hasToken) {
+        return res.status(409).json({ success: false, error: 'Önce Instagram hesabını bağlayın.' });
+    }
+    if (enabled && !hasCommentPermission) {
+        return res.status(409).json({
+            success: false,
+            reauthorizeRequired: true,
+            error: 'Yorum izni henüz verilmemiş. Önce Yorum Erişimini Etkinleştir ile Instagram hesabını yeniden yetkilendirin.'
+        });
+    }
+    db_1.db.prepare(`
+    INSERT OR REPLACE INTO settings (store_id, key, value)
+    VALUES (?, 'instagram_comment_automation_enabled', ?)
+  `).run(storeId, enabled ? '1' : '0');
+    auth_middleware_1.AuthMiddleware.logAudit(storeId, req.auth.userId, enabled ? 'ENABLE_INSTAGRAM_COMMENTS' : 'DISABLE_INSTAGRAM_COMMENTS', 'settings', 'instagram_comment_automation_enabled');
+    return res.json({
+        success: true,
+        enabled,
+        message: enabled ? 'Instagram yorumlarına yapay zeka erişimi açıldı.' : 'Instagram yorumlarına yapay zeka erişimi kapatıldı. DM mesajları çalışmaya devam eder.'
+    });
 });
 // Meta calls this after the account owner removes this application's authorization.
 router.post('/api/integrations/instagram/deauthorize', (req, res) => {
@@ -204,7 +244,14 @@ router.get('/api/integration/status', auth_middleware_1.AuthMiddleware.authentic
             return res.status(404).json({ success: false, error: 'MaÃ„Å¸aza bulunamadÃ„Â±.' });
         }
         const hasInstagramToken = !!db_1.db.prepare("SELECT 1 FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").get(storeId);
-        const hasInstagramCommentAccess = !!db_1.db.prepare("SELECT 1 FROM settings WHERE store_id = ? AND key = 'instagram_comment_access_enabled' AND value = '1'").get(storeId);
+        const hasInstagramCommentPermission = !!db_1.db.prepare(`
+      SELECT 1 FROM settings
+      WHERE store_id = ?
+        AND key IN ('instagram_comment_permission_granted', 'instagram_comment_access_enabled')
+        AND value = '1'
+    `).get(storeId);
+        const commentAutomationSetting = db_1.db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'instagram_comment_automation_enabled'").get(storeId);
+        const isInstagramCommentAutomationEnabled = hasInstagramCommentPermission && commentAutomationSetting?.value !== '0';
         const isConnected = !!store.instagram_account_id && hasInstagramToken;
         const webhookUrl = `${req.protocol}://${req.get('host')}/api/webhook/${store.slug}`;
         return res.json({
@@ -216,7 +263,9 @@ router.get('/api/integration/status', auth_middleware_1.AuthMiddleware.authentic
             instagramAccountId: store.instagram_account_id || '',
             instagramUsername: store.instagram_username || '',
             instagramConnected: isConnected,
-            instagramCommentsConnected: isConnected && hasInstagramCommentAccess,
+            instagramCommentsConnected: isConnected && hasInstagramCommentPermission,
+            instagramCommentsPermissionGranted: isConnected && hasInstagramCommentPermission,
+            instagramCommentAutomationEnabled: isConnected && isInstagramCommentAutomationEnabled,
             connected: isConnected,
             webhookUrl,
             globalWebhookUrl: `${req.protocol}://${req.get('host')}/webhook/instagram`,

@@ -252,6 +252,11 @@ async function runTestSuite() {
         parsedComment.mediaId === 'media_456' &&
         parsedComment.text === 'HBL almak istiyorum', 'Instagram comment ID, commenter, media and text are extracted from the official comments webhook shape');
     assert(webhook_controller_1.WebhookController.extractInstagramComment({ field: 'messages', value: { id: 'not_a_comment', text: 'ignored' } }) === null, 'Non-comment webhook changes cannot enter the Instagram comment sales flow');
+    db_1.db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (100, 'instagram_comment_permission_granted', '1')").run();
+    db_1.db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (100, 'instagram_comment_automation_enabled', '1')").run();
+    assert(webhook_controller_1.WebhookController.isInstagramCommentAutomationEnabled(100) === true, 'Instagram comment AI access switch enables comment processing for the selected store');
+    db_1.db.prepare("UPDATE settings SET value = '0' WHERE store_id = 100 AND key = 'instagram_comment_automation_enabled'").run();
+    assert(webhook_controller_1.WebhookController.isInstagramCommentAutomationEnabled(100) === false, 'Instagram comment AI access switch disables comments without affecting DM routing');
     // 7. STOCK BUG FIX TESTS (ADD, SET, ISOLATION, COLLISION & SANITATION)
     console.log('\n2️⃣7️⃣ STOCK BUG FIX TEST 1: Stock Add (+5 from 10 -> 15)');
     await stock_service_1.StockService.addProduct({ storeId: 100, shortCode: 'TST', productCode: 'TEST-STOCK', name: 'Test Product', size: 'M', stock: 10, price: 200 });

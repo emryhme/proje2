@@ -96,6 +96,18 @@ class WebhookController {
             return null;
         return { commentId, commenterId, username, text, mediaId };
     }
+    static isInstagramCommentAutomationEnabled(storeId) {
+        const permission = db_1.db.prepare(`
+      SELECT 1 FROM settings
+      WHERE store_id = ?
+        AND key IN ('instagram_comment_permission_granted', 'instagram_comment_access_enabled')
+        AND value = '1'
+    `).get(storeId);
+        if (!permission)
+            return false;
+        const automation = db_1.db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'instagram_comment_automation_enabled'").get(storeId);
+        return automation?.value !== '0';
+    }
     /**
      * Facebook / Instagram Webhook Verification (GET /webhook/instagram)
      */
@@ -210,8 +222,13 @@ class WebhookController {
                     if (comment && comment.commenterId !== String(store.instagram_account_id || entry.id || '')) {
                         const eventId = `instagram-comment:${comment.commentId}`;
                         if (!WebhookController.isDuplicateEvent(eventId, store.id)) {
-                            console.log(`[Store Webhook: ${store.slug} (ID: ${store.id})] 💬 Instagram yorumu işleniyor (@${comment.username || comment.commenterId}): "${comment.text}"`);
-                            WebhookController.processCommentAndReply(comment, store.slug, store.id);
+                            if (WebhookController.isInstagramCommentAutomationEnabled(store.id)) {
+                                console.log(`[Store Webhook: ${store.slug} (ID: ${store.id})] 💬 Instagram yorumu işleniyor (@${comment.username || comment.commenterId}): "${comment.text}"`);
+                                WebhookController.processCommentAndReply(comment, store.slug, store.id);
+                            }
+                            else {
+                                console.log(`[Store Webhook: ${store.slug} (ID: ${store.id})] 🔕 Instagram yorum erişimi kapalı; yorum işlenmedi (${comment.commentId}).`);
+                            }
                         }
                     }
                     continue;
@@ -308,8 +325,13 @@ class WebhookController {
                     if (comment && comment.commenterId !== String(matchedStore.instagram_account_id || entry.id || '')) {
                         const eventId = `instagram-comment:${comment.commentId}`;
                         if (!WebhookController.isDuplicateEvent(eventId, matchedStore.id)) {
-                            console.log(`[Global Webhook -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] 💬 Instagram yorumu işleniyor (@${comment.username || comment.commenterId}): "${comment.text}"`);
-                            WebhookController.processCommentAndReply(comment, matchedStore.slug, matchedStore.id);
+                            if (WebhookController.isInstagramCommentAutomationEnabled(matchedStore.id)) {
+                                console.log(`[Global Webhook -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] 💬 Instagram yorumu işleniyor (@${comment.username || comment.commenterId}): "${comment.text}"`);
+                                WebhookController.processCommentAndReply(comment, matchedStore.slug, matchedStore.id);
+                            }
+                            else {
+                                console.log(`[Global Webhook -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] 🔕 Instagram yorum erişimi kapalı; yorum işlenmedi (${comment.commentId}).`);
+                            }
                         }
                     }
                     continue;

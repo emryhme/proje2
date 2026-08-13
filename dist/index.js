@@ -513,7 +513,14 @@ app.get('/api/stores/webhook-info', auth_middleware_1.AuthMiddleware.authenticat
         const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
         const webhookUrl = `${protocol}://${host}/api/webhook/${store.slug}`;
         const hasInstagramToken = !!db_1.db.prepare("SELECT 1 FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").get(storeId);
-        const hasInstagramCommentAccess = !!db_1.db.prepare("SELECT 1 FROM settings WHERE store_id = ? AND key = 'instagram_comment_access_enabled' AND value = '1'").get(storeId);
+        const hasInstagramCommentPermission = !!db_1.db.prepare(`
+      SELECT 1 FROM settings
+      WHERE store_id = ?
+        AND key IN ('instagram_comment_permission_granted', 'instagram_comment_access_enabled')
+        AND value = '1'
+    `).get(storeId);
+        const commentAutomationSetting = db_1.db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'instagram_comment_automation_enabled'").get(storeId);
+        const isInstagramCommentAutomationEnabled = hasInstagramCommentPermission && commentAutomationSetting?.value !== '0';
         return res.json({
             success: true,
             storeId: store.id,
@@ -525,7 +532,9 @@ app.get('/api/stores/webhook-info', auth_middleware_1.AuthMiddleware.authenticat
             instagramAccountId: store.instagram_account_id || '',
             instagramUsername: store.instagram_username || '',
             instagramConnected: Boolean(store.instagram_account_id && hasInstagramToken),
-            instagramCommentsConnected: Boolean(store.instagram_account_id && hasInstagramToken && hasInstagramCommentAccess),
+            instagramCommentsConnected: Boolean(store.instagram_account_id && hasInstagramToken && hasInstagramCommentPermission),
+            instagramCommentsPermissionGranted: Boolean(store.instagram_account_id && hasInstagramToken && hasInstagramCommentPermission),
+            instagramCommentAutomationEnabled: Boolean(store.instagram_account_id && hasInstagramToken && isInstagramCommentAutomationEnabled),
             lastWebhookAt: store.last_webhook_at || null
         });
     }
