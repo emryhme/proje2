@@ -162,7 +162,7 @@ function logoutMasterAdmin() {
   localStorage.removeItem('barons_admin_user');
   showToast('👋 Master Admin oturumu kapatıldı.', 'info');
   setTimeout(() => {
-    window.location.href = '/master-admin/login.html';
+    window.location.href = 'https://www.iscworks.info/';
   }, 600);
 }
 

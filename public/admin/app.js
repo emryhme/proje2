@@ -192,9 +192,9 @@ function logoutUser() {
   state.orders = [];
   state.rewards = [];
   state.knownOrderIds.clear();
-  showToast('👋 Çıkış yapıldı. Giriş sayfasına yönlendiriliyorsunuz...', 'info');
+  showToast('👋 Çıkış yapıldı. Ana sayfaya yönlendiriliyorsunuz...', 'info');
   setTimeout(() => {
-    window.location.href = 'login.html';
+    window.location.href = 'https://www.iscworks.info/';
   }, 600);
 }
 
