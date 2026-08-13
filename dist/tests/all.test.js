@@ -237,6 +237,21 @@ async function runTestSuite() {
     const evtStoreB = webhook_controller_1.WebhookController.isDuplicateEvent('evt_attack_001', 200);
     const evtStoreARepeat = webhook_controller_1.WebhookController.isDuplicateEvent('evt_attack_001', 100);
     assert(evtStoreA === false && evtStoreB === false && evtStoreARepeat === true, 'Event idempotency tracks event_id scoped strictly by tenant store_id');
+    console.log('\n2️⃣6️⃣-A INSTAGRAM COMMENT TEST: Post comment webhook fields must be parsed safely');
+    const parsedComment = webhook_controller_1.WebhookController.extractInstagramComment({
+        field: 'comments',
+        value: {
+            id: 'comment_123',
+            from: { id: 'igsid_customer_1', username: 'customer_one' },
+            media: { id: 'media_456' },
+            text: 'HBL almak istiyorum'
+        }
+    });
+    assert(parsedComment?.commentId === 'comment_123' &&
+        parsedComment.commenterId === 'igsid_customer_1' &&
+        parsedComment.mediaId === 'media_456' &&
+        parsedComment.text === 'HBL almak istiyorum', 'Instagram comment ID, commenter, media and text are extracted from the official comments webhook shape');
+    assert(webhook_controller_1.WebhookController.extractInstagramComment({ field: 'messages', value: { id: 'not_a_comment', text: 'ignored' } }) === null, 'Non-comment webhook changes cannot enter the Instagram comment sales flow');
     // 7. STOCK BUG FIX TESTS (ADD, SET, ISOLATION, COLLISION & SANITATION)
     console.log('\n2️⃣7️⃣ STOCK BUG FIX TEST 1: Stock Add (+5 from 10 -> 15)');
     await stock_service_1.StockService.addProduct({ storeId: 100, shortCode: 'TST', productCode: 'TEST-STOCK', name: 'Test Product', size: 'M', stock: 10, price: 200 });

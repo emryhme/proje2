@@ -10,11 +10,11 @@ export class WebhookController {
   /**
    * Helper: Resolves store by slug strictly from database (No Fallbacks!)
    */
-  public static resolveStore(slug: string): { id: number; name: string; slug: string; status: string; webhook_verify_token?: string } | null {
+  public static resolveStore(slug: string): { id: number; name: string; slug: string; status: string; webhook_verify_token?: string; instagram_account_id?: string } | null {
     const cleanSlug = (slug || '').trim().toLowerCase();
     if (!cleanSlug) return null;
     try {
-      const store = db.prepare('SELECT id, name, slug, status, webhook_verify_token FROM stores WHERE LOWER(slug) = ?').get(cleanSlug) as any;
+      const store = db.prepare('SELECT id, name, slug, status, webhook_verify_token, instagram_account_id FROM stores WHERE LOWER(slug) = ?').get(cleanSlug) as any;
       return store || null;
     } catch {
       return null;
@@ -79,6 +79,19 @@ export class WebhookController {
       console.warn('[Webhook Idempotency Error]:', e.message);
       return false;
     }
+  }
+
+  /** Parses the official Instagram `comments` webhook payload. */
+  public static extractInstagramComment(change: any): { commentId: string; commenterId: string; username: string; text: string; mediaId: string } | null {
+    if (String(change?.field || '').toLowerCase() !== 'comments') return null;
+    const value = change?.value || {};
+    const commentId = String(value.id || value.comment_id || value.comment?.id || '').trim();
+    const commenterId = String(value.from?.id || value.sender?.id || '').trim();
+    const username = String(value.from?.username || value.sender?.username || '').trim();
+    const text = String(value.text || value.message?.text || '').trim();
+    const mediaId = String(value.media?.id || value.media_id || '').trim();
+    if (!commentId || !commenterId || !text) return null;
+    return { commentId, commenterId, username, text, mediaId };
   }
 
   /**
@@ -208,6 +221,18 @@ export class WebhookController {
 
       const changesList = entry.changes || [];
       for (const change of changesList) {
+        if (String(change?.field || '').toLowerCase() === 'comments') {
+          const comment = WebhookController.extractInstagramComment(change);
+          if (comment && comment.commenterId !== String(store.instagram_account_id || entry.id || '')) {
+            const eventId = `instagram-comment:${comment.commentId}`;
+            if (!WebhookController.isDuplicateEvent(eventId, store.id)) {
+              console.log(`[Store Webhook: ${store.slug} (ID: ${store.id})] 💬 Instagram yorumu işleniyor (@${comment.username || comment.commenterId}): "${comment.text}"`);
+              WebhookController.processCommentAndReply(comment, store.slug, store.id);
+            }
+          }
+          continue;
+        }
+
         const value = change.value || {};
         const senderId = value.sender?.id || value.from?.id;
         const message = value.message || value.text;
@@ -231,12 +256,12 @@ export class WebhookController {
   /**
    * Helper: Resolves store by Meta Page ID / Instagram Account ID / Entry ID
    */
-  public static resolveStoreByMetaId(metaId: string): { id: number; name: string; slug: string; status: string } | null {
+  public static resolveStoreByMetaId(metaId: string): { id: number; name: string; slug: string; status: string; instagram_account_id?: string } | null {
     const cleanId = (metaId || '').trim();
     if (!cleanId) return null;
     try {
       const store = db.prepare(`
-        SELECT id, name, slug, status FROM stores 
+        SELECT id, name, slug, status, instagram_account_id FROM stores
         WHERE meta_page_id = ? OR instagram_account_id = ?
       `).get(cleanId, cleanId) as any;
       return store || null;
@@ -306,6 +331,18 @@ export class WebhookController {
 
       const changesList = entry.changes || [];
       for (const change of changesList) {
+        if (String(change?.field || '').toLowerCase() === 'comments') {
+          const comment = WebhookController.extractInstagramComment(change);
+          if (comment && comment.commenterId !== String(matchedStore.instagram_account_id || entry.id || '')) {
+            const eventId = `instagram-comment:${comment.commentId}`;
+            if (!WebhookController.isDuplicateEvent(eventId, matchedStore.id)) {
+              console.log(`[Global Webhook -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] 💬 Instagram yorumu işleniyor (@${comment.username || comment.commenterId}): "${comment.text}"`);
+              WebhookController.processCommentAndReply(comment, matchedStore.slug, matchedStore.id);
+            }
+          }
+          continue;
+        }
+
         const value = change.value || {};
         const senderId = value.sender?.id || value.from?.id;
         const message = value.message || value.text;
@@ -343,6 +380,49 @@ export class WebhookController {
       await FacebookService.sendMessage(senderId, reply, storeId);
     } catch (error: any) {
       console.error(`[WebhookController] ❌ Mesaj işleme hatası (Store: ${storeSlug}/${storeId}, Sender: ${senderId}):`, error?.message || error);
+    }
+  }
+
+  /**
+   * Starts a private sales conversation from a post comment. The commenter ID is
+   * deliberately shared with the DM session so the cart survives their reply.
+   */
+  private static async processCommentAndReply(
+    comment: { commentId: string; commenterId: string; username: string; text: string; mediaId: string },
+    storeSlug: string,
+    storeId: number
+  ) {
+    try {
+      const conversationId = AIService.getOrCreateConversation(storeId, `instagram:${comment.commenterId}`);
+      AIService.persistMessage(conversationId, 'user', `[Instagram yorumu] ${comment.text}`);
+
+      let aiInput = comment.text;
+      if (!extractProductCode(comment.text) && comment.mediaId) {
+        const mediaContext = await FacebookService.getInstagramMediaContext(comment.mediaId, storeId);
+        const postProductCode = extractProductCode(mediaContext?.caption || '');
+        if (postProductCode) {
+          aiInput = `${comment.text}\n\nYorum yapılan gönderideki ürün kodu: ${postProductCode}`;
+        }
+      }
+
+      const { reply, toolTraces } = await AIService.processMessage(
+        comment.commenterId,
+        aiInput,
+        storeSlug,
+        storeId
+      );
+      AIService.persistMessage(conversationId, 'assistant', reply);
+
+      for (const trace of toolTraces) {
+        console.log(`[AI Comment Tool] Store=${storeId} Comment=${comment.commentId} Sender=${comment.commenterId} Tool=${trace.toolName} Status=${trace.status} Args=${JSON.stringify(trace.args)} Result=${String(trace.result).slice(0, 500)}`);
+      }
+
+      const sent = await FacebookService.sendPrivateReplyToComment(comment.commentId, reply, storeId);
+      if (!sent) {
+        console.error(`[WebhookController] ❌ Instagram yorumuna yapay zeka yanıtı gönderilemedi (Store: ${storeSlug}/${storeId}, Comment: ${comment.commentId}).`);
+      }
+    } catch (error: any) {
+      console.error(`[WebhookController] ❌ Instagram yorumu işleme hatası (Store: ${storeSlug}/${storeId}, Comment: ${comment.commentId}):`, error?.message || error);
     }
   }
 }

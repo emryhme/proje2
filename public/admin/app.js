@@ -2345,10 +2345,24 @@ async function loadStoreWebhookDetails() {
       const oauthStatus = document.getElementById('instagramOAuthStatus');
       const connectButton = document.getElementById('btnConnectInstagram');
       const disconnectButton = document.getElementById('btnDisconnectInstagram');
-      if (oauthStatus) oauthStatus.textContent = data.instagramConnected
-        ? `Bağlı: @${data.instagramUsername || 'instagram hesabı'}`
-        : 'Henüz Instagram hesabı bağlanmadı.';
-      if (connectButton) connectButton.style.display = data.instagramConnected ? 'none' : 'inline-flex';
+      if (oauthStatus) {
+        if (data.instagramCommentsConnected) {
+          oauthStatus.textContent = `Bağlı: @${data.instagramUsername || 'instagram hesabı'} • DM ve gönderi yorumları aktif`;
+          oauthStatus.style.color = '#34d399';
+        } else if (data.instagramConnected) {
+          oauthStatus.textContent = `Bağlı: @${data.instagramUsername || 'instagram hesabı'} • Yorum erişimi için yeniden yetkilendirin`;
+          oauthStatus.style.color = '#fbbf24';
+        } else {
+          oauthStatus.textContent = 'Henüz Instagram hesabı bağlanmadı.';
+          oauthStatus.style.color = '#94a3b8';
+        }
+      }
+      if (connectButton) {
+        connectButton.style.display = data.instagramCommentsConnected ? 'none' : 'inline-flex';
+        connectButton.innerHTML = data.instagramConnected
+          ? '<i class="fa-brands fa-instagram"></i> Yorum Erişimini Etkinleştir'
+          : '<i class="fa-brands fa-instagram"></i> Instagram\'ı Bağla';
+      }
       if (disconnectButton) disconnectButton.style.display = data.instagramConnected ? 'inline-flex' : 'none';
 
       if (lastEvtElem) {
@@ -2401,7 +2415,7 @@ async function disconnectInstagramOAuth() {
 window.addEventListener('message', (event) => {
   if (event.origin !== window.location.origin || event.data?.type !== 'instagram-oauth-complete') return;
   if (event.data.success) {
-    showToast('Instagram hesabı başarıyla bağlandı.', 'success');
+    showToast('Instagram mesaj ve gönderi yorumları başarıyla bağlandı.', 'success');
     loadStoreWebhookDetails();
   }
   const button = document.getElementById('btnConnectInstagram');

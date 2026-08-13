@@ -70,4 +70,91 @@ export class FacebookService {
       return false;
     }
   }
+
+  /**
+   * Sends the single private reply Meta permits for an Instagram post comment.
+   * Further replies continue through the normal DM webhook after the customer responds.
+   */
+  public static async sendPrivateReplyToComment(commentId: string, text: string, storeId: number): Promise<boolean> {
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+      throw new Error('Store ID zorunludur.');
+    }
+    const cleanCommentId = String(commentId || '').trim();
+    const sanitizedText = String(text || '').trim().slice(0, 1000);
+    if (!cleanCommentId || !sanitizedText) return false;
+
+    const instagram = db.prepare(`
+      SELECT s.instagram_account_id, k.value AS encrypted_token
+      FROM stores s LEFT JOIN settings k ON k.store_id = s.id AND k.key = 'instagram_access_token'
+      WHERE s.id = ?
+    `).get(storeId) as any;
+    const pageSetting = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'facebook_page_access_token'").get(storeId) as any;
+    const isInstagramLogin = Boolean(instagram?.instagram_account_id && instagram?.encrypted_token);
+    const accessToken = isInstagramLogin
+      ? this.decryptToken(String(instagram.encrypted_token))
+      : String(pageSetting?.value || '').trim();
+
+    if (!instagram?.instagram_account_id || !accessToken) {
+      console.warn(`[FacebookService] ⚠️ Instagram yorum yanıtı için hesap veya token eksik (Store: ${storeId}).`);
+      return false;
+    }
+
+    try {
+      const host = isInstagramLogin ? 'graph.instagram.com' : 'graph.facebook.com';
+      const url = `https://${host}/v24.0/${encodeURIComponent(instagram.instagram_account_id)}/messages`;
+      const res = await axios.post(url, {
+        recipient: { comment_id: cleanCommentId },
+        message: { text: sanitizedText }
+      }, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json'
+        }
+      });
+      console.log(`[FacebookService] 💬 Instagram yorumuna özel yanıt gönderildi -> ${cleanCommentId} (Store: ${storeId}, Status: ${res.status})`);
+      return true;
+    } catch (error: any) {
+      const errDetails = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
+      console.error(`[FacebookService] ❌ Instagram yorumuna özel yanıt hatası (${cleanCommentId}):`, errDetails);
+      return false;
+    }
+  }
+
+  /** Fetches the caption of the post/reel that received the comment. */
+  public static async getInstagramMediaContext(mediaId: string, storeId: number): Promise<{ id: string; caption: string; permalink: string } | null> {
+    if (!Number.isInteger(storeId) || storeId <= 0) {
+      throw new Error('Store ID zorunludur.');
+    }
+    const cleanMediaId = String(mediaId || '').trim();
+    if (!cleanMediaId) return null;
+
+    const instagram = db.prepare(`
+      SELECT s.instagram_account_id, k.value AS encrypted_token
+      FROM stores s LEFT JOIN settings k ON k.store_id = s.id AND k.key = 'instagram_access_token'
+      WHERE s.id = ?
+    `).get(storeId) as any;
+    const pageSetting = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'facebook_page_access_token'").get(storeId) as any;
+    const isInstagramLogin = Boolean(instagram?.instagram_account_id && instagram?.encrypted_token);
+    const accessToken = isInstagramLogin
+      ? this.decryptToken(String(instagram.encrypted_token))
+      : String(pageSetting?.value || '').trim();
+    if (!accessToken) return null;
+
+    try {
+      const host = isInstagramLogin ? 'graph.instagram.com' : 'graph.facebook.com';
+      const response = await axios.get(`https://${host}/v24.0/${encodeURIComponent(cleanMediaId)}`, {
+        params: { fields: 'id,caption,permalink', access_token: accessToken },
+        timeout: 10_000
+      });
+      return {
+        id: String(response.data?.id || cleanMediaId),
+        caption: String(response.data?.caption || '').trim(),
+        permalink: String(response.data?.permalink || '').trim()
+      };
+    } catch (error: any) {
+      const errDetails = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
+      console.warn(`[FacebookService] Instagram gönderi bağlamı alınamadı (${cleanMediaId}):`, errDetails);
+      return null;
+    }
+  }
 }

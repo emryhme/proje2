@@ -559,6 +559,7 @@ app.get('/api/stores/webhook-info', AuthMiddleware.authenticate, AuthMiddleware.
     const protocol = req.protocol === 'https' || req.get('x-forwarded-proto') === 'https' ? 'https' : 'http';
     const webhookUrl = `${protocol}://${host}/api/webhook/${store.slug}`;
     const hasInstagramToken = !!db.prepare("SELECT 1 FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").get(storeId);
+    const hasInstagramCommentAccess = !!db.prepare("SELECT 1 FROM settings WHERE store_id = ? AND key = 'instagram_comment_access_enabled' AND value = '1'").get(storeId);
 
     return res.json({
       success: true,
@@ -571,6 +572,7 @@ app.get('/api/stores/webhook-info', AuthMiddleware.authenticate, AuthMiddleware.
       instagramAccountId: store.instagram_account_id || '',
       instagramUsername: store.instagram_username || '',
       instagramConnected: Boolean(store.instagram_account_id && hasInstagramToken),
+      instagramCommentsConnected: Boolean(store.instagram_account_id && hasInstagramToken && hasInstagramCommentAccess),
       lastWebhookAt: store.last_webhook_at || null
     });
   } catch (e: any) {
