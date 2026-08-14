@@ -76,7 +76,7 @@ app.get('/api/admin/applications', auth_middleware_1.AuthMiddleware.authenticate
         if (req.auth.storeId !== 1) {
             return res.status(403).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurularÃƒâ€Ã‚Â±nÃƒâ€Ã‚Â± yalnÃƒâ€Ã‚Â±zca SÃƒÆ’Ã‚Â¼per Admin yÃƒÆ’Ã‚Â¶netebilir.' });
         }
-        const apps = db_1.db.prepare('SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications ORDER BY id DESC').all();
+        const apps = db_1.db.prepare("SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications WHERE status != 'email_pending' ORDER BY id DESC").all();
         return res.json({ success: true, applications: apps });
     }
     catch (e) {
@@ -93,6 +93,10 @@ app.post('/api/admin/applications/:id/approve', auth_middleware_1.AuthMiddleware
         const appRow = db_1.db.prepare('SELECT * FROM merchant_applications WHERE id = ?').get(appId);
         if (!appRow) {
             return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu bulunamadÃƒâ€Ã‚Â±.' });
+        }
+        const verifiedUser = db_1.db.prepare('SELECT email_verified_at FROM users WHERE LOWER(email) = LOWER(?)').get(appRow.email);
+        if (!verifiedUser?.email_verified_at) {
+            return res.status(409).json({ success: false, error: 'E-posta adresi doğrulanmadan bu başvuru onaylanamaz.' });
         }
         db_1.db.transaction(() => {
             db_1.db.prepare('UPDATE merchant_applications SET status = \'approved\', updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(appId);

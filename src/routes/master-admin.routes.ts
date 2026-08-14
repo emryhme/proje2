@@ -21,7 +21,7 @@ router.get('/api/master-admin/dashboard', AuthMiddleware.authenticate, AuthMiddl
     const totalAiMessages = (db.prepare("SELECT COUNT(*) as count FROM ai_usage").get() as any).count;
     const activeSubscriptions = (db.prepare("SELECT COUNT(*) as count FROM merchant_applications WHERE status = 'approved' OR status = 'active'").get() as any).count;
 
-    const recentApplications = db.prepare("SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications ORDER BY id DESC LIMIT 5").all();
+    const recentApplications = db.prepare("SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications WHERE status != 'email_pending' ORDER BY id DESC LIMIT 5").all();
     const recentMerchants = db.prepare(`
       SELECT s.id as store_id, s.name as store_name, s.slug, s.status as store_status, u.full_name as owner_name, u.email as owner_email, s.created_at
       FROM stores s
@@ -150,7 +150,7 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
 // GET /api/master-admin/applications
 router.get('/api/master-admin/applications', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, (req: AuthenticatedRequest, res) => {
   try {
-    const apps = db.prepare('SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications ORDER BY id DESC').all();
+    const apps = db.prepare("SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications WHERE status != 'email_pending' ORDER BY id DESC").all();
     return res.json({ success: true, applications: apps });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
@@ -164,6 +164,11 @@ router.post('/api/master-admin/applications/:id/approve', AuthMiddleware.authent
     const appRow = db.prepare('SELECT * FROM merchant_applications WHERE id = ?').get(appId) as any;
     if (!appRow) {
       return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu bulunamadÃƒâ€Ã‚Â±.' });
+    }
+
+    const verifiedUser = db.prepare('SELECT email_verified_at FROM users WHERE LOWER(email) = LOWER(?)').get(appRow.email) as any;
+    if (!verifiedUser?.email_verified_at) {
+      return res.status(409).json({ success: false, error: 'E-posta adresi doğrulanmadan bu başvuru onaylanamaz.' });
     }
 
     db.transaction(() => {
@@ -267,6 +272,7 @@ router.post('/api/master-admin/stores/:storeId/change-plan', AuthMiddleware.auth
     if (targetStoreId === 1) {
       return res.status(400).json({ success: false, error: 'Master Admin store plan cannot be changed.' });
     }
+
     const plan = String(req.body?.plan || '').trim();
     if (!ALLOWED_PLANS.includes(plan)) {
       return res.status(400).json({ success: false, error: 'Yeni paket adÃƒâ€Ã‚Â± zorunludur.' });

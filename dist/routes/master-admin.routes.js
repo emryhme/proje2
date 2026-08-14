@@ -19,7 +19,7 @@ router.get('/api/master-admin/dashboard', auth_middleware_1.AuthMiddleware.authe
         const totalOrders = db_1.db.prepare("SELECT COUNT(*) as count FROM orders").get().count;
         const totalAiMessages = db_1.db.prepare("SELECT COUNT(*) as count FROM ai_usage").get().count;
         const activeSubscriptions = db_1.db.prepare("SELECT COUNT(*) as count FROM merchant_applications WHERE status = 'approved' OR status = 'active'").get().count;
-        const recentApplications = db_1.db.prepare("SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications ORDER BY id DESC LIMIT 5").all();
+        const recentApplications = db_1.db.prepare("SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications WHERE status != 'email_pending' ORDER BY id DESC LIMIT 5").all();
         const recentMerchants = db_1.db.prepare(`
       SELECT s.id as store_id, s.name as store_name, s.slug, s.status as store_status, u.full_name as owner_name, u.email as owner_email, s.created_at
       FROM stores s
@@ -135,7 +135,7 @@ router.get('/api/master-admin/merchants/:storeId', auth_middleware_1.AuthMiddlew
 // GET /api/master-admin/applications
 router.get('/api/master-admin/applications', auth_middleware_1.AuthMiddleware.authenticate, auth_middleware_1.AuthMiddleware.requireMasterAdmin, (req, res) => {
     try {
-        const apps = db_1.db.prepare('SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications ORDER BY id DESC').all();
+        const apps = db_1.db.prepare("SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications WHERE status != 'email_pending' ORDER BY id DESC").all();
         return res.json({ success: true, applications: apps });
     }
     catch (e) {
@@ -149,6 +149,10 @@ router.post('/api/master-admin/applications/:id/approve', auth_middleware_1.Auth
         const appRow = db_1.db.prepare('SELECT * FROM merchant_applications WHERE id = ?').get(appId);
         if (!appRow) {
             return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu bulunamadÃƒâ€Ã‚Â±.' });
+        }
+        const verifiedUser = db_1.db.prepare('SELECT email_verified_at FROM users WHERE LOWER(email) = LOWER(?)').get(appRow.email);
+        if (!verifiedUser?.email_verified_at) {
+            return res.status(409).json({ success: false, error: 'E-posta adresi doğrulanmadan bu başvuru onaylanamaz.' });
         }
         db_1.db.transaction(() => {
             db_1.db.prepare('UPDATE merchant_applications SET status = \'approved\', updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(appId);

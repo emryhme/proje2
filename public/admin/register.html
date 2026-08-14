@@ -225,7 +225,7 @@
       gap: 12px;
     }
 
-    .alert-success a.btn-go-login {
+    .alert-success .btn-go-login {
       display: inline-flex;
       align-items: center;
       gap: 6px;
@@ -239,7 +239,7 @@
       transition: all 0.2s;
     }
 
-    .alert-success a.btn-go-login:hover {
+    .alert-success .btn-go-login:hover {
       background: #34d399;
     }
 
@@ -292,12 +292,15 @@
   <div class="alert-success" id="registerSuccessAlert">
     <i class="fa-solid fa-circle-check" style="font-size: 32px; color: #10b981;"></i>
     <div>
-      <strong style="display: block; font-size: 14px; margin-bottom: 4px;">Başvurunuz ve Mağazanız Oluşturuldu!</strong>
-      <span>Yönetici onayından sonra giriş ekranından hesabınıza erişebilirsiniz.</span>
+      <strong style="display: block; font-size: 14px; margin-bottom: 4px;">E-Posta Adresinizi Doğrulayın</strong>
+      <span id="verificationSuccessText">Doğrulama bağlantısını e-posta adresinize gönderdik. Bağlantıya tıkladıktan sonra başvurunuz süper admin onayına sunulacaktır.</span>
     </div>
     <a href="login.html" class="btn-go-login">
       <i class="fa-solid fa-right-to-bracket"></i> Giriş Sayfasına Git
     </a>
+    <button type="button" class="btn-go-login" id="btnResendVerification" style="border:0;cursor:pointer">
+      <i class="fa-solid fa-envelope"></i> E-Postayı Tekrar Gönder
+    </button>
   </div>
 
   <form id="registerForm">
@@ -470,9 +473,7 @@
       const data = await response.json();
 
       if (response.ok && data.success) {
-        document.getElementById('registerForm').style.display = 'none';
-        document.getElementById('bottomLinkSection').style.display = 'none';
-        alertSuccess.style.display = 'flex';
+        window.location.href = `verify-email.html?email=${encodeURIComponent(email)}&sent=${data.emailSent === false ? '0' : '1'}`;
       } else {
         const errorMsg = data.error || 'Kayıt esnasında bir hata oluştu.';
         alertDangerText.textContent = typeof errorMsg === 'string' ? errorMsg : 'Kayıt başarısız.';
@@ -485,6 +486,26 @@
       alertDanger.style.display = 'flex';
       submitBtn.disabled = false;
       submitBtn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> Mağazayı Oluştur & Başvur';
+    }
+  });
+
+  document.getElementById('btnResendVerification').addEventListener('click', async () => {
+    const button = document.getElementById('btnResendVerification');
+    const email = document.getElementById('registerSuccessAlert').dataset.email;
+    if (!email) return;
+    button.disabled = true;
+    button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Gönderiliyor...';
+    try {
+      const response = await fetch('/api/auth/resend-verification', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email })
+      });
+      const data = await response.json();
+      document.getElementById('verificationSuccessText').textContent = response.ok ? data.message : (data.error || 'E-posta gönderilemedi. Lütfen daha sonra tekrar deneyin.');
+    } catch (_) {
+      document.getElementById('verificationSuccessText').textContent = 'Sunucuya bağlanılamadı. Lütfen daha sonra tekrar deneyin.';
+    } finally {
+      button.disabled = false;
+      button.innerHTML = '<i class="fa-solid fa-envelope"></i> E-Postayı Tekrar Gönder';
     }
   });
 </script>

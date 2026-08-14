@@ -7,6 +7,7 @@ import { AdminCopilotService } from '../services/admin-copilot.service';
 import { GeminiService } from '../services/gemini.service';
 import { WebhookController } from '../controllers/webhook.controller';
 import { DemoAIService } from '../services/demo-ai.service';
+import { EmailVerificationService } from '../services/email-verification.service';
 import { AuthMiddleware } from '../middleware/auth.middleware';
 import { db, hashPassword, initDatabase, needsPasswordRehash, verifyPassword } from '../database/db';
 
@@ -348,6 +349,25 @@ async function runTestSuite() {
     DemoAIService.snapshot.products.every(product => typeof product.stock === 'number'),
     'Public demo AI is constrained to a fixed fictional store snapshot instead of tenant database records'
   );
+
+  console.log('\n2️⃣7️⃣-F EMAIL VERIFICATION TEST: Başvuru e-posta doğrulamasından sonra admin kuyruğuna alınmalı');
+  const verificationEmail = 'verification_test@iscworks.test';
+  db.prepare('DELETE FROM merchant_applications WHERE email = ?').run(verificationEmail);
+  db.prepare('DELETE FROM users WHERE email = ?').run(verificationEmail);
+  const verificationUser = db.prepare("INSERT INTO users (full_name, email, password_hash, status, email_verified_at) VALUES ('Verification Test', ?, ?, 'pending', NULL)").run(verificationEmail, hashPassword('Test123!'));
+  const verificationUserId = Number(verificationUser.lastInsertRowid);
+  db.prepare("INSERT INTO merchant_applications (full_name, email, store_name, plan, status) VALUES ('Verification Test', ?, 'Verification Store', 'Pro Store', 'email_pending')").run(verificationEmail);
+  const rawVerificationToken = EmailVerificationService.issueCode(verificationUserId);
+  const storedVerificationToken = db.prepare('SELECT token_hash FROM email_verification_tokens WHERE user_id = ? AND used_at IS NULL').get(verificationUserId) as any;
+  assert(/^\d{6}$/.test(rawVerificationToken) && storedVerificationToken.token_hash !== rawVerificationToken && storedVerificationToken.token_hash === EmailVerificationService.tokenHash(rawVerificationToken), 'Only the hash of the six-digit verification code is stored in SQLite');
+  assert(!EmailVerificationService.consumeCode(verificationEmail, '000000').success, 'Incorrect verification codes are rejected');
+  const verificationResult = EmailVerificationService.consumeCode(verificationEmail, rawVerificationToken);
+  const verifiedUserRow = db.prepare('SELECT email_verified_at FROM users WHERE id = ?').get(verificationUserId) as any;
+  const verifiedApplication = db.prepare('SELECT status FROM merchant_applications WHERE email = ?').get(verificationEmail) as any;
+  assert(verificationResult.success && Boolean(verifiedUserRow.email_verified_at) && verifiedApplication.status === 'pending', 'Verified email moves the merchant application into the Super Admin queue');
+  assert(!EmailVerificationService.consumeCode(verificationEmail, rawVerificationToken).success, 'Verification codes are single-use');
+  db.prepare('DELETE FROM merchant_applications WHERE email = ?').run(verificationEmail);
+  db.prepare('DELETE FROM users WHERE id = ?').run(verificationUserId);
 
   console.log('\n2️⃣8️⃣ STOCK BUG FIX TEST 2: Stock Set (10 -> 25) & Read After Write');
   const updateSuccess2 = await StockService.updateStock(100, 'TEST-STOCK', 25);

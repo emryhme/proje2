@@ -9,6 +9,7 @@ const order_service_1 = require("../services/order.service");
 const ai_service_1 = require("../services/ai.service");
 const webhook_controller_1 = require("../controllers/webhook.controller");
 const demo_ai_service_1 = require("../services/demo-ai.service");
+const email_verification_service_1 = require("../services/email-verification.service");
 const auth_middleware_1 = require("../middleware/auth.middleware");
 const db_1 = require("../database/db");
 (0, db_1.initDatabase)();
@@ -302,6 +303,24 @@ async function runTestSuite() {
     assert(demo_ai_service_1.DemoAIService.snapshot.storeName === 'Luna Moda Demo' &&
         demo_ai_service_1.DemoAIService.snapshot.products.length === 6 &&
         demo_ai_service_1.DemoAIService.snapshot.products.every(product => typeof product.stock === 'number'), 'Public demo AI is constrained to a fixed fictional store snapshot instead of tenant database records');
+    console.log('\n2️⃣7️⃣-F EMAIL VERIFICATION TEST: Başvuru e-posta doğrulamasından sonra admin kuyruğuna alınmalı');
+    const verificationEmail = 'verification_test@iscworks.test';
+    db_1.db.prepare('DELETE FROM merchant_applications WHERE email = ?').run(verificationEmail);
+    db_1.db.prepare('DELETE FROM users WHERE email = ?').run(verificationEmail);
+    const verificationUser = db_1.db.prepare("INSERT INTO users (full_name, email, password_hash, status, email_verified_at) VALUES ('Verification Test', ?, ?, 'pending', NULL)").run(verificationEmail, (0, db_1.hashPassword)('Test123!'));
+    const verificationUserId = Number(verificationUser.lastInsertRowid);
+    db_1.db.prepare("INSERT INTO merchant_applications (full_name, email, store_name, plan, status) VALUES ('Verification Test', ?, 'Verification Store', 'Pro Store', 'email_pending')").run(verificationEmail);
+    const rawVerificationToken = email_verification_service_1.EmailVerificationService.issueCode(verificationUserId);
+    const storedVerificationToken = db_1.db.prepare('SELECT token_hash FROM email_verification_tokens WHERE user_id = ? AND used_at IS NULL').get(verificationUserId);
+    assert(/^\d{6}$/.test(rawVerificationToken) && storedVerificationToken.token_hash !== rawVerificationToken && storedVerificationToken.token_hash === email_verification_service_1.EmailVerificationService.tokenHash(rawVerificationToken), 'Only the hash of the six-digit verification code is stored in SQLite');
+    assert(!email_verification_service_1.EmailVerificationService.consumeCode(verificationEmail, '000000').success, 'Incorrect verification codes are rejected');
+    const verificationResult = email_verification_service_1.EmailVerificationService.consumeCode(verificationEmail, rawVerificationToken);
+    const verifiedUserRow = db_1.db.prepare('SELECT email_verified_at FROM users WHERE id = ?').get(verificationUserId);
+    const verifiedApplication = db_1.db.prepare('SELECT status FROM merchant_applications WHERE email = ?').get(verificationEmail);
+    assert(verificationResult.success && Boolean(verifiedUserRow.email_verified_at) && verifiedApplication.status === 'pending', 'Verified email moves the merchant application into the Super Admin queue');
+    assert(!email_verification_service_1.EmailVerificationService.consumeCode(verificationEmail, rawVerificationToken).success, 'Verification codes are single-use');
+    db_1.db.prepare('DELETE FROM merchant_applications WHERE email = ?').run(verificationEmail);
+    db_1.db.prepare('DELETE FROM users WHERE id = ?').run(verificationUserId);
     console.log('\n2️⃣8️⃣ STOCK BUG FIX TEST 2: Stock Set (10 -> 25) & Read After Write');
     const updateSuccess2 = await stock_service_1.StockService.updateStock(100, 'TEST-STOCK', 25);
     const stockCheck2 = await stock_service_1.StockService.checkStock(100, 'TEST-STOCK');

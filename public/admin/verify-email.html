@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="tr" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+  <title>ISCWORKS — E-Posta Kodu Doğrulama</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:22px;background:radial-gradient(circle at 50% 0,rgba(163,255,18,.08),transparent 35%),#0a0a0c;color:#fff;font-family:Inter,Arial,sans-serif}.card{width:min(460px,100%);padding:38px;text-align:center;border:1px solid rgba(255,255,255,.09);border-radius:18px;background:rgba(20,21,27,.94);box-shadow:0 26px 80px rgba(0,0,0,.45)}.icon{width:64px;height:64px;margin:0 auto 20px;display:grid;place-items:center;border-radius:50%;font-size:26px;background:rgba(163,255,18,.12);color:#a3ff12}.icon.error{background:rgba(239,68,68,.12);color:#fb7185}h1{font-size:24px;margin:0 0 12px}p{color:#9da1ad;font-size:14px;line-height:1.65;margin:0 0 24px}.form{display:flex;flex-direction:column;gap:11px}.form input{width:100%;padding:13px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#101116;color:#fff;outline:none}.form input:focus{border-color:#a3ff12}.form .code{font-size:26px;text-align:center;letter-spacing:10px;font-weight:800}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 18px;border:0;border-radius:9px;background:#a3ff12;color:#0a0a0c;text-decoration:none;font-weight:800;font-size:13px;cursor:pointer}.link{border:0;background:none;color:#a3ff12;font-weight:700;cursor:pointer;padding:8px}.message{min-height:18px;color:#fb7185;font-size:12px;line-height:1.5}.success-link{display:none}.hint{color:#777b87;font-size:11px;margin-top:15px}</style>
+</head>
+<body>
+  <main class="card">
+    <div class="icon" id="resultIcon"><i class="fa-solid fa-envelope"></i></div>
+    <h1 id="resultTitle">Doğrulama Kodunu Girin</h1>
+    <p id="resultText">E-posta adresinize gönderilen 6 haneli tek kullanımlık kodu girin.</p>
+    <form class="form" id="verifyForm">
+      <input type="email" id="verifyEmail" required autocomplete="email" placeholder="E-posta adresiniz">
+      <input class="code" type="text" id="verifyCode" required inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000">
+      <button class="btn" type="submit" id="verifyButton"><i class="fa-solid fa-check"></i> Kodu Doğrula</button>
+      <button class="link" type="button" id="resendButton">Yeni kod gönder</button>
+      <div class="message" id="resultMessage"></div>
+    </form>
+    <a class="btn success-link" id="successLink" href="/admin/login.html"><i class="fa-solid fa-right-to-bracket"></i> Giriş Sayfasına Git</a>
+    <div class="hint" id="expiryHint">Kod 10 dakika geçerlidir. En fazla 5 hatalı deneme yapabilirsiniz.</div>
+  </main>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const emailInput = document.getElementById('verifyEmail');
+    const codeInput = document.getElementById('verifyCode');
+    const message = document.getElementById('resultMessage');
+    emailInput.value = params.get('email') || '';
+    if (params.get('sent') === '0') message.textContent = 'İlk kod gönderilemedi. “Yeni kod gönder” düğmesini kullanın.';
+    codeInput.addEventListener('input', () => { codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6); });
+
+    document.getElementById('verifyForm').addEventListener('submit', async event => {
+      event.preventDefault();
+      const button = document.getElementById('verifyButton');
+      button.disabled = true;
+      message.textContent = '';
+      try {
+        const response = await fetch('/api/auth/verify-email', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:emailInput.value.trim(),code:codeInput.value.trim()}) });
+        const data = await response.json();
+        if (!response.ok || !data.success) throw new Error(data.error || 'Kod doğrulanamadı.');
+        document.getElementById('verifyForm').style.display = 'none';
+        document.getElementById('successLink').style.display = 'inline-flex';
+        document.getElementById('expiryHint').style.display = 'none';
+        document.getElementById('resultIcon').innerHTML = '<i class="fa-solid fa-check"></i>';
+        document.getElementById('resultTitle').textContent = 'E-Postanız Doğrulandı';
+        document.getElementById('resultText').textContent = data.message;
+      } catch (error) { message.textContent = error.message || 'Kod doğrulanamadı.'; }
+      finally { button.disabled = false; }
+    });
+
+    document.getElementById('resendButton').addEventListener('click', async () => {
+      const button = document.getElementById('resendButton');
+      if (!emailInput.value.trim()) { message.textContent = 'Önce e-posta adresinizi girin.'; return; }
+      button.disabled = true;
+      try {
+        const response = await fetch('/api/auth/resend-verification', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({email:emailInput.value.trim()}) });
+        const data = await response.json();
+        message.style.color = response.ok ? '#a3ff12' : '#fb7185';
+        message.textContent = response.ok ? 'Yeni doğrulama kodu gönderildi.' : (data.error || 'Kod gönderilemedi.');
+      } catch (_) { message.textContent = 'Sunucuya bağlanılamadı. Lütfen tekrar deneyin.'; }
+      finally { button.disabled = false; }
+    });
+  </script>
+</body>
+</html>

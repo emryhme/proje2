@@ -144,6 +144,32 @@ function runSchemaMigrations() {
         CREATE INDEX IF NOT EXISTS idx_instagram_data_deletion_user ON instagram_data_deletion_requests(instagram_user_id);
       `);
             }
+        }, {
+            version: '20260814_006_email_verification',
+            name: 'Require email verification before merchant review',
+            up: () => {
+                addColumnIfMissing('users', 'email_verified_at', 'TEXT DEFAULT NULL');
+                // Existing accounts predate this feature and must keep their current access.
+                exports.db.prepare('UPDATE users SET email_verified_at = CURRENT_TIMESTAMP WHERE email_verified_at IS NULL').run();
+                exports.db.exec(`
+        CREATE TABLE IF NOT EXISTS email_verification_tokens (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL,
+          token_hash TEXT NOT NULL UNIQUE,
+          expires_at TEXT NOT NULL,
+          used_at TEXT DEFAULT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_email_verification_user ON email_verification_tokens(user_id, used_at, expires_at);
+      `);
+            }
+        }, {
+            version: '20260814_007_email_verification_code_attempts',
+            name: 'Limit email verification code attempts',
+            up: () => {
+                addColumnIfMissing('email_verification_tokens', 'failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
+            }
         }];
     const isApplied = exports.db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?');
     const markApplied = exports.db.prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)');
