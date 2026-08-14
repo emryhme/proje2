@@ -116,6 +116,10 @@ app.post('/api/admin/applications/:id/approve', AuthMiddleware.authenticate, Aut
       if (userRow) {
         db.prepare('UPDATE stores SET status = \'active\', updated_at = CURRENT_TIMESTAMP WHERE owner_id = ?').run(userRow.id);
         db.prepare('UPDATE memberships SET status = \'active\' WHERE user_id = ?').run(userRow.id);
+        db.prepare(`
+          INSERT OR IGNORE INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at, updated_by)
+          SELECT id, ?, 1, date('now'), date('now', '+1 month'), ? FROM stores WHERE owner_id = ?
+        `).run(appRow.plan || 'Pro Store', req.auth!.userId, userRow.id);
       }
 
       AuthMiddleware.logAudit(1, req.auth!.userId, 'APPROVE_APPLICATION', 'merchant_applications', String(appId), '', appRow.email);
@@ -200,10 +204,15 @@ app.get(['/master-admin/merchant', '/master-admin/merchant.html'], (req, res) =>
 app.get(['/master-admin/applications', '/master-admin/applications.html'], (req, res) => {
   res.sendFile(path.resolve(__dirname, '../public/master-admin/applications.html'));
 });
+app.get(['/master-admin/plans', '/master-admin/plans.html'], (req, res) => {
+  res.sendFile(path.resolve(__dirname, '../public/master-admin/plans.html'));
+});
 
 // ==========================================
 import masterAdminRouter from './routes/master-admin.routes';
+import planRouter from './routes/plan.routes';
 app.use(masterAdminRouter);
+app.use(planRouter);
 app.use('/', express.static(path.resolve(__dirname, '../public')));
 // --- PRODUCTS & STOCKS ---
 app.get('/api/stocks', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), async (req: AuthenticatedRequest, res) => {

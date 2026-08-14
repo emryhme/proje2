@@ -86,6 +86,16 @@ async function runTestSuite() {
   assert(verifyPassword('password123', legacyHash) === true && needsPasswordRehash(legacyHash) === true, 'Legacy PBKDF2 hashes are eligible for secure login-time upgrade');
   const applicationColumns = db.prepare("PRAGMA table_info(merchant_applications)").all() as Array<{ name: string }>;
   assert(!applicationColumns.some((column) => ['tc_no', 'phone', 'password'].includes(column.name)), 'Application history does not retain duplicated personal data or passwords');
+  const planTables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('store_subscriptions', 'plan_support_requests')").all() as Array<{ name: string }>;
+  assert(planTables.length === 2, 'Plan periods and plan support requests have dedicated database tables');
+
+  db.prepare("INSERT INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at) VALUES (100, 'Pro Store', 6, '2026-08-14', '2027-02-14')").run();
+  db.prepare("INSERT INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at) VALUES (200, 'Starter Store', 3, '2026-08-14', '2026-11-14')").run();
+  db.prepare("INSERT INTO plan_support_requests (store_id, user_id, current_plan, requested_plan, message) VALUES (100, 10, 'Pro Store', 'Enterprise Store', 'Enterprise plana geçiş hakkında destek istiyorum.')").run();
+  const storeAPlan = db.prepare('SELECT plan_name, duration_months, starts_at, ends_at FROM store_subscriptions WHERE store_id = 100').get() as any;
+  const storeBPlanRequests = (db.prepare('SELECT COUNT(*) AS count FROM plan_support_requests WHERE store_id = 200').get() as any).count;
+  assert(storeAPlan.plan_name === 'Pro Store' && storeAPlan.duration_months === 6 && storeAPlan.ends_at === '2027-02-14', 'Plan duration remains scoped to its store with explicit start and end dates');
+  assert(storeBPlanRequests === 0, 'Plan support requests remain isolated between stores');
 
   console.log('\n2️⃣ AUTH TEST 2: Valid JWT Token Generation & Verification');
   const jwtOwnerA = AuthMiddleware.generateToken({ userId: 10, storeId: 100, role: 'OWNER', email: 'owner_a@iscworks.com' });

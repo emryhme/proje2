@@ -198,6 +198,96 @@ function logoutUser() {
   }, 600);
 }
 
+function ensurePlanNavigation() {
+  if (document.querySelector('.nav-item[href="plan.html"]')) return;
+  const apiSettingsLink = document.querySelector('.nav-item[href="api-settings.html"]');
+  if (!apiSettingsLink) return;
+  const link = document.createElement('a');
+  link.href = 'plan.html';
+  link.className = `nav-item${window.location.pathname.endsWith('/plan.html') ? ' active' : ''}`;
+  link.innerHTML = '<i data-lucide="credit-card"></i>Plan Yönetimi';
+  apiSettingsLink.before(link);
+}
+
+function formatPlanDate(value) {
+  if (!value) return 'Tanımlanmadı';
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' });
+}
+
+async function loadPlanManagement() {
+  if (!document.getElementById('planName')) return;
+  try {
+    const data = await apiFetch('/api/plan');
+    const plan = data.subscription;
+    const select = document.getElementById('requestedPlan');
+    if (select) {
+      select.innerHTML = '<option value="">Plan seçin</option>' + (data.allowedPlans || []).map(name => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+    }
+    if (!plan) {
+      document.getElementById('planName').textContent = 'Plan süresi tanımlanmadı';
+      document.getElementById('planProgressText').textContent = 'Süper Admin plan dönemi tanımlamalı';
+      renderPlanRequests(data.requests || []);
+      return;
+    }
+
+    document.getElementById('planName').textContent = plan.plan_name;
+    document.getElementById('planMonths').textContent = `${plan.duration_months} ay`;
+    document.getElementById('planStartsAt').textContent = formatPlanDate(plan.starts_at);
+    document.getElementById('planEndsAt').textContent = formatPlanDate(plan.ends_at);
+    const start = new Date(`${String(plan.starts_at).slice(0, 10)}T00:00:00`).getTime();
+    const end = new Date(`${String(plan.ends_at).slice(0, 10)}T00:00:00`).getTime();
+    const now = Date.now();
+    const progress = end > start ? Math.max(0, Math.min(100, ((now - start) / (end - start)) * 100)) : 0;
+    document.getElementById('planProgressFill').style.width = `${progress}%`;
+    document.getElementById('planProgressText').textContent = `%${Math.round(progress)} kullanıldı`;
+    const remaining = Number(plan.remaining_days);
+    document.getElementById('planRemainingDays').textContent = remaining >= 0 ? `${remaining} gün kaldı` : `${Math.abs(remaining)} gün önce sona erdi`;
+    renderPlanRequests(data.requests || []);
+  } catch (error) {
+    showToast(error.message || 'Plan bilgileri yüklenemedi.', 'error');
+  }
+}
+
+function renderPlanRequests(requests) {
+  const container = document.getElementById('planRequests');
+  if (!container) return;
+  const statusLabels = { open: 'İnceleniyor', resolved: 'Çözüldü', rejected: 'Reddedildi' };
+  container.innerHTML = requests.length ? requests.map(request => `
+    <div class="request-item">
+      <div class="request-top"><span class="request-route">${escapeHtml(request.current_plan)} → ${escapeHtml(request.requested_plan)}</span><span class="plan-status ${escapeHtml(request.status)}">${statusLabels[request.status] || escapeHtml(request.status)}</span></div>
+      <div class="request-meta">${formatPlanDate(request.created_at)}</div>
+      <div class="request-message">${escapeHtml(request.message)}</div>
+      ${request.admin_note ? `<div class="request-message"><strong>Destek notu:</strong> ${escapeHtml(request.admin_note)}</div>` : ''}
+    </div>`).join('') : '<div class="plan-empty">Henüz plan destek talebiniz bulunmuyor.</div>';
+}
+
+async function submitPlanSupportRequest(event) {
+  event.preventDefault();
+  const button = document.getElementById('planRequestButton');
+  button.disabled = true;
+  try {
+    const data = await apiFetch('/api/plan/support-requests', {
+      method: 'POST',
+      body: JSON.stringify({ requestedPlan: document.getElementById('requestedPlan').value, message: document.getElementById('planRequestMessage').value.trim() })
+    });
+    showToast(data.message, 'success');
+    event.target.reset();
+    await loadPlanManagement();
+  } catch (error) {
+    showToast(error.message || 'Destek talebi açılamadı.', 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  ensurePlanNavigation();
+  document.getElementById('planSupportForm')?.addEventListener('submit', submitPlanSupportRequest);
+  loadPlanManagement();
+  if (window.lucide) lucide.createIcons();
+});
+
 function setupUserDropdown() {
   const userElem = document.querySelector('.user');
   if (!userElem) return;

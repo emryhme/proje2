@@ -170,6 +170,58 @@ function runSchemaMigrations() {
             up: () => {
                 addColumnIfMissing('email_verification_tokens', 'failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
             }
+        }, {
+            version: '20260814_008_store_subscriptions',
+            name: 'Add store subscription periods and plan support requests',
+            up: () => {
+                exports.db.exec(`
+        CREATE TABLE IF NOT EXISTS store_subscriptions (
+          store_id INTEGER PRIMARY KEY,
+          plan_name TEXT NOT NULL DEFAULT 'Pro Store',
+          duration_months INTEGER NOT NULL DEFAULT 1,
+          starts_at TEXT NOT NULL,
+          ends_at TEXT NOT NULL,
+          updated_by INTEGER DEFAULT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+          FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS plan_support_requests (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          store_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          current_plan TEXT NOT NULL,
+          requested_plan TEXT NOT NULL,
+          message TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'open',
+          admin_note TEXT DEFAULT '',
+          resolved_by INTEGER DEFAULT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          resolved_at TEXT DEFAULT NULL,
+          FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+          FOREIGN KEY (resolved_by) REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_plan_support_store ON plan_support_requests(store_id, created_at);
+        CREATE INDEX IF NOT EXISTS idx_plan_support_status ON plan_support_requests(status, created_at);
+
+        INSERT OR IGNORE INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at)
+        SELECT
+          s.id,
+          COALESCE(ma.plan, 'Pro Store'),
+          1,
+          date(COALESCE(ma.updated_at, s.created_at)),
+          date(COALESCE(ma.updated_at, s.created_at), '+1 month')
+        FROM stores s
+        LEFT JOIN users u ON u.id = s.owner_id
+        LEFT JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
+        WHERE s.id != 1;
+      `);
+            }
         }];
     const isApplied = exports.db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?');
     const markApplied = exports.db.prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)');

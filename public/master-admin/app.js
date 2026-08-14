@@ -166,6 +166,97 @@ function logoutMasterAdmin() {
   }, 600);
 }
 
+function ensureMasterPlanNavigation() {
+  if (document.querySelector('.sidebar-menu a[href="plans.html"]')) return;
+  const applicationsLink = document.querySelector('.sidebar-menu a[href="applications.html"]');
+  if (!applicationsLink) return;
+  const item = document.createElement('li');
+  item.innerHTML = '<a href="plans.html"><i class="fa-solid fa-calendar-check"></i> Plan Süreleri</a>';
+  applicationsLink.closest('li')?.after(item);
+}
+
+function masterDateValue(value) {
+  return value ? String(value).slice(0, 10) : new Date().toISOString().slice(0, 10);
+}
+
+function masterFormatDate(value) {
+  if (!value) return 'Tanımlanmadı';
+  const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('tr-TR');
+}
+
+async function loadMasterPlans() {
+  const plansBody = document.getElementById('masterPlansBody');
+  if (!plansBody) return;
+  try {
+    const data = await apiFetch('/api/master-admin/plans');
+    const plans = data.subscriptions || [];
+    const allowedPlans = data.allowedPlans || [];
+    plansBody.innerHTML = plans.length ? plans.map(item => {
+      const remaining = Number(item.remaining_days);
+      const remainingClass = remaining < 0 ? 'expired' : remaining <= 14 ? 'warning' : 'ok';
+      const remainingText = item.ends_at ? (remaining < 0 ? `${Math.abs(remaining)} gün önce bitti` : `${remaining} gün kaldı`) : 'Süre tanımlanmadı';
+      return `<tr>
+        <td><strong>${escapeHtml(item.store_name)}</strong><div style="font-size:10px;color:#64748b">${escapeHtml(item.owner_email || '')}</div></td>
+        <td><select class="plan-input" id="planName-${item.store_id}">${allowedPlans.map(plan => `<option value="${escapeHtml(plan)}" ${plan === item.plan_name ? 'selected' : ''}>${escapeHtml(plan)}</option>`).join('')}</select></td>
+        <td><input class="plan-input" id="planStart-${item.store_id}" type="date" value="${masterDateValue(item.starts_at)}"></td>
+        <td><input class="plan-input months-input" id="planMonths-${item.store_id}" type="number" min="1" max="60" value="${Number(item.duration_months) || 1}"></td>
+        <td><div class="plan-summary"><span>${masterFormatDate(item.ends_at)}</span><span class="remaining ${remainingClass}">${remainingText}</span>${Number(item.open_request_count) ? `<span class="badge pending">${item.open_request_count} talep</span>` : ''}</div></td>
+        <td><button class="btn btn-sm btn-primary" onclick="saveStoreSubscription(${item.store_id})"><i class="fa-solid fa-floppy-disk"></i> Kaydet</button></td>
+      </tr>`;
+    }).join('') : '<tr><td colspan="6" class="empty-row">Mağaza bulunamadı.</td></tr>';
+    renderMasterPlanRequests(data.requests || []);
+  } catch (error) {
+    plansBody.innerHTML = '<tr><td colspan="6" class="empty-row" style="color:#ef4444">Plan bilgileri alınamadı.</td></tr>';
+    showToast(error.message || 'Plan bilgileri alınamadı.', 'error');
+  }
+}
+
+function renderMasterPlanRequests(requests) {
+  const body = document.getElementById('masterPlanRequestsBody');
+  if (!body) return;
+  const openCount = requests.filter(request => request.status === 'open').length;
+  document.getElementById('openPlanRequestCount').textContent = `${openCount} açık talep`;
+  const labels = { open: 'Açık', resolved: 'Çözüldü', rejected: 'Reddedildi' };
+  body.innerHTML = requests.length ? requests.map(request => `<tr>
+    <td><strong>${escapeHtml(request.store_name)}</strong><div style="font-size:10px;color:#64748b">${escapeHtml(request.requester_name)}</div></td>
+    <td><span class="code-tag">${escapeHtml(request.current_plan)} → ${escapeHtml(request.requested_plan)}</span></td>
+    <td class="request-message">${escapeHtml(request.message)}${request.admin_note ? `<div style="margin-top:5px;color:#94a3b8"><strong>Not:</strong> ${escapeHtml(request.admin_note)}</div>` : ''}</td>
+    <td>${masterFormatDate(request.created_at)}</td>
+    <td><span class="badge ${request.status === 'open' ? 'pending' : request.status === 'resolved' ? 'active' : 'rejected'}">${labels[request.status] || escapeHtml(request.status)}</span></td>
+    <td>${request.status === 'open' ? `<div class="request-actions"><button class="btn btn-sm btn-success" onclick="resolvePlanRequest(${request.id},'resolved')"><i class="fa-solid fa-check"></i> Çöz</button><button class="btn btn-sm btn-danger" onclick="resolvePlanRequest(${request.id},'rejected')"><i class="fa-solid fa-xmark"></i></button></div>` : '<span style="font-size:11px;color:#64748b">Tamamlandı</span>'}</td>
+  </tr>`).join('') : '<tr><td colspan="6" class="empty-row">Plan destek talebi bulunmuyor.</td></tr>';
+}
+
+async function saveStoreSubscription(storeId) {
+  try {
+    const data = await apiFetch(`/api/master-admin/stores/${storeId}/subscription`, {
+      method: 'PUT',
+      body: JSON.stringify({
+        planName: document.getElementById(`planName-${storeId}`).value,
+        startsAt: document.getElementById(`planStart-${storeId}`).value,
+        durationMonths: Number(document.getElementById(`planMonths-${storeId}`).value)
+      })
+    });
+    showToast(data.message, 'success');
+    await loadMasterPlans();
+  } catch (error) {
+    showToast(error.message || 'Plan süresi kaydedilemedi.', 'error');
+  }
+}
+
+async function resolvePlanRequest(requestId, status) {
+  const adminNote = prompt(status === 'resolved' ? 'Müşteriye gösterilecek çözüm notunu yazın:' : 'Red nedenini yazın:', '');
+  if (adminNote === null) return;
+  try {
+    const data = await apiFetch(`/api/master-admin/plan-support-requests/${requestId}/status`, { method: 'POST', body: JSON.stringify({ status, adminNote }) });
+    showToast(data.message, status === 'resolved' ? 'success' : 'warning');
+    await loadMasterPlans();
+  } catch (error) {
+    showToast(error.message || 'Talep güncellenemedi.', 'error');
+  }
+}
+
 // ----------------------------------------------------
 // PAGE LOADERS
 // ----------------------------------------------------
@@ -461,6 +552,7 @@ async function promptChangePlan(storeId) {
 
 // Global App Init
 document.addEventListener('DOMContentLoaded', () => {
+  ensureMasterPlanNavigation();
   document.querySelectorAll('.sidebar-menu a').forEach(link => {
     link.addEventListener('click', () => document.querySelector('.sidebar')?.classList.remove('open'));
   });
@@ -479,5 +571,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadMerchantDetailData();
   } else if (path.includes('applications.html')) {
     loadMasterApplications();
+  } else if (path.includes('plans.html')) {
+    loadMasterPlans();
   }
 });

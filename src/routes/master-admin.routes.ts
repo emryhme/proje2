@@ -6,6 +6,21 @@ import { EmailVerificationService } from '../services/email-verification.service
 const router = Router();
 const ALLOWED_PLANS = ['Starter Store', 'Pro Store', 'Enterprise Store'];
 
+function addMonths(dateValue: string, months: number): string {
+  const [year, month, day] = dateValue.split('-').map(Number);
+  const target = new Date(Date.UTC(year, month - 1, 1));
+  target.setUTCMonth(target.getUTCMonth() + months);
+  const lastDay = new Date(Date.UTC(target.getUTCFullYear(), target.getUTCMonth() + 1, 0)).getUTCDate();
+  target.setUTCDate(Math.min(day, lastDay));
+  return target.toISOString().slice(0, 10);
+}
+
+function isValidDateOnly(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
 // MASTER ADMIN API ENDPOINTS (/api/master-admin/*)
 // Strictly enforced with AuthMiddleware.requireMasterAdmin
 // ==========================================
@@ -180,6 +195,10 @@ router.post('/api/master-admin/applications/:id/approve', AuthMiddleware.authent
       if (userRow) {
         db.prepare('UPDATE stores SET status = \'active\', updated_at = CURRENT_TIMESTAMP WHERE owner_id = ?').run(userRow.id);
         db.prepare('UPDATE memberships SET status = \'active\' WHERE user_id = ?').run(userRow.id);
+        db.prepare(`
+          INSERT OR IGNORE INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at, updated_by)
+          SELECT id, ?, 1, date('now'), date('now', '+1 month'), ? FROM stores WHERE owner_id = ?
+        `).run(appRow.plan || 'Pro Store', req.auth!.userId, userRow.id);
       }
 
       AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_APPROVE_APPLICATION', 'merchant_applications', String(appId), '', appRow.email);
@@ -296,12 +315,120 @@ router.post('/api/master-admin/stores/:storeId/change-plan', AuthMiddleware.auth
     if (owner) {
       db.prepare('UPDATE merchant_applications SET plan = ?, updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = ?').run(plan, owner.email.toLowerCase());
     }
+    db.prepare('UPDATE store_subscriptions SET plan_name = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP WHERE store_id = ?').run(plan, req.auth!.userId, targetStoreId);
 
     AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_CHANGE_PLAN', 'stores', String(targetStoreId), '', String(plan));
 
     return res.json({ success: true, message: `${store.name} maÃƒâ€Ã…Â¸azasÃƒâ€Ã‚Â±nÃƒâ€Ã‚Â±n paketi "${plan}" olarak gÃƒÆ’Ã‚Â¼ncellendi.` });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// GET /api/master-admin/plans
+router.get('/api/master-admin/plans', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, (req: AuthenticatedRequest, res) => {
+  try {
+    const subscriptions = db.prepare(`
+      SELECT s.id AS store_id, s.name AS store_name, s.status AS store_status,
+             u.full_name AS owner_name, u.email AS owner_email,
+             COALESCE(ss.plan_name, ma.plan, 'Pro Store') AS plan_name,
+             ss.duration_months, ss.starts_at, ss.ends_at, ss.updated_at,
+             CAST(julianday(ss.ends_at) - julianday(date('now')) AS INTEGER) AS remaining_days,
+             (SELECT COUNT(*) FROM plan_support_requests psr WHERE psr.store_id = s.id AND psr.status = 'open') AS open_request_count
+      FROM stores s
+      LEFT JOIN users u ON u.id = s.owner_id
+      LEFT JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
+      LEFT JOIN store_subscriptions ss ON ss.store_id = s.id
+      WHERE s.id != 1
+      ORDER BY s.id DESC
+    `).all();
+
+    const requests = db.prepare(`
+      SELECT psr.id, psr.store_id, s.name AS store_name, u.full_name AS requester_name,
+             psr.current_plan, psr.requested_plan, psr.message, psr.status,
+             psr.admin_note, psr.created_at, psr.resolved_at
+      FROM plan_support_requests psr
+      JOIN stores s ON s.id = psr.store_id
+      JOIN users u ON u.id = psr.user_id
+      ORDER BY CASE psr.status WHEN 'open' THEN 0 ELSE 1 END, psr.id DESC
+      LIMIT 100
+    `).all();
+
+    return res.json({ success: true, subscriptions, requests, allowedPlans: ALLOWED_PLANS });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// PUT /api/master-admin/stores/:storeId/subscription
+router.put('/api/master-admin/stores/:storeId/subscription', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, (req: AuthenticatedRequest, res) => {
+  try {
+    const storeId = Number(req.params.storeId);
+    const planName = String(req.body?.planName || '').trim();
+    const durationMonths = Number(req.body?.durationMonths);
+    const startsAt = String(req.body?.startsAt || '').trim();
+
+    if (!storeId || storeId === 1) return res.status(400).json({ success: false, error: 'Geçersiz mağaza.' });
+    if (!ALLOWED_PLANS.includes(planName)) return res.status(400).json({ success: false, error: 'Geçerli bir plan seçin.' });
+    if (!Number.isInteger(durationMonths) || durationMonths < 1 || durationMonths > 60) {
+      return res.status(400).json({ success: false, error: 'Plan süresi 1 ile 60 ay arasında olmalıdır.' });
+    }
+    if (!isValidDateOnly(startsAt)) {
+      return res.status(400).json({ success: false, error: 'Geçerli bir başlangıç tarihi girin.' });
+    }
+
+    const store = db.prepare('SELECT id, name, owner_id FROM stores WHERE id = ?').get(storeId) as any;
+    if (!store) return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
+    const endsAt = addMonths(startsAt, durationMonths);
+
+    db.transaction(() => {
+      db.prepare(`
+        INSERT INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at, updated_by)
+        VALUES (?, ?, ?, ?, ?, ?)
+        ON CONFLICT(store_id) DO UPDATE SET
+          plan_name = excluded.plan_name,
+          duration_months = excluded.duration_months,
+          starts_at = excluded.starts_at,
+          ends_at = excluded.ends_at,
+          updated_by = excluded.updated_by,
+          updated_at = CURRENT_TIMESTAMP
+      `).run(storeId, planName, durationMonths, startsAt, endsAt, req.auth!.userId);
+
+      const owner = db.prepare('SELECT email FROM users WHERE id = ?').get(store.owner_id) as any;
+      if (owner?.email) {
+        db.prepare('UPDATE merchant_applications SET plan = ?, updated_at = CURRENT_TIMESTAMP WHERE LOWER(email) = LOWER(?)').run(planName, owner.email);
+      }
+      AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_UPDATE_SUBSCRIPTION', 'store_subscriptions', String(storeId), '', `${planName}|${startsAt}|${endsAt}`);
+    })();
+
+    return res.json({ success: true, message: `${store.name} için ${durationMonths} aylık plan dönemi kaydedildi.`, subscription: { storeId, planName, durationMonths, startsAt, endsAt } });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// POST /api/master-admin/plan-support-requests/:id/status
+router.post('/api/master-admin/plan-support-requests/:id/status', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, (req: AuthenticatedRequest, res) => {
+  try {
+    const requestId = Number(req.params.id);
+    const status = String(req.body?.status || '').trim();
+    const adminNote = String(req.body?.adminNote || '').trim().slice(0, 1000);
+    if (!['resolved', 'rejected'].includes(status)) {
+      return res.status(400).json({ success: false, error: 'Geçerli bir talep durumu seçin.' });
+    }
+    const request = db.prepare('SELECT * FROM plan_support_requests WHERE id = ?').get(requestId) as any;
+    if (!request) return res.status(404).json({ success: false, error: 'Destek talebi bulunamadı.' });
+    if (request.status !== 'open') return res.status(409).json({ success: false, error: 'Bu destek talebi daha önce sonuçlandırılmış.' });
+
+    db.prepare(`
+      UPDATE plan_support_requests
+      SET status = ?, admin_note = ?, resolved_by = ?, resolved_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(status, adminNote, req.auth!.userId, requestId);
+    AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_RESOLVE_PLAN_REQUEST', 'plan_support_requests', String(requestId), request.status, status);
+    return res.json({ success: true, message: status === 'resolved' ? 'Destek talebi çözüldü.' : 'Destek talebi reddedildi.' });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 

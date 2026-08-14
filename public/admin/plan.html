@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="tr" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+  <title>ISCWORKS — Plan Yönetimi</title>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .plan-period-bar{display:grid;grid-template-columns:1.2fr repeat(3,1fr);gap:1px;margin-bottom:24px;overflow:hidden;border:1px solid var(--border);border-radius:14px;background:var(--border);box-shadow:var(--shadow)}
+    .period-cell{padding:20px;background:#15161c}.period-cell.primary{background:linear-gradient(135deg,rgba(163,255,18,.13),rgba(255,255,255,.035))}.period-label{display:block;margin-bottom:7px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase}.period-value{font-size:17px;font-weight:800;color:var(--text)}.period-value.plan-name{color:#a3ff12;font-size:21px}.period-progress{grid-column:1/-1;padding:14px 20px;background:#111217}.progress-meta{display:flex;justify-content:space-between;margin-bottom:8px;color:var(--muted);font-size:11px}.progress-track{height:7px;overflow:hidden;border-radius:99px;background:rgba(255,255,255,.07)}.progress-fill{height:100%;width:0;border-radius:inherit;background:linear-gradient(90deg,#a3ff12,#64dcff);transition:width .5s ease}.plan-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.plan-list{display:grid;gap:10px}.request-item{padding:15px;border:1px solid var(--border);border-radius:11px;background:rgba(255,255,255,.025)}.request-top{display:flex;justify-content:space-between;gap:12px;margin-bottom:8px}.request-route{font-size:13px;font-weight:800}.request-meta,.request-message{color:var(--muted);font-size:11px;line-height:1.55}.request-message{margin-top:7px;color:var(--text)}.plan-status{padding:4px 8px;border-radius:99px;font-size:10px;font-weight:800}.plan-status.open{background:rgba(245,158,11,.14);color:#fbbf24}.plan-status.resolved{background:rgba(16,185,129,.14);color:#34d399}.plan-status.rejected{background:rgba(239,68,68,.14);color:#fb7185}.plan-empty{padding:24px;text-align:center;color:var(--muted);font-size:12px}@media(max-width:900px){.plan-period-bar{grid-template-columns:1fr 1fr}.period-cell.primary{grid-column:1/-1}.plan-grid{grid-template-columns:1fr}}@media(max-width:520px){.plan-period-bar{grid-template-columns:1fr}.period-cell.primary{grid-column:auto}.period-progress{grid-column:auto}}
+    html[data-theme="light"] .period-cell{background:#fff}html[data-theme="light"] .period-cell.primary{background:linear-gradient(135deg,rgba(125,190,25,.13),#fff)}html[data-theme="light"] .period-progress{background:#f7f8fa}html[data-theme="light"] .period-value{color:#15161a}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="logo"><div class="logo-mark"><i data-lucide="crown" size="20"></i></div>ISCWORKS</a>
+    <div class="section-title">ANA MENÜ</div>
+    <a href="index.html" class="nav-item"><i data-lucide="layout-dashboard"></i>Dashboard &amp; Stok</a>
+    <a href="orders.html" class="nav-item"><i data-lucide="shopping-cart"></i>Siparişler <span class="nav-badge" id="ordersBadgeCount">0</span></a>
+    <a href="new-product.html" class="nav-item"><i data-lucide="package-plus"></i>Yeni Ürün Girişi</a>
+    <a href="campaigns.html" class="nav-item"><i data-lucide="badge-percent"></i>Kampanyalar</a>
+    <a href="rewards.html" class="nav-item"><i data-lucide="gift"></i>VIP Ödüller</a>
+    <div class="section-title">AI &amp; MAĞAZA YÖNETİMİ</div>
+    <a href="ai-product.html" class="nav-item"><i data-lucide="sparkles"></i>S.E.T.T AI Copilot</a>
+    <a href="settings.html" class="nav-item"><i data-lucide="settings"></i>Fiyat &amp; Kargo Ayarları</a>
+    <div class="section-title">SİSTEM &amp; ALTYAPI</div>
+    <a href="plan.html" class="nav-item active"><i data-lucide="credit-card"></i>Plan Yönetimi</a>
+    <a href="api-settings.html" class="nav-item"><i data-lucide="sliders"></i>API &amp; AI Kişiselleştirme</a>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:10px"><button class="icon-button mobile-menu" onclick="toggleSidebar()"><i data-lucide="menu"></i></button><div class="search"><i data-lucide="calendar-range" size="15"></i><span style="font-size:12px;color:var(--muted)">Abonelik dönemi ve plan desteği</span></div></div>
+      <div class="top-actions"><div class="sync-badge"><span class="pulse-dot"></span><span>Plan Bilgileri Güncel</span></div><div class="user"><div class="avatar">KU</div><div class="user-text"><strong>Yükleniyor...</strong><span>Mağaza kullanıcısı</span></div><i data-lucide="chevron-down" size="13"></i></div></div>
+    </header>
+
+    <section class="content">
+      <div class="page-header"><div class="page-title"><h1>Plan Yönetimi</h1><p>Mevcut planınızı, kullanım döneminizi ve plan değişikliği taleplerinizi yönetin.</p></div></div>
+
+      <div class="plan-period-bar">
+        <div class="period-cell primary"><span class="period-label">Aktif plan</span><strong class="period-value plan-name" id="planName">Yükleniyor...</strong></div>
+        <div class="period-cell"><span class="period-label">Plan süresi</span><strong class="period-value" id="planMonths">—</strong></div>
+        <div class="period-cell"><span class="period-label">Başlangıç tarihi</span><strong class="period-value" id="planStartsAt">—</strong></div>
+        <div class="period-cell"><span class="period-label">Bitiş tarihi</span><strong class="period-value" id="planEndsAt">—</strong></div>
+        <div class="period-progress"><div class="progress-meta"><span id="planProgressText">Plan dönemi hesaplanıyor</span><span id="planRemainingDays">—</span></div><div class="progress-track"><div class="progress-fill" id="planProgressFill"></div></div></div>
+      </div>
+
+      <div class="plan-grid">
+        <div class="card table-card">
+          <div class="table-header"><div><div class="table-title">Plan Değişikliği Talebi</div><div class="card-subtitle">Destek ekibi talebinizi inceleyip sizinle iletişime geçer.</div></div></div>
+          <form id="planSupportForm">
+            <div class="form-group"><label>Geçmek istediğiniz plan</label><select id="requestedPlan" required><option value="">Plan seçin</option></select></div>
+            <div class="form-group"><label>Talep açıklaması</label><textarea id="planRequestMessage" rows="5" minlength="10" maxlength="1000" placeholder="Plan değişikliği ihtiyacınızı ve varsa sorularınızı yazın..." required></textarea></div>
+            <div class="form-actions"><button class="btn btn-primary" type="submit" id="planRequestButton"><i data-lucide="life-buoy" size="15"></i>Destek Talebi Aç</button></div>
+          </form>
+        </div>
+        <div class="card table-card">
+          <div class="table-header"><div><div class="table-title">Talep Geçmişi</div><div class="card-subtitle">Son plan destek talepleriniz.</div></div></div>
+          <div class="plan-list" id="planRequests"><div class="plan-empty">Talepler yükleniyor...</div></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast-container" id="toastContainer"></div>
+<script src="app.js?v=20260814-plan-management"></script>
+<script>function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}lucide.createIcons();</script>
+</body>
+</html>
