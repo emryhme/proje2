@@ -14,6 +14,7 @@ import { DemoAIService } from './services/demo-ai.service';
 import { extractProductCode } from './utils/regex.util';
 import { db, hashPassword, initDatabase, needsPasswordRehash, verifyPassword } from './database/db';
 import { AuthMiddleware, AuthenticatedRequest } from './middleware/auth.middleware';
+import { EmailVerificationService } from './services/email-verification.service';
 
 // Initialize schema, migrations, and seed data once before serving requests.
 initDatabase();
@@ -90,7 +91,7 @@ app.get('/api/admin/applications', AuthMiddleware.authenticate, AuthMiddleware.r
 });
 
 // POST /api/admin/applications/:id/approve (Master Admin approve application)
-app.post('/api/admin/applications/:id/approve', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER']), (req: AuthenticatedRequest, res) => {
+app.post('/api/admin/applications/:id/approve', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER']), async (req: AuthenticatedRequest, res) => {
   try {
     if (req.auth!.storeId !== 1) {
       return res.status(403).json({ success: false, error: 'BaÃƒâ€¦Ã…Â¸vuru onaylama yetkisi sadece SÃƒÆ’Ã‚Â¼per Admin hesabÃƒâ€Ã‚Â±na aittir.' });
@@ -120,7 +121,15 @@ app.post('/api/admin/applications/:id/approve', AuthMiddleware.authenticate, Aut
       AuthMiddleware.logAudit(1, req.auth!.userId, 'APPROVE_APPLICATION', 'merchant_applications', String(appId), '', appRow.email);
     })();
 
-    return res.json({ success: true, message: `${appRow.store_name} maÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla onaylandÃƒâ€Ã‚Â± ve aktifleÃƒâ€¦Ã…Â¸ti!` });
+    let notificationSent = true;
+    try {
+      await EmailVerificationService.sendAccountApprovedEmail({ email: appRow.email, fullName: appRow.full_name, storeName: appRow.store_name });
+    } catch (emailError: any) {
+      notificationSent = false;
+      console.error('[Account Approval Email] Send failed:', emailError?.response?.data || emailError?.message || emailError);
+    }
+
+    return res.json({ success: true, notificationSent, message: notificationSent ? `${appRow.store_name} mağaza başvurusu onaylandı ve kullanıcıya e-posta gönderildi.` : `${appRow.store_name} mağaza başvurusu onaylandı; bildirim e-postası gönderilemedi.` });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }

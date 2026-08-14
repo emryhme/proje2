@@ -84,6 +84,25 @@ class EmailVerificationService {
             timeout: 15_000
         });
     }
+    static async sendAccountApprovedEmail(input) {
+        if (!this.isConfigured())
+            throw new Error('E-posta servisi yapılandırılmamış.');
+        const loginUrl = 'https://www.iscworks.info/admin/login.html';
+        await axios_1.default.post('https://api.resend.com/emails', {
+            from: env_1.env.emailFrom,
+            to: [input.email],
+            subject: 'ISCWORKS mağaza hesabınız onaylandı',
+            html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827"><h2>Merhaba ${this.escapeHtml(input.fullName)},</h2><p><strong>${this.escapeHtml(input.storeName)}</strong> mağaza hesabınız süper admin tarafından onaylandı.</p><p>Artık ISCWORKS yönetim paneline giriş yapabilir, mağaza ayarlarınızı tamamlayabilir ve satış asistanınızı kullanmaya başlayabilirsiniz.</p><p style="margin:28px 0"><a href="${loginUrl}" style="background:#111827;color:#fff;padding:13px 20px;border-radius:8px;text-decoration:none;font-weight:700">Yönetim Paneline Giriş Yap</a></p><p style="font-size:12px;color:#9ca3af">Bu e-posta ISCWORKS mağaza başvurunuzun sonucu hakkında gönderilmiştir.</p></div>`,
+            text: `Merhaba ${input.fullName},\n\n${input.storeName} mağaza hesabınız onaylandı. Artık yönetim paneline giriş yapabilirsiniz:\n${loginUrl}`
+        }, {
+            headers: {
+                Authorization: `Bearer ${env_1.env.resendApiKey}`,
+                'Content-Type': 'application/json',
+                'Idempotency-Key': `account-approved-${this.tokenHash(input.email.toLowerCase()).slice(0, 24)}`
+            },
+            timeout: 15_000
+        });
+    }
     static escapeHtml(value) {
         return String(value).replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[character] || character));
     }

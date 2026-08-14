@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { db } from '../database/db';
 import { AuthMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
+import { EmailVerificationService } from '../services/email-verification.service';
 
 const router = Router();
 const ALLOWED_PLANS = ['Starter Store', 'Pro Store', 'Enterprise Store'];
@@ -158,7 +159,7 @@ router.get('/api/master-admin/applications', AuthMiddleware.authenticate, AuthMi
 });
 
 // POST /api/master-admin/applications/:id/approve
-router.post('/api/master-admin/applications/:id/approve', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, (req: AuthenticatedRequest, res) => {
+router.post('/api/master-admin/applications/:id/approve', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, async (req: AuthenticatedRequest, res) => {
   try {
     const appId = Number(req.params.id);
     const appRow = db.prepare('SELECT * FROM merchant_applications WHERE id = ?').get(appId) as any;
@@ -184,7 +185,15 @@ router.post('/api/master-admin/applications/:id/approve', AuthMiddleware.authent
       AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_APPROVE_APPLICATION', 'merchant_applications', String(appId), '', appRow.email);
     })();
 
-    return res.json({ success: true, message: `${appRow.store_name} maÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla onaylandÃƒâ€Ã‚Â± ve aktifleÃƒâ€¦Ã…Â¸ti!` });
+    let notificationSent = true;
+    try {
+      await EmailVerificationService.sendAccountApprovedEmail({ email: appRow.email, fullName: appRow.full_name, storeName: appRow.store_name });
+    } catch (emailError: any) {
+      notificationSent = false;
+      console.error('[Account Approval Email] Send failed:', emailError?.response?.data || emailError?.message || emailError);
+    }
+
+    return res.json({ success: true, notificationSent, message: notificationSent ? `${appRow.store_name} mağaza başvurusu onaylandı ve kullanıcıya e-posta gönderildi.` : `${appRow.store_name} mağaza başvurusu onaylandı; bildirim e-postası gönderilemedi.` });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
