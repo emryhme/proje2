@@ -6,7 +6,7 @@
   <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
   <title>ISCWORKS — E-Posta Kodu Doğrulama</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:22px;background:radial-gradient(circle at 50% 0,rgba(163,255,18,.08),transparent 35%),#0a0a0c;color:#fff;font-family:Inter,Arial,sans-serif}.card{width:min(460px,100%);padding:38px;text-align:center;border:1px solid rgba(255,255,255,.09);border-radius:18px;background:rgba(20,21,27,.94);box-shadow:0 26px 80px rgba(0,0,0,.45)}.icon{width:64px;height:64px;margin:0 auto 20px;display:grid;place-items:center;border-radius:50%;font-size:26px;background:rgba(163,255,18,.12);color:#a3ff12}.icon.error{background:rgba(239,68,68,.12);color:#fb7185}h1{font-size:24px;margin:0 0 12px}p{color:#9da1ad;font-size:14px;line-height:1.65;margin:0 0 24px}.form{display:flex;flex-direction:column;gap:11px}.form input{width:100%;padding:13px;border:1px solid rgba(255,255,255,.12);border-radius:8px;background:#101116;color:#fff;outline:none}.form input:focus{border-color:#a3ff12}.form .code{font-size:26px;text-align:center;letter-spacing:10px;font-weight:800}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 18px;border:0;border-radius:9px;background:#a3ff12;color:#0a0a0c;text-decoration:none;font-weight:800;font-size:13px;cursor:pointer}.link{border:0;background:none;color:#a3ff12;font-weight:700;cursor:pointer;padding:8px}.message{min-height:18px;color:#fb7185;font-size:12px;line-height:1.5}.success-link{display:none}.hint{color:#777b87;font-size:11px;margin-top:15px}</style>
+  <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:22px;background:radial-gradient(circle at 50% 0,rgba(163,255,18,.08),transparent 35%),#0a0a0c;color:#fff;font-family:Inter,Arial,sans-serif}.card{width:min(460px,100%);padding:38px;text-align:center;border:1px solid rgba(255,255,255,.09);border-radius:18px;background:rgba(20,21,27,.94);box-shadow:0 26px 80px rgba(0,0,0,.45)}.icon{width:64px;height:64px;margin:0 auto 20px;display:grid;place-items:center;border-radius:50%;font-size:26px;background:rgba(163,255,18,.12);color:#a3ff12}.icon.error{background:rgba(239,68,68,.12);color:#fb7185}h1{font-size:24px;margin:0 0 12px}p{color:#9da1ad;font-size:14px;line-height:1.65;margin:0 0 24px}.form{display:flex;flex-direction:column;gap:13px}.email-card{display:flex;align-items:center;gap:12px;padding:13px 15px;border:1px solid rgba(255,255,255,.08);border-radius:10px;background:rgba(255,255,255,.035);text-align:left}.email-card i{width:32px;height:32px;display:grid;place-items:center;flex:none;border-radius:8px;background:rgba(163,255,18,.1);color:#a3ff12}.email-copy{min-width:0}.email-label{display:block;margin-bottom:3px;color:#777b87;font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase}.email-value{display:block;overflow:hidden;color:#e6e8ed;font-size:13px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}.code-wrap{position:relative;padding:15px 12px;border:1px solid rgba(255,255,255,.12);border-radius:10px;background:#101116;cursor:text;transition:border-color .2s,box-shadow .2s}.code-wrap:focus-within{border-color:#a3ff12;box-shadow:0 0 0 3px rgba(163,255,18,.08)}.code-input{position:absolute;inset:0;width:100%;height:100%;border:0;opacity:0;cursor:text}.code-display{display:flex;justify-content:center;gap:10px;pointer-events:none}.code-slot{width:35px;height:43px;display:grid;place-items:center;border-bottom:2px solid rgba(255,255,255,.16);color:#686d78;font-size:27px;font-weight:800;transition:.18s}.code-slot.filled{border-color:#a3ff12;color:#fff;transform:translateY(-1px)}.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:13px 18px;border:0;border-radius:9px;background:#a3ff12;color:#0a0a0c;text-decoration:none;font-weight:800;font-size:13px;cursor:pointer}.link{border:0;background:none;color:#a3ff12;font-weight:700;cursor:pointer;padding:8px}.message{min-height:18px;color:#fb7185;font-size:12px;line-height:1.5}.success-link{display:none}.hint{color:#777b87;font-size:11px;margin-top:15px}@media(max-width:420px){.card{padding:30px 20px}.code-display{gap:7px}.code-slot{width:31px}}</style>
 </head>
 <body>
   <main class="card">
@@ -14,8 +14,15 @@
     <h1 id="resultTitle">Doğrulama Kodunu Girin</h1>
     <p id="resultText">E-posta adresinize gönderilen 6 haneli tek kullanımlık kodu girin.</p>
     <form class="form" id="verifyForm">
-      <input type="email" id="verifyEmail" required autocomplete="email" placeholder="E-posta adresiniz">
-      <input class="code" type="text" id="verifyCode" required inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" placeholder="000000">
+      <div class="email-card">
+        <i class="fa-solid fa-at"></i>
+        <div class="email-copy"><span class="email-label">Doğrulama adresi</span><span class="email-value" id="emailDisplay"></span></div>
+      </div>
+      <input type="hidden" id="verifyEmail">
+      <label class="code-wrap" aria-label="6 haneli doğrulama kodu">
+        <input class="code-input" type="text" id="verifyCode" required inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}">
+        <span class="code-display" aria-hidden="true"><span class="code-slot">-</span><span class="code-slot">-</span><span class="code-slot">-</span><span class="code-slot">-</span><span class="code-slot">-</span><span class="code-slot">-</span></span>
+      </label>
       <button class="btn" type="submit" id="verifyButton"><i class="fa-solid fa-check"></i> Kodu Doğrula</button>
       <button class="link" type="button" id="resendButton">Yeni kod gönder</button>
       <div class="message" id="resultMessage"></div>
@@ -26,11 +33,23 @@
   <script>
     const params = new URLSearchParams(location.search);
     const emailInput = document.getElementById('verifyEmail');
+    const emailDisplay = document.getElementById('emailDisplay');
     const codeInput = document.getElementById('verifyCode');
+    const codeSlots = [...document.querySelectorAll('.code-slot')];
     const message = document.getElementById('resultMessage');
     emailInput.value = params.get('email') || '';
+    emailDisplay.textContent = emailInput.value || 'E-posta adresi bulunamadı';
     if (params.get('sent') === '0') message.textContent = 'İlk kod gönderilemedi. “Yeni kod gönder” düğmesini kullanın.';
-    codeInput.addEventListener('input', () => { codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6); });
+    function renderCode() {
+      codeInput.value = codeInput.value.replace(/\D/g, '').slice(0, 6);
+      codeSlots.forEach((slot, index) => {
+        const digit = codeInput.value[index];
+        slot.textContent = digit || '-';
+        slot.classList.toggle('filled', Boolean(digit));
+      });
+    }
+    codeInput.addEventListener('input', renderCode);
+    renderCode();
 
     document.getElementById('verifyForm').addEventListener('submit', async event => {
       event.preventDefault();
