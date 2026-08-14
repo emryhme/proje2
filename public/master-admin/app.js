@@ -185,6 +185,27 @@ function masterFormatDate(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('tr-TR');
 }
 
+function calculatePlanDurationLabel(startsAt, endsAt) {
+  if (!startsAt || !endsAt) return 'Tarih seçin';
+  const start = new Date(`${startsAt}T00:00:00Z`);
+  const end = new Date(`${endsAt}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) return 'Geçersiz dönem';
+  const days = Math.round((end - start) / 86400000);
+  const [startYear, startMonth, startDay] = startsAt.split('-').map(Number);
+  const [endYear, endMonth, endDay] = endsAt.split('-').map(Number);
+  let months = ((endYear - startYear) * 12) + (endMonth - startMonth);
+  if (endDay > startDay) months += 1;
+  months = Math.max(1, months);
+  return `${months} ay · ${days} gün`;
+}
+
+function updatePlanDurationPreview(storeId) {
+  const startsAt = document.getElementById(`planStart-${storeId}`)?.value;
+  const endsAt = document.getElementById(`planEnd-${storeId}`)?.value;
+  const label = document.getElementById(`planDuration-${storeId}`);
+  if (label) label.textContent = calculatePlanDurationLabel(startsAt, endsAt);
+}
+
 async function loadMasterPlans() {
   const plansBody = document.getElementById('masterPlansBody');
   if (!plansBody) return;
@@ -199,9 +220,9 @@ async function loadMasterPlans() {
       return `<tr>
         <td><strong>${escapeHtml(item.store_name)}</strong><div style="font-size:10px;color:#64748b">${escapeHtml(item.owner_email || '')}</div></td>
         <td><select class="plan-input" id="planName-${item.store_id}">${allowedPlans.map(plan => `<option value="${escapeHtml(plan)}" ${plan === item.plan_name ? 'selected' : ''}>${escapeHtml(plan)}</option>`).join('')}</select></td>
-        <td><input class="plan-input" id="planStart-${item.store_id}" type="date" value="${masterDateValue(item.starts_at)}"></td>
-        <td><input class="plan-input months-input" id="planMonths-${item.store_id}" type="number" min="1" max="60" value="${Number(item.duration_months) || 1}"></td>
-        <td><div class="plan-summary"><span>${masterFormatDate(item.ends_at)}</span><span class="remaining ${remainingClass}">${remainingText}</span>${Number(item.open_request_count) ? `<span class="badge pending">${item.open_request_count} talep</span>` : ''}</div></td>
+        <td><input class="plan-input" id="planStart-${item.store_id}" type="date" value="${masterDateValue(item.starts_at)}" onchange="updatePlanDurationPreview(${item.store_id})"></td>
+        <td><input class="plan-input" id="planEnd-${item.store_id}" type="date" value="${masterDateValue(item.ends_at)}" onchange="updatePlanDurationPreview(${item.store_id})"></td>
+        <td><div class="plan-summary"><span class="duration-label" id="planDuration-${item.store_id}">${calculatePlanDurationLabel(masterDateValue(item.starts_at), masterDateValue(item.ends_at))}</span><span class="remaining ${remainingClass}">${remainingText}</span>${Number(item.open_request_count) ? `<span class="badge pending">${item.open_request_count} talep</span>` : ''}</div></td>
         <td><button class="btn btn-sm btn-primary" onclick="saveStoreSubscription(${item.store_id})"><i class="fa-solid fa-floppy-disk"></i> Kaydet</button></td>
       </tr>`;
     }).join('') : '<tr><td colspan="6" class="empty-row">Mağaza bulunamadı.</td></tr>';
@@ -217,14 +238,14 @@ function renderMasterPlanRequests(requests) {
   if (!body) return;
   const openCount = requests.filter(request => request.status === 'open').length;
   document.getElementById('openPlanRequestCount').textContent = `${openCount} açık talep`;
-  const labels = { open: 'Açık', resolved: 'Çözüldü', rejected: 'Reddedildi' };
+  const labels = { open: 'Yanıt Bekliyor', resolved: 'Yanıtlandı', rejected: 'Reddedildi' };
   body.innerHTML = requests.length ? requests.map(request => `<tr>
     <td><strong>${escapeHtml(request.store_name)}</strong><div style="font-size:10px;color:#64748b">${escapeHtml(request.requester_name)}</div></td>
     <td><span class="code-tag">${escapeHtml(request.current_plan)} → ${escapeHtml(request.requested_plan)}</span></td>
-    <td class="request-message">${escapeHtml(request.message)}${request.admin_note ? `<div style="margin-top:5px;color:#94a3b8"><strong>Not:</strong> ${escapeHtml(request.admin_note)}</div>` : ''}</td>
+    <td class="request-message"><div>${escapeHtml(request.message)}</div>${request.admin_note ? `<div style="margin-top:8px;color:#34d399"><strong>Yanıt:</strong> ${escapeHtml(request.admin_note)}</div>` : `<textarea class="reply-box" id="planReply-${request.id}" maxlength="1000" placeholder="Müşteriye gösterilecek yanıtı yazın..."></textarea><div class="request-actions"><button class="btn btn-sm btn-success" onclick="resolvePlanRequest(${request.id},'resolved')"><i class="fa-solid fa-reply"></i> Yanıtla</button><button class="btn btn-sm btn-danger" onclick="resolvePlanRequest(${request.id},'rejected')"><i class="fa-solid fa-xmark"></i> Reddet</button></div>`}</td>
     <td>${masterFormatDate(request.created_at)}</td>
     <td><span class="badge ${request.status === 'open' ? 'pending' : request.status === 'resolved' ? 'active' : 'rejected'}">${labels[request.status] || escapeHtml(request.status)}</span></td>
-    <td>${request.status === 'open' ? `<div class="request-actions"><button class="btn btn-sm btn-success" onclick="resolvePlanRequest(${request.id},'resolved')"><i class="fa-solid fa-check"></i> Çöz</button><button class="btn btn-sm btn-danger" onclick="resolvePlanRequest(${request.id},'rejected')"><i class="fa-solid fa-xmark"></i></button></div>` : '<span style="font-size:11px;color:#64748b">Tamamlandı</span>'}</td>
+    <td>${request.status === 'open' ? '<span style="font-size:11px;color:#fbbf24">Yanıtınızı yazıp gönderin</span>' : '<span style="font-size:11px;color:#64748b">Tamamlandı</span>'}</td>
   </tr>`).join('') : '<tr><td colspan="6" class="empty-row">Plan destek talebi bulunmuyor.</td></tr>';
 }
 
@@ -235,7 +256,7 @@ async function saveStoreSubscription(storeId) {
       body: JSON.stringify({
         planName: document.getElementById(`planName-${storeId}`).value,
         startsAt: document.getElementById(`planStart-${storeId}`).value,
-        durationMonths: Number(document.getElementById(`planMonths-${storeId}`).value)
+        endsAt: document.getElementById(`planEnd-${storeId}`).value
       })
     });
     showToast(data.message, 'success');
@@ -246,8 +267,11 @@ async function saveStoreSubscription(storeId) {
 }
 
 async function resolvePlanRequest(requestId, status) {
-  const adminNote = prompt(status === 'resolved' ? 'Müşteriye gösterilecek çözüm notunu yazın:' : 'Red nedenini yazın:', '');
-  if (adminNote === null) return;
+  const adminNote = document.getElementById(`planReply-${requestId}`)?.value.trim() || '';
+  if (adminNote.length < 3) {
+    showToast(status === 'resolved' ? 'Müşteriye gönderilecek yanıtı yazın.' : 'Red nedenini yazın.', 'warning');
+    return;
+  }
   try {
     const data = await apiFetch(`/api/master-admin/plan-support-requests/${requestId}/status`, { method: 'POST', body: JSON.stringify({ status, adminNote }) });
     showToast(data.message, status === 'resolved' ? 'success' : 'warning');
@@ -438,7 +462,15 @@ async function loadMerchantDetailData() {
       }
     }
   } catch (e) {
-    showToast('Mağaza detayları yüklenemedi. Lütfen tekrar deneyin.', 'error');
+    const title = document.getElementById('detailStoreName');
+    const subtitle = document.getElementById('detailStoreSlug');
+    if (title) title.textContent = 'Mağaza detayları yüklenemedi';
+    if (subtitle) subtitle.textContent = e.message || 'Sunucudan mağaza bilgisi alınamadı.';
+    ['detailProductsBody', 'detailOrdersBody', 'detailAuditLogsBody'].forEach(id => {
+      const body = document.getElementById(id);
+      if (body) body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#ef4444">Veriler yüklenemedi.</td></tr>';
+    });
+    showToast(e.message || 'Mağaza detayları yüklenemedi. Lütfen tekrar deneyin.', 'error');
   }
 }
 

@@ -8,7 +8,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="styles.css">
   <style>
-    .plan-input{width:100%;min-width:120px;padding:9px 10px;border:1px solid var(--card-border);border-radius:8px;background:#101116;color:#fff}.months-input{min-width:75px;width:75px}.plan-summary{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.remaining{font-size:11px;font-weight:800}.remaining.ok{color:#34d399}.remaining.warning{color:#fbbf24}.remaining.expired{color:#fb7185}.request-message{max-width:360px;white-space:normal;line-height:1.45}.request-actions{display:flex;gap:6px}.section-stack{display:grid;gap:24px}.empty-row{text-align:center;color:#94a3b8;padding:24px!important}@media(max-width:800px){.page-header{align-items:flex-start}.navbar-badge{display:none}}
+    .plan-input{width:100%;min-width:120px;padding:9px 10px;border:1px solid var(--card-border);border-radius:8px;background:#101116;color:#fff}.plan-summary{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.duration-label{font-size:12px;font-weight:800;color:#e5e7eb}.remaining{font-size:11px;font-weight:800}.remaining.ok{color:#34d399}.remaining.warning{color:#fbbf24}.remaining.expired{color:#fb7185}.request-message{min-width:280px;max-width:420px;white-space:normal;line-height:1.45}.reply-box{width:100%;min-height:70px;margin-top:10px;padding:9px 10px;border:1px solid var(--card-border);border-radius:8px;background:#101116;color:#fff;resize:vertical}.request-actions{display:flex;gap:6px;margin-top:8px}.section-stack{display:grid;gap:24px}.empty-row{text-align:center;color:#94a3b8;padding:24px!important}@media(max-width:800px){.page-header{align-items:flex-start}.navbar-badge{display:none}}
     html[data-theme="light"] .plan-input{background:#fff;color:#15161a;border-color:rgba(20,24,35,.16)}
   </style>
 </head>
@@ -36,7 +36,7 @@
     <div class="section-stack">
       <section class="data-card">
         <div class="card-title"><span><i class="fa-solid fa-calendar-days text-indigo"></i> Mağaza Planları</span></div>
-        <div class="table-responsive"><table class="admin-table"><thead><tr><th>Mağaza</th><th>Plan</th><th>Başlangıç</th><th>Ay</th><th>Bitiş / Durum</th><th>İşlem</th></tr></thead><tbody id="masterPlansBody"><tr><td colspan="6" class="empty-row">Planlar yükleniyor...</td></tr></tbody></table></div>
+        <div class="table-responsive"><table class="admin-table"><thead><tr><th>Mağaza</th><th>Plan</th><th>Başlangıç Tarihi</th><th>Bitiş Tarihi</th><th>Süre / Durum</th><th>İşlem</th></tr></thead><tbody id="masterPlansBody"><tr><td colspan="6" class="empty-row">Planlar yükleniyor...</td></tr></tbody></table></div>
       </section>
       <section class="data-card">
         <div class="card-title"><span><i class="fa-solid fa-life-ring text-amber"></i> Plan Değişikliği Destek Talepleri</span><span class="badge pending" id="openPlanRequestCount">0 açık talep</span></div>

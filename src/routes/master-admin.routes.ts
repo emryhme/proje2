@@ -21,6 +21,14 @@ function isValidDateOnly(value: string): boolean {
   return !Number.isNaN(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
 }
 
+function calculateDurationMonths(startsAt: string, endsAt: string): number {
+  const [startYear, startMonth, startDay] = startsAt.split('-').map(Number);
+  const [endYear, endMonth, endDay] = endsAt.split('-').map(Number);
+  let months = ((endYear - startYear) * 12) + (endMonth - startMonth);
+  if (endDay > startDay) months += 1;
+  return Math.max(1, months);
+}
+
 // MASTER ADMIN API ENDPOINTS (/api/master-admin/*)
 // Strictly enforced with AuthMiddleware.requireMasterAdmin
 // ==========================================
@@ -28,11 +36,26 @@ function isValidDateOnly(value: string): boolean {
 // GET /api/master-admin/dashboard
 router.get('/api/master-admin/dashboard', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, (req: AuthenticatedRequest, res) => {
   try {
-    const totalMerchants = (db.prepare("SELECT COUNT(*) as count FROM stores WHERE id != 1").get() as any).count;
-    const activeStores = (db.prepare("SELECT COUNT(*) as count FROM stores WHERE status = 'active' AND id != 1").get() as any).count;
+    const totalMerchants = (db.prepare(`
+      SELECT COUNT(*) AS count FROM stores s
+      JOIN users u ON u.id = s.owner_id
+      JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
+      WHERE s.id != 1 AND u.email_verified_at IS NOT NULL AND ma.status IN ('approved', 'active')
+    `).get() as any).count;
+    const activeStores = (db.prepare(`
+      SELECT COUNT(*) AS count FROM stores s
+      JOIN users u ON u.id = s.owner_id
+      JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
+      WHERE s.status = 'active' AND s.id != 1 AND u.email_verified_at IS NOT NULL AND ma.status IN ('approved', 'active')
+    `).get() as any).count;
     const pendingApplications = (db.prepare("SELECT COUNT(*) as count FROM merchant_applications WHERE status = 'pending'").get() as any).count;
-    const suspendedStores = (db.prepare("SELECT COUNT(*) as count FROM stores WHERE status = 'suspended'").get() as any).count;
-    const totalUsers = (db.prepare("SELECT COUNT(*) as count FROM users").get() as any).count;
+    const suspendedStores = (db.prepare(`
+      SELECT COUNT(*) AS count FROM stores s
+      JOIN users u ON u.id = s.owner_id
+      JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
+      WHERE s.status = 'suspended' AND s.id != 1 AND u.email_verified_at IS NOT NULL AND ma.status IN ('approved', 'active')
+    `).get() as any).count;
+    const totalUsers = (db.prepare("SELECT COUNT(*) as count FROM users WHERE id = 1 OR email_verified_at IS NOT NULL").get() as any).count;
     const totalOrders = (db.prepare("SELECT COUNT(*) as count FROM orders").get() as any).count;
     const totalAiMessages = (db.prepare("SELECT COUNT(*) as count FROM ai_usage").get() as any).count;
     const activeSubscriptions = (db.prepare("SELECT COUNT(*) as count FROM merchant_applications WHERE status = 'approved' OR status = 'active'").get() as any).count;
@@ -42,7 +65,8 @@ router.get('/api/master-admin/dashboard', AuthMiddleware.authenticate, AuthMiddl
       SELECT s.id as store_id, s.name as store_name, s.slug, s.status as store_status, u.full_name as owner_name, u.email as owner_email, s.created_at
       FROM stores s
       JOIN users u ON u.id = s.owner_id
-      WHERE s.id != 1
+      JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
+      WHERE s.id != 1 AND u.email_verified_at IS NOT NULL AND ma.status IN ('approved', 'active')
       ORDER BY s.id DESC LIMIT 5
     `).all();
 
@@ -82,6 +106,8 @@ router.get('/api/master-admin/merchants', AuthMiddleware.authenticate, AuthMiddl
       LEFT JOIN memberships m ON m.user_id = u.id AND m.store_id = s.id
       LEFT JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
       WHERE s.id != 1
+        AND u.email_verified_at IS NOT NULL
+        AND ma.status IN ('approved', 'active')
     `;
 
     const params: any[] = [];
@@ -114,7 +140,12 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
       return res.status(400).json({ success: false, error: 'GeÃƒÆ’Ã‚Â§ersiz maÃƒâ€Ã…Â¸aza ID.' });
     }
 
-    const store = db.prepare("SELECT * FROM stores WHERE id = ?").get(targetStoreId) as any;
+    const store = db.prepare(`
+      SELECT s.* FROM stores s
+      JOIN users u ON u.id = s.owner_id
+      JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
+      WHERE s.id = ? AND u.email_verified_at IS NOT NULL AND ma.status IN ('approved', 'active')
+    `).get(targetStoreId) as any;
     if (!store) {
       return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
     }
@@ -132,7 +163,15 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
     const apiKeysCount = (db.prepare("SELECT COUNT(*) as count FROM api_keys WHERE store_id = ?").get(targetStoreId) as any).count;
 
     const recentProducts = db.prepare("SELECT product_code, name, price, stock FROM products WHERE store_id = ? ORDER BY id DESC LIMIT 5").all(targetStoreId);
-    const recentOrders = db.prepare("SELECT id, customer_name, total_price, status, created_at FROM orders WHERE store_id = ? ORDER BY id DESC LIMIT 5").all(targetStoreId);
+    const recentOrders = db.prepare(`
+      SELECT id,
+             TRIM(first_name || ' ' || COALESCE(last_name, '')) AS customer_name,
+             total_price, status, created_at
+      FROM orders
+      WHERE store_id = ?
+      ORDER BY id DESC
+      LIMIT 5
+    `).all(targetStoreId);
     const recentAuditLogs = db.prepare("SELECT id, action, entity_type, entity_id, created_at FROM audit_logs WHERE store_id = ? ORDER BY id DESC LIMIT 10").all(targetStoreId);
 
     AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_VIEW_MERCHANT', 'stores', String(targetStoreId));
@@ -333,6 +372,7 @@ router.get('/api/master-admin/plans', AuthMiddleware.authenticate, AuthMiddlewar
              u.full_name AS owner_name, u.email AS owner_email,
              COALESCE(ss.plan_name, ma.plan, 'Pro Store') AS plan_name,
              ss.duration_months, ss.starts_at, ss.ends_at, ss.updated_at,
+             CAST(julianday(ss.ends_at) - julianday(ss.starts_at) AS INTEGER) AS duration_days,
              CAST(julianday(ss.ends_at) - julianday(date('now')) AS INTEGER) AS remaining_days,
              (SELECT COUNT(*) FROM plan_support_requests psr WHERE psr.store_id = s.id AND psr.status = 'open') AS open_request_count
       FROM stores s
@@ -340,6 +380,8 @@ router.get('/api/master-admin/plans', AuthMiddleware.authenticate, AuthMiddlewar
       LEFT JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
       LEFT JOIN store_subscriptions ss ON ss.store_id = s.id
       WHERE s.id != 1
+        AND u.email_verified_at IS NOT NULL
+        AND ma.status IN ('approved', 'active')
       ORDER BY s.id DESC
     `).all();
 
@@ -365,22 +407,34 @@ router.put('/api/master-admin/stores/:storeId/subscription', AuthMiddleware.auth
   try {
     const storeId = Number(req.params.storeId);
     const planName = String(req.body?.planName || '').trim();
-    const durationMonths = Number(req.body?.durationMonths);
+    const requestedDurationMonths = Number(req.body?.durationMonths);
     const startsAt = String(req.body?.startsAt || '').trim();
+    const requestedEndsAt = String(req.body?.endsAt || '').trim();
 
     if (!storeId || storeId === 1) return res.status(400).json({ success: false, error: 'Geçersiz mağaza.' });
     if (!ALLOWED_PLANS.includes(planName)) return res.status(400).json({ success: false, error: 'Geçerli bir plan seçin.' });
-    if (!Number.isInteger(durationMonths) || durationMonths < 1 || durationMonths > 60) {
-      return res.status(400).json({ success: false, error: 'Plan süresi 1 ile 60 ay arasında olmalıdır.' });
-    }
     if (!isValidDateOnly(startsAt)) {
       return res.status(400).json({ success: false, error: 'Geçerli bir başlangıç tarihi girin.' });
     }
 
+    let endsAt = requestedEndsAt;
+    if (endsAt) {
+      if (!isValidDateOnly(endsAt)) return res.status(400).json({ success: false, error: 'Geçerli bir bitiş tarihi girin.' });
+      if (endsAt <= startsAt) return res.status(400).json({ success: false, error: 'Bitiş tarihi başlangıç tarihinden sonra olmalıdır.' });
+    } else {
+      if (!Number.isInteger(requestedDurationMonths) || requestedDurationMonths < 1 || requestedDurationMonths > 60) {
+        return res.status(400).json({ success: false, error: 'Plan süresi veya bitiş tarihi geçerli olmalıdır.' });
+      }
+      endsAt = addMonths(startsAt, requestedDurationMonths);
+    }
+
+    const durationMonths = calculateDurationMonths(startsAt, endsAt);
+    if (durationMonths > 60 || endsAt > addMonths(startsAt, 60)) {
+      return res.status(400).json({ success: false, error: 'Plan dönemi en fazla 60 ay olabilir.' });
+    }
+
     const store = db.prepare('SELECT id, name, owner_id FROM stores WHERE id = ?').get(storeId) as any;
     if (!store) return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
-    const endsAt = addMonths(startsAt, durationMonths);
-
     db.transaction(() => {
       db.prepare(`
         INSERT INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at, updated_by)
@@ -401,7 +455,8 @@ router.put('/api/master-admin/stores/:storeId/subscription', AuthMiddleware.auth
       AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_UPDATE_SUBSCRIPTION', 'store_subscriptions', String(storeId), '', `${planName}|${startsAt}|${endsAt}`);
     })();
 
-    return res.json({ success: true, message: `${store.name} için ${durationMonths} aylık plan dönemi kaydedildi.`, subscription: { storeId, planName, durationMonths, startsAt, endsAt } });
+    const durationDays = Math.round((Date.parse(`${endsAt}T00:00:00Z`) - Date.parse(`${startsAt}T00:00:00Z`)) / 86_400_000);
+    return res.json({ success: true, message: `${store.name} plan dönemi ${startsAt} – ${endsAt} olarak kaydedildi.`, subscription: { storeId, planName, durationMonths, durationDays, startsAt, endsAt } });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
   }
@@ -416,6 +471,7 @@ router.post('/api/master-admin/plan-support-requests/:id/status', AuthMiddleware
     if (!['resolved', 'rejected'].includes(status)) {
       return res.status(400).json({ success: false, error: 'Geçerli bir talep durumu seçin.' });
     }
+    if (adminNote.length < 3) return res.status(400).json({ success: false, error: 'Müşteriye gösterilecek yanıt en az 3 karakter olmalıdır.' });
     const request = db.prepare('SELECT * FROM plan_support_requests WHERE id = ?').get(requestId) as any;
     if (!request) return res.status(404).json({ success: false, error: 'Destek talebi bulunamadı.' });
     if (request.status !== 'open') return res.status(409).json({ success: false, error: 'Bu destek talebi daha önce sonuçlandırılmış.' });

@@ -232,7 +232,7 @@ async function loadPlanManagement() {
     }
 
     document.getElementById('planName').textContent = plan.plan_name;
-    document.getElementById('planMonths').textContent = `${plan.duration_months} ay`;
+    document.getElementById('planMonths').textContent = `${plan.duration_months} ay · ${plan.duration_days || 0} gün`;
     document.getElementById('planStartsAt').textContent = formatPlanDate(plan.starts_at);
     document.getElementById('planEndsAt').textContent = formatPlanDate(plan.ends_at);
     const start = new Date(`${String(plan.starts_at).slice(0, 10)}T00:00:00`).getTime();
@@ -252,13 +252,13 @@ async function loadPlanManagement() {
 function renderPlanRequests(requests) {
   const container = document.getElementById('planRequests');
   if (!container) return;
-  const statusLabels = { open: 'İnceleniyor', resolved: 'Çözüldü', rejected: 'Reddedildi' };
+  const statusLabels = { open: 'İnceleniyor', resolved: 'Yanıtlandı', rejected: 'Reddedildi' };
   container.innerHTML = requests.length ? requests.map(request => `
     <div class="request-item">
       <div class="request-top"><span class="request-route">${escapeHtml(request.current_plan)} → ${escapeHtml(request.requested_plan)}</span><span class="plan-status ${escapeHtml(request.status)}">${statusLabels[request.status] || escapeHtml(request.status)}</span></div>
       <div class="request-meta">${formatPlanDate(request.created_at)}</div>
       <div class="request-message">${escapeHtml(request.message)}</div>
-      ${request.admin_note ? `<div class="request-message"><strong>Destek notu:</strong> ${escapeHtml(request.admin_note)}</div>` : ''}
+      ${request.admin_note ? `<div class="request-message" style="color:#34d399"><strong>Destek yanıtı:</strong> ${escapeHtml(request.admin_note)}</div>` : ''}
     </div>`).join('') : '<div class="plan-empty">Henüz plan destek talebiniz bulunmuyor.</div>';
 }
 

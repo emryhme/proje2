@@ -42,9 +42,10 @@ async function runTestSuite() {
     db_1.db.prepare('DELETE FROM user_rewards WHERE store_id IN (100, 200, 999)').run();
     db_1.db.prepare('DELETE FROM conversations WHERE store_id IN (100, 200, 999)').run();
     db_1.db.prepare('DELETE FROM webhook_events WHERE store_id IN (100, 200, 999)').run();
-    db_1.db.prepare('DELETE FROM memberships WHERE store_id IN (100, 200, 999)').run();
-    db_1.db.prepare("DELETE FROM users WHERE id IN (10, 11, 20, 30) OR email IN ('owner_a@iscworks.com', 'staff_a@iscworks.com', 'owner_b@iscworks.com', 'inactive_user@iscworks.com')").run();
-    db_1.db.prepare('DELETE FROM stores WHERE id IN (100, 200, 999)').run();
+    db_1.db.prepare('DELETE FROM memberships WHERE store_id IN (100, 200, 400, 999)').run();
+    db_1.db.prepare("DELETE FROM merchant_applications WHERE email = 'unverified-test@iscworks.com'").run();
+    db_1.db.prepare('DELETE FROM stores WHERE id IN (100, 200, 400, 999)').run();
+    db_1.db.prepare("DELETE FROM users WHERE id IN (10, 11, 20, 30, 40) OR email IN ('owner_a@iscworks.com', 'staff_a@iscworks.com', 'owner_b@iscworks.com', 'inactive_user@iscworks.com', 'unverified-test@iscworks.com')").run();
     // SEED STORES
     db_1.db.prepare("INSERT OR IGNORE INTO stores (id, owner_id, name, slug, status) VALUES (100, 10, 'Store Alpha', 'store-alpha', 'active')").run();
     db_1.db.prepare("INSERT OR IGNORE INTO stores (id, owner_id, name, slug, status) VALUES (200, 20, 'Store Beta', 'store-beta', 'active')").run();
@@ -63,6 +64,27 @@ async function runTestSuite() {
     // User 30: Inactive Membership User
     db_1.db.prepare("INSERT INTO users (id, full_name, email, password_hash, status) VALUES (30, 'Inactive User', 'inactive_user@iscworks.com', ?, 'active')").run(passHash);
     db_1.db.prepare("INSERT INTO memberships (user_id, store_id, role, status) VALUES (30, 100, 'OWNER', 'inactive')").run();
+    // Unverified and unapproved registrations must never appear as merchants.
+    db_1.db.prepare("INSERT INTO users (id, full_name, email, phone, password_hash, status) VALUES (40, 'Unverified Test', 'unverified-test@iscworks.com', '05000000000', ?, 'pending')").run(passHash);
+    db_1.db.prepare("INSERT INTO stores (id, owner_id, name, slug, status) VALUES (400, 40, 'Unverified Store', 'unverified-store', 'pending')").run();
+    db_1.db.prepare("INSERT INTO memberships (user_id, store_id, role, status) VALUES (40, 400, 'OWNER', 'pending')").run();
+    db_1.db.prepare("INSERT INTO merchant_applications (full_name, email, store_name, plan, status) VALUES ('Unverified Test', 'unverified-test@iscworks.com', 'Unverified Store', 'Pro Store', 'email_pending')").run();
+    const visibleMerchantCount = () => db_1.db.prepare(`
+    SELECT COUNT(*) AS count FROM stores s
+    JOIN users u ON u.id = s.owner_id
+    JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
+    WHERE s.id = 400 AND u.email_verified_at IS NOT NULL AND ma.status IN ('approved', 'active')
+  `).get().count;
+    assert(visibleMerchantCount() === 0, 'Unverified registrations stay hidden from merchants and stores');
+    db_1.db.prepare("UPDATE users SET email_verified_at = CURRENT_TIMESTAMP WHERE id = 40").run();
+    db_1.db.prepare("UPDATE merchant_applications SET status = 'pending' WHERE email = 'unverified-test@iscworks.com'").run();
+    assert(visibleMerchantCount() === 0, 'Verified applications stay out of merchants until Super Admin approval');
+    db_1.db.prepare("UPDATE merchant_applications SET status = 'approved' WHERE email = 'unverified-test@iscworks.com'").run();
+    assert(visibleMerchantCount() === 1, 'Approved verified stores become visible in merchants');
+    db_1.db.prepare('DELETE FROM memberships WHERE store_id = 400').run();
+    db_1.db.prepare('DELETE FROM stores WHERE id = 400').run();
+    db_1.db.prepare("DELETE FROM merchant_applications WHERE email = 'unverified-test@iscworks.com'").run();
+    db_1.db.prepare('DELETE FROM users WHERE id = 40').run();
     // SEED PRODUCTS
     await stock_service_1.StockService.addProduct({ storeId: 100, shortCode: 'TSH', productCode: 'TSH-M', name: 'T-Shirt A', size: 'M', stock: 20, price: 150 });
     await stock_service_1.StockService.addProduct({ storeId: 200, shortCode: 'TSH', productCode: 'TSH-M', name: 'T-Shirt B', size: 'M', stock: 40, price: 450 });
@@ -85,6 +107,11 @@ async function runTestSuite() {
     const storeBPlanRequests = db_1.db.prepare('SELECT COUNT(*) AS count FROM plan_support_requests WHERE store_id = 200').get().count;
     assert(storeAPlan.plan_name === 'Pro Store' && storeAPlan.duration_months === 6 && storeAPlan.ends_at === '2027-02-14', 'Plan duration remains scoped to its store with explicit start and end dates');
     assert(storeBPlanRequests === 0, 'Plan support requests remain isolated between stores');
+    const merchantRecentOrders = db_1.db.prepare(`
+    SELECT id, TRIM(first_name || ' ' || COALESCE(last_name, '')) AS customer_name, total_price, status, created_at
+    FROM orders WHERE store_id = ? ORDER BY id DESC LIMIT 5
+  `).all(100);
+    assert(Array.isArray(merchantRecentOrders), 'Master Admin merchant detail uses valid order customer columns');
     console.log('\n2️⃣ AUTH TEST 2: Valid JWT Token Generation & Verification');
     const jwtOwnerA = auth_middleware_1.AuthMiddleware.generateToken({ userId: 10, storeId: 100, role: 'OWNER', email: 'owner_a@iscworks.com' });
     const decodedA = auth_middleware_1.AuthMiddleware.verifyToken(jwtOwnerA);

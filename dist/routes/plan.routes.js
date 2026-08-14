@@ -11,6 +11,7 @@ router.get('/api/plan', auth_middleware_1.AuthMiddleware.authenticate, auth_midd
         const store = db_1.db.prepare('SELECT id, name FROM stores WHERE id = ?').get(storeId);
         const subscription = db_1.db.prepare(`
       SELECT store_id, plan_name, duration_months, starts_at, ends_at, updated_at,
+             CAST(julianday(ends_at) - julianday(starts_at) AS INTEGER) AS duration_days,
              CAST(julianday(ends_at) - julianday(date('now')) AS INTEGER) AS remaining_days
       FROM store_subscriptions
       WHERE store_id = ?
