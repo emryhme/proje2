@@ -7,6 +7,7 @@ import { AIService } from '../services/ai.service';
 import { AdminCopilotService } from '../services/admin-copilot.service';
 import { GeminiService } from '../services/gemini.service';
 import { WebhookController } from '../controllers/webhook.controller';
+import { FacebookService } from '../services/facebook.service';
 import { DemoAIService } from '../services/demo-ai.service';
 import { EmailVerificationService } from '../services/email-verification.service';
 import { AuthMiddleware } from '../middleware/auth.middleware';
@@ -114,6 +115,9 @@ async function runTestSuite() {
   assert(!applicationColumns.some((column) => ['tc_no', 'phone', 'password'].includes(column.name)), 'Application history does not retain duplicated personal data or passwords');
   const planTables = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('store_subscriptions', 'plan_support_requests')").all() as Array<{ name: string }>;
   assert(planTables.length === 2, 'Plan periods and plan support requests have dedicated database tables');
+  const productColumns = db.prepare('PRAGMA table_info(products)').all() as Array<{ name: string }>;
+  const instagramCatalogTable = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'instagram_media_catalog'").get() as any;
+  assert(productColumns.some(column => column.name === 'instagram_media_id') && Boolean(instagramCatalogTable), 'Instagram Media IDs and synchronized post metadata have dedicated indexed storage');
 
   db.prepare("INSERT INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at) VALUES (100, 'Pro Store', 6, '2026-08-14', '2027-02-14')").run();
   db.prepare("INSERT INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at) VALUES (200, 'Starter Store', 3, '2026-08-14', '2026-11-14')").run();
@@ -128,13 +132,13 @@ async function runTestSuite() {
   `).all(100);
   assert(Array.isArray(merchantRecentOrders), 'Master Admin merchant detail uses valid order customer columns');
   const flexibleRows = parseImportContent('json', JSON.stringify({ payload: { items: [
-    { SKU: 'MAP-M', Description: 'Mapped Product', Option1: 'Medium', 'Sale Price': '₺1.299,90', Inventory: '12' },
+    { SKU: 'MAP-M', Description: 'Mapped Product', Option1: 'Medium', 'Sale Price': '₺1.299,90', Inventory: '12', instagram_media_id: 'media_map_1' },
     { SKU: 'THOUSAND-M', Description: 'Turkish Thousands Product', Option1: 'Medium', 'Sale Price': '1.150', Inventory: '4' },
     { SKU: 'DECIMAL-M', Description: 'Dot Decimal Product', Option1: 'Medium', 'Sale Price': '799.90', Inventory: '3' }
   ] } }));
   const flexibleMapping = suggestMapping(collectHeaders(flexibleRows));
   const flexibleNormalized = normalizeRecords(flexibleRows, flexibleMapping);
-  assert(flexibleNormalized.validRows[0]?.productCode === 'MAP-M' && flexibleNormalized.validRows[0]?.size === 'M' && flexibleNormalized.validRows[0]?.price === 1299.9, 'Flexible nested JSON fields are automatically mapped and normalized');
+  assert(flexibleNormalized.validRows[0]?.productCode === 'MAP-M' && flexibleNormalized.validRows[0]?.size === 'M' && flexibleNormalized.validRows[0]?.price === 1299.9 && flexibleNormalized.validRows[0]?.instagramMediaId === 'media_map_1', 'Flexible nested JSON fields including Instagram Media ID are automatically mapped and normalized');
   assert(flexibleNormalized.validRows[1]?.price === 1150 && flexibleNormalized.validRows[2]?.price === 799.9, 'Turkish thousands dots and decimal dots are distinguished while importing prices');
   const shuffledCsvRows = parseImportContent('csv', [
     'Tedarikçi Notu;Görsel Adresi;Depodaki Miktar;Referans No;KDV Oranı;Varyasyon;Ürün Başlığı;Satış Tutarı;Renk Bilgisi;Ürün Sayfası',
@@ -379,9 +383,7 @@ async function runTestSuite() {
   );
   db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (100, 'instagram_comment_permission_granted', '1')").run();
   db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (100, 'instagram_comment_automation_enabled', '1')").run();
-  assert(WebhookController.isInstagramCommentAutomationEnabled(100) === true, 'Instagram comment AI access switch enables comment processing for the selected store');
-  db.prepare("UPDATE settings SET value = '0' WHERE store_id = 100 AND key = 'instagram_comment_automation_enabled'").run();
-  assert(WebhookController.isInstagramCommentAutomationEnabled(100) === false, 'Instagram comment AI access switch disables comments without affecting DM routing');
+  assert(WebhookController.isInstagramCommentAutomationEnabled(100) === false, 'Instagram comments remain disabled even when stale legacy settings exist');
 
   // 7. STOCK BUG FIX TESTS (ADD, SET, ISOLATION, COLLISION & SANITATION)
   console.log('\n2️⃣7️⃣ STOCK BUG FIX TEST 1: Stock Add (+5 from 10 -> 15)');
@@ -392,8 +394,16 @@ async function runTestSuite() {
   assert(updateSuccess1 === true && prodRow1?.stock === 15 && invRow1?.stock === 15, 'Stock updated to 15 in both products and inventory tables');
 
   console.log('\n2️⃣7️⃣-A AI VARIANT TEST: "Müşteri" kelimesi M beden sayılmamalı');
-  await StockService.addProduct({ storeId: 100, shortCode: 'HBL', productCode: 'HBL-S', name: 'HBL Test', size: 'S', stock: 10, price: 250 });
-  await StockService.addProduct({ storeId: 100, shortCode: 'HBL', productCode: 'HBL-M', name: 'HBL Test', size: 'M', stock: 10, price: 250 });
+  await StockService.addProduct({ storeId: 100, shortCode: 'HBL', productCode: 'HBL-S', name: 'HBL Test', size: 'S', stock: 10, price: 250, instagramMediaId: 'media_hbl_1' });
+  await StockService.addProduct({ storeId: 100, shortCode: 'HBL', productCode: 'HBL-M', name: 'HBL Test', size: 'M', stock: 10, price: 250, instagramMediaId: 'media_hbl_1' });
+  db.prepare(`
+    INSERT OR REPLACE INTO instagram_media_catalog (store_id, media_id, media_url, permalink, caption)
+    VALUES (100, 'media_hbl_1', 'https://cdn.example.com/hbl.jpg?token=old', 'https://www.instagram.com/p/HBLPOST/', 'HBL ürünü')
+  `).run();
+  const directMediaMatch = FacebookService.resolveInstagramAttachmentProduct({ type: 'MEDIA_SHARE', payload: { id: 'media_hbl_1' } }, 100);
+  const urlMediaMatch = FacebookService.resolveInstagramAttachmentProduct({ type: 'ig_reel', payload: { url: 'https://cdn.example.com/hbl.jpg?token=new' } }, 100);
+  const crossTenantMediaMatch = FacebookService.resolveInstagramAttachmentProduct({ type: 'MEDIA_SHARE', payload: { id: 'media_hbl_1' } }, 200);
+  assert(directMediaMatch?.shortCode === 'HBL' && urlMediaMatch?.shortCode === 'HBL' && crossTenantMediaMatch === null, 'Shared Instagram posts resolve to one tenant-isolated product family by Media ID or cached URL');
   const variantCtx = AIService.getSessionContext('variant-test', 'store-alpha', 100, 'TEST');
   variantCtx.productCode = 'HBL';
   variantCtx.variantVerified = false;

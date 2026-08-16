@@ -156,12 +156,12 @@ router.post('/api/data-import/commit', AuthMiddleware.authenticate, AuthMiddlewa
       const store = db.prepare('SELECT name FROM stores WHERE id = ?').get(req.auth!.storeId) as any;
       const findProduct = db.prepare('SELECT id FROM products WHERE store_id = ? AND product_code = ?');
       const upsertProduct = db.prepare(`
-        INSERT INTO products (store_id, store_name, short_code, product_code, name, color, size, price, stock, category, wp_link, media_link, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO products (store_id, store_name, short_code, product_code, name, color, size, price, stock, category, wp_link, media_link, instagram_media_id, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ON CONFLICT(store_id, product_code) DO UPDATE SET
           short_code=excluded.short_code, name=excluded.name, color=excluded.color, size=excluded.size,
           price=excluded.price, stock=excluded.stock, category=excluded.category,
-          wp_link=excluded.wp_link, media_link=excluded.media_link, updated_at=CURRENT_TIMESTAMP
+          wp_link=excluded.wp_link, media_link=excluded.media_link, instagram_media_id=excluded.instagram_media_id, updated_at=CURRENT_TIMESTAMP
       `);
       const upsertInventory = db.prepare(`
         INSERT INTO inventory (store_id, product_code, stock, reserved_stock, updated_at)
@@ -170,7 +170,7 @@ router.post('/api/data-import/commit', AuthMiddleware.authenticate, AuthMiddlewa
       `);
       for (const row of rows) {
         const exists = Boolean(findProduct.get(req.auth!.storeId, row.productCode));
-        upsertProduct.run(req.auth!.storeId, store?.name || '', row.shortCode, row.productCode, row.name, row.color, row.size, row.price, row.stock, row.category, row.wpLink, row.mediaLink);
+        upsertProduct.run(req.auth!.storeId, store?.name || '', row.shortCode, row.productCode, row.name, row.color, row.size, row.price, row.stock, row.category, row.wpLink, row.mediaLink, row.instagramMediaId || '');
         upsertInventory.run(req.auth!.storeId, row.productCode, row.stock);
         if (exists) updatedRows += 1; else insertedRows += 1;
       }

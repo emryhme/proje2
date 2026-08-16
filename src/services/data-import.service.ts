@@ -1,5 +1,5 @@
 export const CANONICAL_IMPORT_FIELDS = [
-  'productCode', 'shortCode', 'name', 'size', 'color', 'price', 'stock', 'category', 'wpLink', 'mediaLink'
+  'productCode', 'shortCode', 'name', 'size', 'color', 'price', 'stock', 'category', 'wpLink', 'mediaLink', 'instagramMediaId'
 ] as const;
 
 export type CanonicalImportField = typeof CANONICAL_IMPORT_FIELDS[number];
@@ -17,6 +17,7 @@ export type NormalizedImportRow = {
   category: string;
   wpLink: string;
   mediaLink: string;
+  instagramMediaId: string;
   sourceRow: number;
 };
 
@@ -30,7 +31,8 @@ const FIELD_ALIASES: Record<CanonicalImportField, string[]> = {
   stock: ['stock', 'stok', 'inventory', 'quantity', 'qty', 'adet', 'miktar', 'depodakimiktar', 'depodaki_miktar', 'mevcutadet', 'mevcut_adet', 'stokadedi'],
   category: ['category', 'kategori', 'productcategory', 'urungrubu', 'urun_grubu', 'collection', 'koleksiyon'],
   wpLink: ['wplink', 'wp_link', 'whatsapp', 'producturl', 'product_url', 'urunlinki', 'urun_linki', 'urunsayfasi', 'urun_sayfasi', 'link'],
-  mediaLink: ['medialink', 'media_link', 'image', 'imageurl', 'image_url', 'gorsel', 'gorselurl', 'gorseladresi', 'gorsel_adresi', 'fotograf']
+  mediaLink: ['medialink', 'media_link', 'image', 'imageurl', 'image_url', 'gorsel', 'gorselurl', 'gorseladresi', 'gorsel_adresi', 'fotograf'],
+  instagramMediaId: ['instagrammediaid', 'instagram_media_id', 'instagramid', 'instagram_id', 'igmediaid', 'ig_media_id', 'mediaid', 'media_id', 'postid', 'post_id', 'gonderiid', 'gonderi_id']
 };
 
 function normalizedHeader(value: string): string {
@@ -201,6 +203,7 @@ export function normalizeRecords(records: Array<Record<string, unknown>>, mappin
       category: String(value('category') ?? 'Genel').trim() || 'Genel',
       wpLink: String(value('wpLink') ?? '').trim().slice(0, 1000),
       mediaLink: String(value('mediaLink') ?? '').trim().slice(0, 1000),
+      instagramMediaId: String(value('instagramMediaId') ?? '').trim().slice(0, 128),
       sourceRow: rowNumber
     });
   });

@@ -5,13 +5,13 @@ import { WebhookController } from '../controllers/webhook.controller';
 import { db } from '../database/db';
 import { AuthMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { env } from '../config/env';
+import { FacebookService } from '../services/facebook.service';
 
 const router = Router();
 
 const INSTAGRAM_SCOPES = [
   'instagram_business_basic',
-  'instagram_business_manage_messages',
-  'instagram_business_manage_comments'
+  'instagram_business_manage_messages'
 ];
 
 function encryptToken(token: string): string {
@@ -146,10 +146,9 @@ router.get('/api/integrations/instagram/callback', async (req, res) => {
     const resolvedInstagramId = String(profile.data?.user_id || instagramUserId);
     const username = String(profile.data?.username || '').trim();
 
-    // Webhook configuration is application-wide, but each Instagram Login account
-    // must explicitly subscribe its own messaging and comment fields after consent.
+    // Only DM events are subscribed. This feature deliberately does not request or process comments.
     await axios.post(`https://graph.instagram.com/v24.0/${encodeURIComponent(resolvedInstagramId)}/subscribed_apps`, null, {
-      params: { subscribed_fields: 'messages,comments', access_token: accessToken }, timeout: 15_000
+      params: { subscribed_fields: 'messages', access_token: accessToken }, timeout: 15_000
     });
 
     db.transaction(() => {
@@ -159,11 +158,11 @@ router.get('/api/integrations/instagram/callback', async (req, res) => {
         .run(oauthState.store_id, 'instagram_access_token', encryptToken(accessToken));
       db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, CURRENT_TIMESTAMP)')
         .run(oauthState.store_id, 'instagram_webhook_subscribed_at');
-      db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, 'instagram_comment_access_enabled', '1')")
+      db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, 'instagram_comment_access_enabled', '0')")
         .run(oauthState.store_id);
-      db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, 'instagram_comment_permission_granted', '1')")
+      db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, 'instagram_comment_permission_granted', '0')")
         .run(oauthState.store_id);
-      db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, 'instagram_comment_automation_enabled', '1')")
+      db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, 'instagram_comment_automation_enabled', '0')")
         .run(oauthState.store_id);
       AuthMiddleware.logAudit(oauthState.store_id, oauthState.user_id, 'CONNECT_INSTAGRAM', 'stores', String(oauthState.store_id));
     })();
@@ -189,39 +188,19 @@ router.post('/api/integrations/instagram/disconnect', AuthMiddleware.authenticat
   return res.json({ success: true });
 });
 
+router.get('/api/integrations/instagram/media', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), async (req: AuthenticatedRequest, res) => {
+  try {
+    const result = await FacebookService.listInstagramMedia(req.auth!.storeId, String(req.query.after || '').trim());
+    return res.json({ success: true, ...result });
+  } catch (error: any) {
+    const message = String(error?.message || 'Instagram gönderileri alınamadı.');
+    const disconnected = message.includes('Instagram hesabını bağlayın');
+    return res.status(disconnected ? 409 : 502).json({ success: false, error: message });
+  }
+});
+
 router.post('/api/integrations/instagram/comments', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN']), (req: AuthenticatedRequest, res) => {
-  const storeId = req.auth!.storeId;
-  const enabled = req.body?.enabled === true;
-  const store = db.prepare('SELECT instagram_account_id FROM stores WHERE id = ?').get(storeId) as any;
-  const hasToken = !!db.prepare("SELECT 1 FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").get(storeId);
-  const hasCommentPermission = !!db.prepare(`
-    SELECT 1 FROM settings
-    WHERE store_id = ?
-      AND key IN ('instagram_comment_permission_granted', 'instagram_comment_access_enabled')
-      AND value = '1'
-  `).get(storeId);
-
-  if (!store?.instagram_account_id || !hasToken) {
-    return res.status(409).json({ success: false, error: 'Önce Instagram hesabını bağlayın.' });
-  }
-  if (enabled && !hasCommentPermission) {
-    return res.status(409).json({
-      success: false,
-      reauthorizeRequired: true,
-      error: 'Yorum izni henüz verilmemiş. Önce Yorum Erişimini Etkinleştir ile Instagram hesabını yeniden yetkilendirin.'
-    });
-  }
-
-  db.prepare(`
-    INSERT OR REPLACE INTO settings (store_id, key, value)
-    VALUES (?, 'instagram_comment_automation_enabled', ?)
-  `).run(storeId, enabled ? '1' : '0');
-  AuthMiddleware.logAudit(storeId, req.auth!.userId, enabled ? 'ENABLE_INSTAGRAM_COMMENTS' : 'DISABLE_INSTAGRAM_COMMENTS', 'settings', 'instagram_comment_automation_enabled');
-  return res.json({
-    success: true,
-    enabled,
-    message: enabled ? 'Instagram yorumlarına yapay zeka erişimi açıldı.' : 'Instagram yorumlarına yapay zeka erişimi kapatıldı. DM mesajları çalışmaya devam eder.'
-  });
+  return res.status(410).json({ success: false, error: 'Instagram yorum erişimi bu sürümde devre dışıdır.' });
 });
 
 // Meta calls this after the account owner removes this application's authorization.

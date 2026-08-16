@@ -308,6 +308,32 @@ function runSchemaMigrations(): void {
         CREATE INDEX IF NOT EXISTS idx_import_jobs_store ON data_import_jobs(store_id, created_at);
       `);
     }
+  }, {
+    version: '20260817_013_instagram_media_catalog',
+    name: 'Index Instagram media against tenant products',
+    up: () => {
+      addColumnIfMissing('products', 'instagram_media_id', "TEXT NOT NULL DEFAULT ''");
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS instagram_media_catalog (
+          store_id INTEGER NOT NULL,
+          media_id TEXT NOT NULL,
+          caption TEXT NOT NULL DEFAULT '',
+          media_type TEXT NOT NULL DEFAULT '',
+          media_product_type TEXT NOT NULL DEFAULT '',
+          media_url TEXT NOT NULL DEFAULT '',
+          thumbnail_url TEXT NOT NULL DEFAULT '',
+          permalink TEXT NOT NULL DEFAULT '',
+          published_at TEXT DEFAULT NULL,
+          synced_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY (store_id, media_id),
+          FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_instagram_media_catalog_store_time ON instagram_media_catalog(store_id, published_at);
+        CREATE INDEX IF NOT EXISTS idx_instagram_media_catalog_permalink ON instagram_media_catalog(store_id, permalink);
+        CREATE INDEX IF NOT EXISTS idx_products_store_instagram_media ON products(store_id, instagram_media_id);
+      `);
+      db.prepare("UPDATE settings SET value = '0' WHERE key IN ('instagram_comment_access_enabled', 'instagram_comment_permission_granted', 'instagram_comment_automation_enabled')").run();
+    }
   }];
 
   const isApplied = db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?');
@@ -339,6 +365,7 @@ export function initDatabase() {
       category TEXT DEFAULT '',
       wp_link TEXT DEFAULT '',
       media_link TEXT DEFAULT '',
+      instagram_media_id TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
@@ -671,6 +698,7 @@ export function initDatabase() {
           category TEXT DEFAULT '',
           wp_link TEXT DEFAULT '',
           media_link TEXT DEFAULT '',
+          instagram_media_id TEXT NOT NULL DEFAULT '',
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           store_name TEXT DEFAULT '',
@@ -680,8 +708,8 @@ export function initDatabase() {
         );
       `);
       db.exec(`
-        INSERT INTO products_new (id, short_code, product_code, name, color, size, price, stock, category, wp_link, media_link, created_at, updated_at, store_name, store_id)
-        SELECT id, short_code, product_code, name, color, size, COALESCE(price, 299.00), stock, category, wp_link, media_link, created_at, updated_at, COALESCE(store_name, ''), COALESCE(store_id, 1)
+        INSERT INTO products_new (id, short_code, product_code, name, color, size, price, stock, category, wp_link, media_link, instagram_media_id, created_at, updated_at, store_name, store_id)
+        SELECT id, short_code, product_code, name, color, size, COALESCE(price, 299.00), stock, category, wp_link, media_link, COALESCE(instagram_media_id, ''), created_at, updated_at, COALESCE(store_name, ''), COALESCE(store_id, 1)
         FROM products;
       `);
       db.exec(`DROP TABLE products;`);
@@ -743,6 +771,7 @@ export function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_products_store_id ON products(store_id);
     CREATE INDEX IF NOT EXISTS idx_products_store_code ON products(store_id, product_code);
     CREATE INDEX IF NOT EXISTS idx_products_store_short ON products(store_id, short_code);
+    CREATE INDEX IF NOT EXISTS idx_products_store_instagram_media ON products(store_id, instagram_media_id);
     CREATE INDEX IF NOT EXISTS idx_orders_id ON orders(order_id);
     CREATE INDEX IF NOT EXISTS idx_orders_phone ON orders(customer_phone);
     CREATE INDEX IF NOT EXISTS idx_orders_sender ON orders(sender_id);

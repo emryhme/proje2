@@ -9,6 +9,7 @@ export interface ProductStockRow {
   price: number;       // FİYAT (Örn: 299)
   stock: number;       // STOK (Örn: 5)
   category: string;    // KATEGORİ (Örn: GÖMLEK)
+  instagramMediaId?: string;
   storeId?: number;
 }
 
@@ -29,7 +30,8 @@ export class StockService {
     this.validateStoreId(storeId);
     try {
       const stmt = db.prepare(`
-        SELECT short_code as shortCode, product_code as productCode, name, color, size, price, stock, category, store_id as storeId
+        SELECT short_code as shortCode, product_code as productCode, name, color, size, price, stock, category,
+               instagram_media_id as instagramMediaId, store_id as storeId
         FROM products
         WHERE store_id = ?
         ORDER BY id ASC
@@ -239,6 +241,7 @@ export class StockService {
     price?: number;
     category?: string;
     storeName?: string;
+    instagramMediaId?: string;
   }): Promise<{ success: boolean; productCode: string }>;
   public static async addProduct(data: any): Promise<{ success: boolean; productCode: string }> {
     this.validateStoreId(data?.storeId);
@@ -255,6 +258,7 @@ export class StockService {
       const price = Number(data.price) || 299;
       const category = (data.category || 'Genel').trim();
       const storeName = (data.storeName || '').trim();
+      const instagramMediaId = String(data.instagramMediaId || '').trim().slice(0, 128);
 
       const addProductTx = db.transaction(() => {
         const existing = db.prepare('SELECT id FROM products WHERE store_id = ? AND (product_code = ? OR (short_code = ? AND size = ?))').get(storeId, productCode, shortCode, size) as any;
@@ -262,14 +266,14 @@ export class StockService {
         if (existing) {
           db.prepare(`
             UPDATE products 
-            SET name = ?, color = ?, size = ?, stock = ?, price = ?, category = ?, store_name = ?, updated_at = CURRENT_TIMESTAMP
+            SET name = ?, color = ?, size = ?, stock = ?, price = ?, category = ?, store_name = ?, instagram_media_id = ?, updated_at = CURRENT_TIMESTAMP
             WHERE store_id = ? AND id = ?
-          `).run(name, color, size, stock, price, category, storeName, storeId, existing.id);
+          `).run(name, color, size, stock, price, category, storeName, instagramMediaId, storeId, existing.id);
         } else {
           db.prepare(`
-            INSERT INTO products (short_code, product_code, name, color, size, stock, price, category, store_name, store_id, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-          `).run(shortCode, productCode, name, color, size, stock, price, category, storeName, storeId);
+            INSERT INTO products (short_code, product_code, name, color, size, stock, price, category, store_name, instagram_media_id, store_id, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+          `).run(shortCode, productCode, name, color, size, stock, price, category, storeName, instagramMediaId, storeId);
         }
 
         // Synchronize inventory table atomically

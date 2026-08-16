@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+  <title>Instagram Gönderileri — ISCWORKS</title>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css?v=20260817-instagram-media">
+  <style>
+    .ig-toolbar{display:flex;gap:12px;align-items:center;margin-bottom:18px}.ig-toolbar .search{width:min(480px,100%)}.ig-sync-note{padding:12px 14px;border:1px solid rgba(34,197,94,.28);background:rgba(34,197,94,.08);color:#86efac;border-radius:9px;font-size:11px;margin-bottom:18px}.ig-sync-note.warning{border-color:rgba(245,158,11,.3);background:rgba(245,158,11,.08);color:#fcd34d}.ig-sync-note.error{border-color:rgba(239,68,68,.3);background:rgba(239,68,68,.08);color:#fca5a5}.ig-media-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}.ig-media-card{border:1px solid var(--border);border-radius:12px;overflow:hidden;background:var(--card);min-width:0}.ig-media-preview{height:240px;background:#111217;display:grid;place-items:center;color:#656b78}.ig-media-preview img{width:100%;height:100%;object-fit:cover}.ig-media-body{padding:15px}.ig-media-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.ig-media-top small{color:var(--muted)}.ig-media-id{display:flex;flex-direction:column;gap:4px}.ig-media-id span{font-size:9px;color:var(--muted);font-weight:800;letter-spacing:.1em}.ig-media-id code{font-size:12px;color:#c4b5fd;overflow-wrap:anywhere}.ig-media-caption{font-size:11px;color:#c8cbd3;line-height:1.55;margin:12px 0;height:68px;overflow:auto;white-space:pre-wrap}.ig-media-mapping{display:flex;gap:7px;align-items:center;padding:9px;border-radius:8px;background:rgba(245,158,11,.08);color:#fcd34d;font-size:10px;min-height:36px}.ig-media-mapping.linked{background:rgba(34,197,94,.08);color:#86efac}.ig-media-actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}.ig-media-empty{grid-column:1/-1;min-height:260px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--muted);border:1px dashed var(--border);border-radius:12px}.ig-load-more{display:flex;justify-content:center;margin-top:18px}@media(max-width:1100px){.ig-media-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:650px){.ig-toolbar{align-items:stretch;flex-direction:column}.ig-media-grid{grid-template-columns:1fr}.ig-media-preview{height:300px}}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="logo"><div class="logo-mark"><i data-lucide="crown" size="20"></i></div>ISCWORKS</a>
+    <div class="section-title">ANA MENÜ</div>
+    <a href="index.html" class="nav-item"><i data-lucide="layout-dashboard"></i>Dashboard</a>
+    <a href="stock.html" class="nav-item"><i data-lucide="package-search"></i>Stok Yönetimi</a>
+    <a href="orders.html" class="nav-item"><i data-lucide="shopping-cart"></i>Siparişler<span class="nav-badge" id="ordersBadgeCount">0</span></a>
+    <a href="new-product.html" class="nav-item"><i data-lucide="package-plus"></i>Yeni Ürün Girişi</a>
+    <a href="campaigns.html" class="nav-item"><i data-lucide="badge-percent"></i>Kampanyalar</a>
+    <a href="rewards.html" class="nav-item"><i data-lucide="gift"></i>VIP Ödüller</a>
+    <div class="section-title">AI &amp; MAĞAZA YÖNETİMİ</div>
+    <a href="ai-product.html" class="nav-item"><i data-lucide="sparkles"></i>S.E.T.T AI Copilot</a>
+    <a href="settings.html" class="nav-item"><i data-lucide="settings"></i>Fiyat &amp; Kargo Ayarları</a>
+    <div class="section-title">SİSTEM &amp; ALTYAPI</div>
+    <a href="plan.html" class="nav-item"><i data-lucide="credit-card"></i>Plan Yönetimi</a>
+    <a href="instagram-media.html" class="nav-item active"><i data-lucide="images"></i>Instagram Gönderileri</a>
+    <a href="data-sources.html" class="nav-item"><i data-lucide="database-zap"></i>Veri Kaynakları</a>
+    <a href="api-settings.html" class="nav-item"><i data-lucide="sliders"></i>API &amp; AI Kişiselleştirme</a>
+  </aside>
+
+  <main class="main" id="instagramMediaPage">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:10px"><button class="icon-button mobile-menu" onclick="toggleSidebar()"><i data-lucide="menu"></i></button><strong style="font-size:12px">INSTAGRAM GÖNDERİ KATALOĞU</strong></div>
+      <div class="top-actions"><div class="sync-badge"><span class="pulse-dot"></span><span>Yalnızca Profil Gönderileri</span></div><button class="icon-button" id="btnToggleSound"><i data-lucide="bell" size="17"></i></button><div class="user"><div class="avatar">KU</div><div class="user-text"><strong>Yükleniyor...</strong><span>Mağaza kullanıcısı</span></div><i data-lucide="chevron-down" size="13"></i></div></div>
+    </header>
+
+    <section class="content">
+      <div class="page-header">
+        <div class="page-title"><h1>Instagram Gönderileri</h1><p>Profil gönderilerinizin açıklamalarını ve Media ID değerlerini görüntüleyin; yorum verileri alınmaz.</p></div>
+        <div class="header-actions"><a href="data-sources.html" class="btn btn-secondary"><i data-lucide="database-zap" size="14"></i>Veri Setini Eşleştir</a><button class="btn btn-primary" id="btnRefreshInstagramMedia"><i data-lucide="refresh-cw" size="14"></i>Gönderileri Yenile</button></div>
+      </div>
+      <div id="instagramMediaSyncStatus" class="ig-sync-note">Instagram gönderileri senkronize ediliyor…</div>
+      <div class="ig-toolbar"><div class="search"><i data-lucide="search" size="15"></i><input id="instagramMediaSearch" type="search" placeholder="Media ID, açıklama veya ürün kodu ara..."></div><span id="instagramMediaCount" style="font-size:11px;color:var(--muted)">0 gönderi</span></div>
+      <div id="instagramMediaGrid" class="ig-media-grid"><div class="ig-media-empty"><i class="fa-solid fa-spinner fa-spin"></i><span>Gönderiler yükleniyor…</span></div></div>
+      <div class="ig-load-more"><button id="btnLoadMoreInstagramMedia" class="btn btn-secondary" hidden><i data-lucide="plus" size="14"></i>Daha Fazla Gönderi Yükle</button></div>
+    </section>
+  </main>
+</div>
+<div class="toast-container" id="toastContainer"></div>
+<script src="app.js?v=20260817-instagram-media"></script>
+<script>function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}lucide.createIcons();</script>
+</body>
+</html>

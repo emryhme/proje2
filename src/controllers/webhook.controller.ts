@@ -95,15 +95,31 @@ export class WebhookController {
   }
 
   public static isInstagramCommentAutomationEnabled(storeId: number): boolean {
-    const permission = db.prepare(`
-      SELECT 1 FROM settings
-      WHERE store_id = ?
-        AND key IN ('instagram_comment_permission_granted', 'instagram_comment_access_enabled')
-        AND value = '1'
-    `).get(storeId);
-    if (!permission) return false;
-    const automation = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'instagram_comment_automation_enabled'").get(storeId) as any;
-    return automation?.value !== '0';
+    void storeId;
+    return false;
+  }
+
+  private static resolveIncomingMessageText(message: any, storeId: number): string {
+    let incomingText = String(message?.text || '').trim();
+    const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
+    for (const attachment of attachments) {
+      const mapped = FacebookService.resolveInstagramAttachmentProduct(attachment, storeId);
+      if (mapped) {
+        const mediaContext = `Paylaşılan Instagram gönderisinin Media ID değeri ${mapped.mediaId} ve veri setindeki ürün kısa kodu ${mapped.shortCode}. Müşteri bu gönderideki üründen bahsediyor; ürün kodunu tekrar sorma.`;
+        incomingText = incomingText ? `${incomingText}\n\n${mediaContext}` : `Müşteri bir Instagram gönderisi paylaştı. ${mediaContext}`;
+        break;
+      }
+
+      const title = String(attachment?.payload?.title || '').trim();
+      const extractedCode = extractProductCode(title);
+      if (extractedCode) {
+        incomingText = incomingText
+          ? `${incomingText}\n\nPaylaşılan gönderideki ürün kodu: ${extractedCode}`
+          : `Müşteri ${extractedCode} kodlu ürünün Instagram gönderisini paylaştı. Bu ürün hakkında yardımcı ol.`;
+        break;
+      }
+    }
+    return incomingText;
   }
 
   /**
@@ -215,15 +231,7 @@ export class WebhookController {
           continue;
         }
 
-        let incomingText = message.text || '';
-        if (message.attachments && message.attachments.length > 0) {
-          const attachment = message.attachments[0];
-          const title = attachment.payload?.title || '';
-          const extractedCode = extractProductCode(title);
-          if (extractedCode) {
-            incomingText = `${extractedCode}\n\nMüşteri bu ürünü sipariş etmek istiyor. Lütfen stok durumunu kontrol et.`;
-          }
-        }
+        const incomingText = WebhookController.resolveIncomingMessageText(message, store.id);
 
         if (incomingText.trim()) {
           console.log(`[Store Webhook: ${store.slug} (ID: ${store.id})] DM mesajı işleniyor.`);
@@ -329,15 +337,7 @@ export class WebhookController {
           continue;
         }
 
-        let incomingText = message.text || '';
-        if (message.attachments && message.attachments.length > 0) {
-          const attachment = message.attachments[0];
-          const title = attachment.payload?.title || '';
-          const extractedCode = extractProductCode(title);
-          if (extractedCode) {
-            incomingText = `${extractedCode}\n\nMüşteri bu ürünü sipariş etmek istiyor. Lütfen stok durumunu kontrol et.`;
-          }
-        }
+        const incomingText = WebhookController.resolveIncomingMessageText(message, matchedStore.id);
 
         if (incomingText.trim()) {
           console.log(`[Global Webhook -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] DM mesajı işleniyor.`);

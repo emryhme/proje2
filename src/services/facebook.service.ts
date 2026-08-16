@@ -19,6 +19,153 @@ export class FacebookService {
     return Buffer.concat([decipher.update(Buffer.from(encryptedText, 'base64url')), decipher.final()]).toString('utf8');
   }
 
+  private static getInstagramCredentials(storeId: number): { accountId: string; accessToken: string; host: string } | null {
+    const instagram = db.prepare(`
+      SELECT s.instagram_account_id, k.value AS encrypted_token
+      FROM stores s LEFT JOIN settings k ON k.store_id = s.id AND k.key = 'instagram_access_token'
+      WHERE s.id = ?
+    `).get(storeId) as any;
+    const pageSetting = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'facebook_page_access_token'").get(storeId) as any;
+    const accountId = String(instagram?.instagram_account_id || '').trim();
+    const isInstagramLogin = Boolean(accountId && instagram?.encrypted_token);
+    const accessToken = isInstagramLogin
+      ? this.decryptToken(String(instagram.encrypted_token))
+      : decryptSettingSecret(String(pageSetting?.value || '')).trim();
+    if (!accountId || !accessToken) return null;
+    return { accountId, accessToken, host: isInstagramLogin ? 'graph.instagram.com' : 'graph.facebook.com' };
+  }
+
+  private static normalizeMediaUrl(value: unknown): string {
+    const input = String(value || '').trim();
+    if (!input) return '';
+    try {
+      const url = new URL(input);
+      return `${url.protocol}//${url.hostname.toLowerCase()}${url.pathname.replace(/\/$/, '')}`;
+    } catch {
+      return input.split(/[?#]/, 1)[0].replace(/\/$/, '');
+    }
+  }
+
+  /** Synchronizes the connected professional account's own posts without reading comments. */
+  public static async listInstagramMedia(storeId: number, after = ''): Promise<{ media: any[]; nextCursor: string; source: 'instagram' | 'cache'; warning?: string }> {
+    if (!Number.isInteger(storeId) || storeId <= 0) throw new Error('Store ID zorunludur.');
+    const credentials = this.getInstagramCredentials(storeId);
+    if (!credentials) throw new Error('Önce Instagram hesabını bağlayın.');
+
+    try {
+      const response = await axios.get(`https://${credentials.host}/v24.0/${encodeURIComponent(credentials.accountId)}/media`, {
+        params: {
+          fields: 'id,caption,media_type,media_product_type,media_url,thumbnail_url,permalink,timestamp',
+          limit: 50,
+          ...(after ? { after } : {}),
+          access_token: credentials.accessToken
+        },
+        timeout: 15_000
+      });
+      const media = (Array.isArray(response.data?.data) ? response.data.data : []).map((item: any) => ({
+        id: String(item?.id || '').trim(),
+        caption: String(item?.caption || '').trim(),
+        mediaType: String(item?.media_type || '').trim(),
+        mediaProductType: String(item?.media_product_type || '').trim(),
+        mediaUrl: String(item?.media_url || '').trim(),
+        thumbnailUrl: String(item?.thumbnail_url || '').trim(),
+        permalink: String(item?.permalink || '').trim(),
+        timestamp: String(item?.timestamp || '').trim()
+      })).filter((item: any) => item.id);
+
+      const upsert = db.prepare(`
+        INSERT INTO instagram_media_catalog (
+          store_id, media_id, caption, media_type, media_product_type, media_url,
+          thumbnail_url, permalink, published_at, synced_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(store_id, media_id) DO UPDATE SET
+          caption=excluded.caption, media_type=excluded.media_type,
+          media_product_type=excluded.media_product_type, media_url=excluded.media_url,
+          thumbnail_url=excluded.thumbnail_url, permalink=excluded.permalink,
+          published_at=excluded.published_at, synced_at=CURRENT_TIMESTAMP
+      `);
+      db.transaction(() => media.forEach((item: any) => upsert.run(
+        storeId, item.id, item.caption, item.mediaType, item.mediaProductType,
+        item.mediaUrl, item.thumbnailUrl, item.permalink, item.timestamp || null
+      )))();
+
+      return {
+        media: this.attachProductMappings(storeId, media),
+        nextCursor: String(response.data?.paging?.cursors?.after || ''),
+        source: 'instagram'
+      };
+    } catch (error: any) {
+      const cached = this.getCachedInstagramMedia(storeId);
+      if (cached.length) {
+        return { media: cached, nextCursor: '', source: 'cache', warning: 'Instagram yenilenemedi; son senkronize edilen gönderiler gösteriliyor.' };
+      }
+      const details = error?.response?.data?.error?.message || error?.message || 'Instagram gönderileri alınamadı.';
+      throw new Error(details);
+    }
+  }
+
+  private static attachProductMappings(storeId: number, media: any[]): any[] {
+    const mappings = db.prepare(`
+      SELECT instagram_media_id AS mediaId, product_code AS productCode, short_code AS shortCode, name
+      FROM products WHERE store_id = ? AND instagram_media_id != ''
+    `).all(storeId) as any[];
+    const byMedia = new Map<string, any[]>();
+    for (const mapping of mappings) {
+      const key = String(mapping.mediaId || '');
+      if (!byMedia.has(key)) byMedia.set(key, []);
+      byMedia.get(key)!.push(mapping);
+    }
+    return media.map(item => ({ ...item, products: byMedia.get(String(item.id)) || [] }));
+  }
+
+  public static getCachedInstagramMedia(storeId: number): any[] {
+    const rows = db.prepare(`
+      SELECT media_id AS id, caption, media_type AS mediaType, media_product_type AS mediaProductType,
+             media_url AS mediaUrl, thumbnail_url AS thumbnailUrl, permalink, published_at AS timestamp
+      FROM instagram_media_catalog WHERE store_id = ? ORDER BY published_at DESC, synced_at DESC LIMIT 100
+    `).all(storeId) as any[];
+    return this.attachProductMappings(storeId, rows);
+  }
+
+  /** Resolves a shared post/reel attachment to one unambiguous tenant product family. */
+  public static resolveInstagramAttachmentProduct(attachment: any, storeId: number): { mediaId: string; productCode: string; shortCode: string } | null {
+    if (!Number.isInteger(storeId) || storeId <= 0) return null;
+    const payload = attachment?.payload || {};
+    const directMediaId = [payload.id, payload.media_id, payload.post_id, payload.reel_video_id, attachment?.media_id]
+      .map(value => String(value || '').trim())
+      .find(Boolean) || '';
+    let mediaId = directMediaId;
+
+    if (!mediaId) {
+      const attachmentUrls = [payload.url, payload.link, attachment?.url].map(value => this.normalizeMediaUrl(value)).filter(Boolean);
+      if (attachmentUrls.length) {
+        const catalog = db.prepare(`
+          SELECT media_id, media_url, thumbnail_url, permalink
+          FROM instagram_media_catalog WHERE store_id = ?
+        `).all(storeId) as any[];
+        const match = catalog.find(item => {
+          const knownUrls = [item.media_url, item.thumbnail_url, item.permalink].map(value => this.normalizeMediaUrl(value)).filter(Boolean);
+          return attachmentUrls.some(url => knownUrls.includes(url));
+        });
+        mediaId = String(match?.media_id || '').trim();
+      }
+    }
+    if (!mediaId) return null;
+
+    const products = db.prepare(`
+      SELECT product_code, short_code FROM products
+      WHERE store_id = ? AND instagram_media_id = ?
+      ORDER BY id ASC
+    `).all(storeId, mediaId) as any[];
+    const shortCodes = [...new Set(products.map(item => String(item.short_code || '').trim().toUpperCase()).filter(Boolean))];
+    if (!products.length || shortCodes.length !== 1) return null;
+    return {
+      mediaId,
+      productCode: String(products[0].product_code || shortCodes[0]).trim().toUpperCase(),
+      shortCode: shortCodes[0]
+    };
+  }
+
   /**
    * Müşteriye yanıt mesajı gönderir (Per-Store Credential Support).
    */

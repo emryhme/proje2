@@ -191,6 +191,12 @@
                         <label>Kategori</label>
                         <input type="text" id="categoryInput" placeholder="Örn: Parfüm / Erkek" required>
                     </div>
+
+                    <div class="form-group full-width">
+                        <label>Instagram Media ID <span style="color:#6b7280;font-weight:500">(isteğe bağlı)</span></label>
+                        <input type="text" id="instagramMediaIdInput" maxlength="128" placeholder="Örn: 18012345678901234">
+                        <small style="color:#6b7280">Instagram Gönderileri sayfasından Media ID’yi kopyalayabilirsiniz.</small>
+                    </div>
                 </div>
 
                 <div class="form-actions">
@@ -208,7 +214,7 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
-<script src="app.js?v=20260817-dashboard-stock-split"></script>
+<script src="app.js?v=20260817-instagram-media"></script>
 <script>
   function toggleSidebar(){
     document.getElementById("sidebar").classList.toggle("open");

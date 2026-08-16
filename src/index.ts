@@ -153,7 +153,7 @@ app.get('/api/stock/:code', AuthMiddleware.authenticate, AuthMiddleware.requireR
 app.post('/api/products', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER']), async (req: AuthenticatedRequest, res) => {
   try {
     const storeId = req.auth!.storeId;
-    const { shortCode, productCode, name, color, size, stock, price, category, storeName } = req.body || {};
+    const { shortCode, productCode, name, color, size, stock, price, category, storeName, instagramMediaId } = req.body || {};
     if (!shortCode || !name || !size) {
       return res.status(400).json({ success: false, error: 'Kısa kod, ürün ismi ve beden/numara alanları zorunludur.' });
     }
@@ -168,7 +168,8 @@ app.post('/api/products', AuthMiddleware.authenticate, AuthMiddleware.requireRol
       stock: stock ? Number(stock) : 0,
       price: price ? Number(price) : 299,
       category: category || 'Genel',
-      storeName: storeName || ''
+      storeName: storeName || '',
+      instagramMediaId: String(instagramMediaId || '').trim().slice(0, 128)
     });
 
     if (result.success) {

@@ -38,15 +38,17 @@ async function run(): Promise<void> {
     const health = await fetch(`${origin}/healthz`);
     assert(health.ok && health.headers.get('x-content-type-options') === 'nosniff', 'Health endpoint and security headers are active');
 
-    const [dashboardPage, stockPage] = await Promise.all([
+    const [dashboardPage, stockPage, instagramMediaPage] = await Promise.all([
       fetch(`${origin}/admin/index.html`),
-      fetch(`${origin}/admin/stock.html`)
+      fetch(`${origin}/admin/stock.html`),
+      fetch(`${origin}/admin/instagram-media.html`)
     ]);
     const dashboardHtml = await dashboardPage.text();
     const stockHtml = await stockPage.text();
     assert(
       dashboardPage.ok
         && stockPage.ok
+        && instagramMediaPage.ok
         && !dashboardHtml.includes('id="productsTableBody"')
         && stockHtml.includes('id="productsTableBody"')
         && stockHtml.includes('Stok Yönetimi'),
@@ -74,20 +76,28 @@ async function run(): Promise<void> {
     });
     assert(csrfRejected.status === 403, 'Cookie-authenticated cross-site writes are rejected');
 
-    const unusualCsv = 'stok_kodu;urun_basligi;varyant;satis_fiyati;mevcut_adet\nHBL-M;HBL Gömlek;Medium;₺799,90;24';
+    const unusualCsv = 'stok_kodu;urun_basligi;varyant;satis_fiyati;mevcut_adet;instagram_media_id\nHBL-M;HBL Gömlek;Medium;₺799,90;24;media_http_1';
     const analyzedImport = await fetch(`${origin}/api/data-import/analyze`, {
       method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
       body: JSON.stringify({ sourceType: 'csv', sourceName: 'unusual.csv', content: unusualCsv })
     });
     const analyzedBody = await analyzedImport.json() as any;
-    assert(analyzedImport.ok && analyzedBody.validCount === 1 && analyzedBody.sampleRows[0].productCode === 'HBL-M' && analyzedBody.sampleRows[0].price === 799.9, 'Unfamiliar CSV headers are mapped into the canonical product model');
+    assert(analyzedImport.ok && analyzedBody.validCount === 1 && analyzedBody.sampleRows[0].productCode === 'HBL-M' && analyzedBody.sampleRows[0].price === 799.9 && analyzedBody.sampleRows[0].instagramMediaId === 'media_http_1', 'Unfamiliar CSV headers including Instagram Media ID are mapped into the canonical product model');
 
     const committedImport = await fetch(`${origin}/api/data-import/commit`, {
       method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
       body: JSON.stringify({ previewToken: analyzedBody.previewToken, saveProfile: true, profileName: 'HTTP mapping profile' })
     });
-    const importedProduct = db.prepare('SELECT name, size, price, stock FROM products WHERE store_id = ? AND product_code = ?').get(storeId, 'HBL-M') as any;
-    assert(committedImport.ok && importedProduct?.name === 'HBL Gömlek' && importedProduct?.size === 'M' && importedProduct?.stock === 24, 'Approved import atomically persists only to the authenticated store');
+    const importedProduct = db.prepare('SELECT name, size, price, stock, instagram_media_id FROM products WHERE store_id = ? AND product_code = ?').get(storeId, 'HBL-M') as any;
+    assert(committedImport.ok && importedProduct?.name === 'HBL Gömlek' && importedProduct?.size === 'M' && importedProduct?.stock === 24 && importedProduct?.instagram_media_id === 'media_http_1', 'Approved import atomically persists Media ID only to the authenticated store');
+
+    const disconnectedMediaCatalog = await fetch(`${origin}/api/integrations/instagram/media`, { headers: { Cookie: cookie } });
+    assert(disconnectedMediaCatalog.status === 409, 'Instagram media catalog requires a connected tenant account without exposing credentials');
+
+    const commentsDisabled = await fetch(`${origin}/api/integrations/instagram/comments`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: true })
+    });
+    assert(commentsDisabled.status === 410, 'Instagram comment access cannot be enabled while media-only mode is active');
 
     const oauthError = await fetch(`${origin}/api/integrations/instagram/callback?error=${encodeURIComponent('<script>alert(1)</script>')}`);
     const oauthHtml = await oauthError.text();

@@ -238,6 +238,19 @@ function ensureDataSourcesNavigation() {
   apiSettingsLink.before(link);
 }
 
+function ensureInstagramMediaNavigation() {
+  if (document.querySelector('.nav-item[href="instagram-media.html"]')) return;
+  const dataSourcesLink = document.querySelector('.nav-item[href="data-sources.html"]');
+  const apiSettingsLink = document.querySelector('.nav-item[href="api-settings.html"]');
+  const anchor = dataSourcesLink || apiSettingsLink;
+  if (!anchor) return;
+  const link = document.createElement('a');
+  link.href = 'instagram-media.html';
+  link.className = `nav-item${window.location.pathname.endsWith('/instagram-media.html') ? ' active' : ''}`;
+  link.innerHTML = '<i data-lucide="images"></i>Instagram Gönderileri';
+  anchor.before(link);
+}
+
 function formatPlanDate(value) {
   if (!value) return 'Tanımlanmadı';
   const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
@@ -381,6 +394,7 @@ function initApp() {
   ensureDashboardStockNavigation();
   ensurePlanNavigation();
   ensureDataSourcesNavigation();
+  ensureInstagramMediaNavigation();
   setupThemeToggle();
   applyDynamicStoreBranding();
   applyCurrentUserProfile();
@@ -391,6 +405,7 @@ function initApp() {
   fetchSettings();
   fetchMerchantApplications();
   initializeDataSourcesPage();
+  initializeInstagramMediaPage();
   setInterval(pollOrdersInBackground, POLL_INTERVAL_MS);
 }
 
@@ -1009,6 +1024,7 @@ function handleNewProductSubmit(e) {
   const stockElem = document.getElementById('stockInput');
   const priceElem = document.getElementById('priceInput');
   const catElem = document.getElementById('categoryInput');
+  const instagramMediaIdElem = document.getElementById('instagramMediaIdInput');
 
   if (!shortCodeElem || !nameElem) return;
 
@@ -1029,7 +1045,8 @@ function handleNewProductSubmit(e) {
     size: size,
     stock: stock,
     price: price,
-    category: category
+    category: category,
+    instagramMediaId: instagramMediaIdElem ? instagramMediaIdElem.value.trim() : ''
   };
 
   const currentProducts = getStoreProducts();
@@ -1060,7 +1077,8 @@ function renderProductsTable() {
     const name = (p.name || '').toLowerCase();
     const color = (p.color || '').toLowerCase();
     const cat = (p.category || '').toLowerCase();
-    return shortCode.includes(query) || code.includes(query) || name.includes(query) || color.includes(query) || cat.includes(query);
+    const instagramMediaId = (p.instagramMediaId || '').toLowerCase();
+    return shortCode.includes(query) || code.includes(query) || name.includes(query) || color.includes(query) || cat.includes(query) || instagramMediaId.includes(query);
   });
 
   if (productsTableCount) productsTableCount.textContent = `${filtered.length} ürün listelendi`;
@@ -1068,7 +1086,7 @@ function renderProductsTable() {
   if (filtered.length === 0) {
     productsTableBody.innerHTML = `
       <tr>
-        <td colspan="9" class="loading-cell" style="padding: 35px 20px; text-align: center; color: #94a3b8;">
+        <td colspan="10" class="loading-cell" style="padding: 35px 20px; text-align: center; color: #94a3b8;">
           <i class="fa-solid fa-box-open" style="font-size: 24px; margin-bottom: 8px; display: block; color: #64748b;"></i>
           Mağazanızda henüz stoklu ürün bulunmuyor.<br>
           <small style="color: #64748b; font-size: 11px;">"Yeni Ürün Girişi" sayfasından veya S.E.T.T AI Asistanı ile mağazanıza sıfırdan ürün ekleyebilirsiniz.</small>
@@ -1107,6 +1125,7 @@ function renderProductsTable() {
           </div>
         </td>
         <td><small class="text-muted">${escapeHtml(p.category || '-')}</small></td>
+        <td><span class="code-tag" title="Instagram Media ID">${escapeHtml(p.instagramMediaId || '-')}</span></td>
         <td>
           <div class="action-btn-group">
             <button class="btn btn-sm btn-stock" onclick="saveProductRow('${escapeHtml(p.productCode)}')">
@@ -2327,7 +2346,8 @@ const dataImportState = {
 
 const importFieldLabels = {
   productCode: 'Ürün Kodu / SKU', shortCode: 'Kısa Kod', name: 'Ürün Adı', size: 'Beden / Numara',
-  color: 'Renk', price: 'Fiyat', stock: 'Stok', category: 'Kategori', wpLink: 'Ürün Bağlantısı', mediaLink: 'Görsel Bağlantısı'
+  color: 'Renk', price: 'Fiyat', stock: 'Stok', category: 'Kategori', wpLink: 'Ürün Bağlantısı', mediaLink: 'Görsel Bağlantısı',
+  instagramMediaId: 'Instagram Media ID'
 };
 
 function setDataSourceType(type) {
@@ -2395,8 +2415,8 @@ function renderImportPreview(data) {
   const body = document.getElementById('importPreviewBody');
   body.innerHTML = data.sampleRows.length ? data.sampleRows.map(row => `
     <tr><td>${row.sourceRow}</td><td><span class="code-tag">${escapeHtml(row.productCode)}</span></td><td>${escapeHtml(row.name)}</td>
-    <td>${escapeHtml(row.size)}</td><td>${Number(row.stock).toLocaleString('tr-TR')}</td><td>${Number(row.price).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</td></tr>
-  `).join('') : '<tr><td colspan="6" class="empty-cell">Geçerli kayıt bulunamadı.</td></tr>';
+    <td>${escapeHtml(row.size)}</td><td>${Number(row.stock).toLocaleString('tr-TR')}</td><td>${Number(row.price).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</td><td>${escapeHtml(row.instagramMediaId || '-')}</td></tr>
+  `).join('') : '<tr><td colspan="7" class="empty-cell">Geçerli kayıt bulunamadı.</td></tr>';
   const issueBox = document.getElementById('importIssues');
   const issues = [...data.errors.map(item => ({ ...item, type: 'error' })), ...data.warnings.map(item => ({ ...item, type: 'warning' }))];
   issueBox.hidden = !issues.length;
@@ -2501,6 +2521,103 @@ function initializeDataSourcesPage() {
   setDataSourceType('file');
   loadImportProfiles();
   loadImportHistory();
+}
+
+// INSTAGRAM GÖNDERİ KATALOĞU (YORUMLARA ERİŞMEDEN)
+const instagramMediaState = { media: [], nextCursor: '', query: '' };
+
+function renderInstagramMediaCatalog() {
+  const grid = document.getElementById('instagramMediaGrid');
+  if (!grid) return;
+  const query = instagramMediaState.query.toLocaleLowerCase('tr-TR');
+  const items = instagramMediaState.media.filter(item => {
+    const searchable = [item.id, item.caption, item.mediaType, ...(item.products || []).flatMap(product => [product.productCode, product.shortCode, product.name])]
+      .join(' ').toLocaleLowerCase('tr-TR');
+    return searchable.includes(query);
+  });
+  document.getElementById('instagramMediaCount').textContent = `${items.length} gönderi gösteriliyor`;
+  grid.innerHTML = items.length ? items.map(item => {
+    const previewUrl = item.thumbnailUrl || item.mediaUrl || '';
+    const products = Array.isArray(item.products) ? item.products : [];
+    const productCodes = [...new Set(products.map(product => product.productCode).filter(Boolean))];
+    const mapping = productCodes.length
+      ? `<div class="ig-media-mapping linked"><i data-lucide="link" size="13"></i><span>${productCodes.map(escapeHtml).join(', ')}</span></div>`
+      : '<div class="ig-media-mapping"><i data-lucide="unlink" size="13"></i><span>Veri setinde eşleşen ürün yok</span></div>';
+    return `
+      <article class="ig-media-card">
+        <div class="ig-media-preview">${previewUrl ? `<img src="${escapeHtml(previewUrl)}" alt="Instagram gönderisi" loading="lazy">` : '<i data-lucide="image-off" size="34"></i>'}</div>
+        <div class="ig-media-body">
+          <div class="ig-media-top"><span class="status-badge in-stock">${escapeHtml(item.mediaProductType || item.mediaType || 'POST')}</span><small>${item.timestamp ? new Date(item.timestamp).toLocaleDateString('tr-TR') : '-'}</small></div>
+          <div class="ig-media-id"><span>MEDIA ID</span><code>${escapeHtml(item.id)}</code></div>
+          <p class="ig-media-caption">${escapeHtml(item.caption || 'Açıklama bulunmuyor.')}</p>
+          ${mapping}
+          <div class="ig-media-actions">
+            <button class="btn btn-secondary btn-sm" type="button" onclick="copyInstagramMediaId('${escapeHtml(item.id)}')"><i data-lucide="copy" size="13"></i>ID’yi Kopyala</button>
+            ${item.permalink ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(item.permalink)}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link" size="13"></i>Gönderiyi Aç</a>` : ''}
+          </div>
+        </div>
+      </article>`;
+  }).join('') : '<div class="ig-media-empty"><i data-lucide="images" size="34"></i><strong>Gönderi bulunamadı</strong><span>Instagram bağlantısını ve arama metnini kontrol edin.</span></div>';
+  document.getElementById('btnLoadMoreInstagramMedia').hidden = !instagramMediaState.nextCursor;
+  if (window.lucide) lucide.createIcons();
+}
+
+async function loadInstagramMedia(reset = true) {
+  const refreshButton = document.getElementById('btnRefreshInstagramMedia');
+  const loadMoreButton = document.getElementById('btnLoadMoreInstagramMedia');
+  if (!document.getElementById('instagramMediaPage')) return;
+  if (reset) {
+    refreshButton.disabled = true;
+    refreshButton.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Senkronize Ediliyor';
+  } else loadMoreButton.disabled = true;
+  try {
+    const cursor = reset ? '' : instagramMediaState.nextCursor;
+    const data = await apiFetch(`/api/integrations/instagram/media${cursor ? `?after=${encodeURIComponent(cursor)}` : ''}`);
+    const incoming = Array.isArray(data.media) ? data.media : [];
+    if (reset) instagramMediaState.media = incoming;
+    else {
+      const byId = new Map(instagramMediaState.media.map(item => [item.id, item]));
+      incoming.forEach(item => byId.set(item.id, item));
+      instagramMediaState.media = [...byId.values()];
+    }
+    instagramMediaState.nextCursor = data.nextCursor || '';
+    const status = document.getElementById('instagramMediaSyncStatus');
+    status.className = `ig-sync-note${data.source === 'cache' ? ' warning' : ''}`;
+    status.textContent = data.warning || `${instagramMediaState.media.length} gönderi Instagram’dan senkronize edildi. Yorum verilerine erişilmedi.`;
+    renderInstagramMediaCatalog();
+  } catch (error) {
+    const status = document.getElementById('instagramMediaSyncStatus');
+    status.className = 'ig-sync-note error';
+    status.textContent = error.message || 'Instagram gönderileri alınamadı.';
+    instagramMediaState.media = [];
+    instagramMediaState.nextCursor = '';
+    renderInstagramMediaCatalog();
+  } finally {
+    refreshButton.disabled = false;
+    refreshButton.innerHTML = '<i data-lucide="refresh-cw" size="14"></i>Gönderileri Yenile';
+    loadMoreButton.disabled = false;
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+async function copyInstagramMediaId(mediaId) {
+  try {
+    await navigator.clipboard.writeText(mediaId);
+    showToast(`Media ID kopyalandı: ${mediaId}`, 'success');
+  } catch {
+    showToast('Media ID kopyalanamadı.', 'error');
+  }
+}
+
+function initializeInstagramMediaPage() {
+  if (!document.getElementById('instagramMediaPage')) return;
+  document.getElementById('btnRefreshInstagramMedia')?.addEventListener('click', () => loadInstagramMedia(true));
+  document.getElementById('btnLoadMoreInstagramMedia')?.addEventListener('click', () => loadInstagramMedia(false));
+  document.getElementById('instagramMediaSearch')?.addEventListener('input', event => {
+    instagramMediaState.query = event.target.value || '';
+    renderInstagramMediaCatalog();
+  });
+  loadInstagramMedia(true);
 }
 
 // ESKİ GOOGLE SHEET DIŞA AKTARMA DESTEĞİ
@@ -2673,53 +2790,20 @@ async function loadStoreWebhookDetails() {
       const oauthStatus = document.getElementById('instagramOAuthStatus');
       const connectButton = document.getElementById('btnConnectInstagram');
       const disconnectButton = document.getElementById('btnDisconnectInstagram');
-      const commentAccessStatus = document.getElementById('instagramCommentAccessStatus');
-      const commentToggleButton = document.getElementById('btnToggleInstagramComments');
-      const commentPermissionGranted = Boolean(data.instagramCommentsPermissionGranted ?? data.instagramCommentsConnected);
-      const commentAutomationEnabled = Boolean(data.instagramCommentAutomationEnabled);
       if (oauthStatus) {
-        if (data.instagramConnected && commentPermissionGranted) {
-          oauthStatus.textContent = `Bağlı: @${data.instagramUsername || 'instagram hesabı'} • DM ve yorum izni verildi`;
+        if (data.instagramConnected) {
+          oauthStatus.textContent = `Bağlı: @${data.instagramUsername || 'instagram hesabı'} • DM ve profil gönderileri erişimi aktif`;
           oauthStatus.style.color = '#34d399';
-        } else if (data.instagramConnected) {
-          oauthStatus.textContent = `Bağlı: @${data.instagramUsername || 'instagram hesabı'} • Yorum erişimi için yeniden yetkilendirin`;
-          oauthStatus.style.color = '#fbbf24';
         } else {
           oauthStatus.textContent = 'Henüz Instagram hesabı bağlanmadı.';
           oauthStatus.style.color = '#94a3b8';
         }
       }
       if (connectButton) {
-        connectButton.style.display = commentPermissionGranted ? 'none' : 'inline-flex';
-        connectButton.innerHTML = data.instagramConnected
-          ? '<i class="fa-brands fa-instagram"></i> Yorum Erişimini Etkinleştir'
-          : '<i class="fa-brands fa-instagram"></i> Instagram\'ı Bağla';
+        connectButton.style.display = data.instagramConnected ? 'none' : 'inline-flex';
+        connectButton.innerHTML = '<i class="fa-brands fa-instagram"></i> Instagram\'ı Bağla';
       }
       if (disconnectButton) disconnectButton.style.display = data.instagramConnected ? 'inline-flex' : 'none';
-
-      if (commentAccessStatus) {
-        if (!data.instagramConnected) {
-          commentAccessStatus.textContent = 'Önce Instagram hesabını bağlayın.';
-          commentAccessStatus.style.color = '#94a3b8';
-        } else if (!commentPermissionGranted) {
-          commentAccessStatus.textContent = 'Yorum izni eksik. Yukarıdaki Yorum Erişimini Etkinleştir düğmesini kullanın.';
-          commentAccessStatus.style.color = '#fbbf24';
-        } else if (commentAutomationEnabled) {
-          commentAccessStatus.textContent = 'Açık • Yeni yorumlar yapay zeka tarafından işlenir.';
-          commentAccessStatus.style.color = '#34d399';
-        } else {
-          commentAccessStatus.textContent = 'Kapalı • Yorumlar işlenmez; DM mesajları çalışmaya devam eder.';
-          commentAccessStatus.style.color = '#f87171';
-        }
-      }
-      if (commentToggleButton) {
-        commentToggleButton.disabled = !data.instagramConnected || !commentPermissionGranted;
-        commentToggleButton.dataset.enabled = commentAutomationEnabled ? '1' : '0';
-        commentToggleButton.className = commentAutomationEnabled ? 'btn btn-secondary' : 'btn btn-primary';
-        commentToggleButton.innerHTML = commentAutomationEnabled
-          ? '<i class="fa-solid fa-comment-slash"></i> Yorumlara Erişimi Kapat'
-          : '<i class="fa-solid fa-comments"></i> Yorumlara Erişimi Aç';
-      }
 
       if (lastEvtElem) {
         lastEvtElem.textContent = data.lastWebhookAt || 'Henüz event gelmedi';
@@ -2768,29 +2852,10 @@ async function disconnectInstagramOAuth() {
   }
 }
 
-async function toggleInstagramCommentAccess() {
-  const button = document.getElementById('btnToggleInstagramComments');
-  if (!button || button.disabled) return;
-  const currentlyEnabled = button.dataset.enabled === '1';
-
-  try {
-    button.disabled = true;
-    const data = await apiFetch('/api/integrations/instagram/comments', {
-      method: 'POST',
-      body: JSON.stringify({ enabled: !currentlyEnabled })
-    });
-    showToast(data.message || `Yorum erişimi ${currentlyEnabled ? 'kapatıldı' : 'açıldı'}.`, 'success');
-    await loadStoreWebhookDetails();
-  } catch (error) {
-    showToast(`❌ ${error.message || 'Yorum erişimi değiştirilemedi.'}`, 'error');
-    button.disabled = false;
-  }
-}
-
 window.addEventListener('message', (event) => {
   if (event.origin !== window.location.origin || event.data?.type !== 'instagram-oauth-complete') return;
   if (event.data.success) {
-    showToast('Instagram mesaj ve gönderi yorumları başarıyla bağlandı.', 'success');
+    showToast('Instagram DM ve profil gönderileri başarıyla bağlandı.', 'success');
     loadStoreWebhookDetails();
   }
   const button = document.getElementById('btnConnectInstagram');
@@ -2892,6 +2957,7 @@ async function handleNewProductSubmit(e) {
   const stockElem = document.getElementById('stockInput');
   const priceElem = document.getElementById('priceInput');
   const catElem = document.getElementById('categoryInput');
+  const instagramMediaIdElem = document.getElementById('instagramMediaIdInput');
 
   if (!shortCodeElem || !nameElem || !sizeElem) {
     showToast('Lütfen zorunlu alanları doldurun.', 'error');
@@ -2928,7 +2994,8 @@ async function handleNewProductSubmit(e) {
     size: size,
     stock: stock,
     price: price,
-    category: category
+    category: category,
+    instagramMediaId: instagramMediaIdElem ? instagramMediaIdElem.value.trim() : ''
   };
 
   const submitBtn = document.getElementById('newProductForm')?.querySelector('button[type="submit"]');

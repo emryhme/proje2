@@ -218,7 +218,7 @@
             
             <div style="padding:15px; font-size:12px; color:#94a3b8; line-height:1.6;">
                 <p style="margin-bottom:12px; color:#e2e8f0;">
-                    Instagram hesabınızı güvenli Instagram Login ile bağlayın. Gelen mesajlar ve gönderi yorumları yapay zeka tarafından yalnızca bu mağaza için işlenir; yorumdan başlayan satış konuşması müşterinin özel mesaj kutusunda devam eder.
+                    Instagram hesabınızı güvenli Instagram Login ile bağlayın. Sistem yalnızca DM mesajlarını ve profilinizdeki gönderilerin Media ID/açıklama bilgilerini kullanır; yorumlara erişmez.
                 </p>
 
                 <div class="form-group full-width" style="margin-bottom:16px; padding:14px; border:1px solid #334155; border-radius:8px; background:#0f172a;">
@@ -232,19 +232,6 @@
                             <button type="button" class="btn btn-secondary" id="btnDisconnectInstagram" onclick="disconnectInstagramOAuth()" style="display:none; color:#f87171;"><i class="fa-solid fa-link-slash"></i> Bağlantıyı Kes</button>
                         </div>
                     </div>
-                </div>
-
-                <div class="form-group full-width" id="instagramCommentAccessCard" style="margin-bottom:16px; padding:14px; border:1px solid #334155; border-radius:8px; background:#0f172a;">
-                    <div style="display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;">
-                        <div>
-                            <strong>Gönderi Yorumlarına Yapay Zeka Erişimi</strong>
-                            <div id="instagramCommentAccessStatus" style="font-size:12px; color:#94a3b8; margin-top:4px;">Durum kontrol ediliyor…</div>
-                        </div>
-                        <button type="button" class="btn btn-secondary" id="btnToggleInstagramComments" onclick="toggleInstagramCommentAccess()" disabled>
-                            <i class="fa-solid fa-comments"></i> Yorumlara Erişimi Aç
-                        </button>
-                    </div>
-                    <div style="font-size:11px; color:#64748b; margin-top:9px;">Bu ayar yalnızca gönderi yorumlarını etkiler. Kapatıldığında Instagram DM mesajları çalışmaya devam eder.</div>
                 </div>
 
                 <div class="form-grid" hidden>
@@ -332,7 +319,7 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
-<script src="app.js?v=20260817-dashboard-stock-split"></script>
+<script src="app.js?v=20260817-instagram-media"></script>
 <script>
   function toggleSidebar(){
     document.getElementById("sidebar").classList.toggle("open");
