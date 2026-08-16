@@ -1,3 +1,4 @@
+import './test-env';
 import crypto from 'crypto';
 import { StockService } from '../services/stock.service';
 import { InventoryService } from '../services/inventory.service';

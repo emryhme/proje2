@@ -1,6 +1,7 @@
 node_modules/
 dist/
 backups/
+test-data/
 *.log
 .env
 service-account.json

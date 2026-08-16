@@ -1,3 +1,4 @@
+import './test-env';
 import { AddressInfo } from 'net';
 import { app } from '../index';
 import { db, hashPassword } from '../database/db';
