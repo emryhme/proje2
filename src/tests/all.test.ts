@@ -10,6 +10,7 @@ import { DemoAIService } from '../services/demo-ai.service';
 import { EmailVerificationService } from '../services/email-verification.service';
 import { AuthMiddleware } from '../middleware/auth.middleware';
 import { db, hashPassword, initDatabase, needsPasswordRehash, verifyPassword } from '../database/db';
+import { decryptSettingSecret, encryptSettingSecret } from '../utils/secret.util';
 
 initDatabase();
 
@@ -134,6 +135,12 @@ async function runTestSuite() {
   const invalidSigToken = jwtOwnerA.substring(0, jwtOwnerA.length - 5) + 'X1Y2Z';
   assert(AuthMiddleware.verifyToken(invalidSigToken) === null, 'Tampered/invalid signature token rejected');
   assert(AuthMiddleware.verifyToken('') === null, 'Empty token rejected');
+  const jwtParts = jwtOwnerA.split('.');
+  const wrongAlgorithmHeader = Buffer.from(JSON.stringify({ alg: 'none', typ: 'JWT' })).toString('base64url');
+  const wrongAlgorithmSignature = crypto.createHmac('sha256', process.env.JWT_SECRET!).update(`${wrongAlgorithmHeader}.${jwtParts[1]}`).digest('base64url');
+  assert(AuthMiddleware.verifyToken(`${wrongAlgorithmHeader}.${jwtParts[1]}.${wrongAlgorithmSignature}`) === null, 'JWT tokens with an unexpected algorithm are rejected');
+  const encryptedSecret = encryptSettingSecret('top-secret-token');
+  assert(encryptedSecret !== 'top-secret-token' && decryptSettingSecret(encryptedSecret) === 'top-secret-token', 'Stored integration secrets are encrypted and decrypt correctly');
 
   console.log('\n4️⃣ AUTH TEST 4: Legacy Session Token Bypass Rejection on Protected API');
   let authFailed: boolean = false;
@@ -147,6 +154,22 @@ async function runTestSuite() {
   const mockReqStoreA = { headers: { authorization: `Bearer ${jwtOwnerA}` } } as any;
   AuthMiddleware.authenticate(mockReqStoreA, mockResAuth, () => { reqContext = mockReqStoreA.auth; });
   assert(reqContext !== null && reqContext.storeId === 100 && reqContext.role === 'OWNER', 'Auth context populated with validated storeId 100');
+
+  db.prepare("UPDATE users SET status = 'suspended' WHERE id = 10").run();
+  let disabledUserBlocked = false;
+  const disabledRes = { status: (code: number) => ({ json: () => { if (code === 403) disabledUserBlocked = true; } }) } as any;
+  AuthMiddleware.authenticate({ headers: { authorization: `Bearer ${jwtOwnerA}` }, method: 'GET', path: '/api/orders' } as any, disabledRes, () => {});
+  assert(disabledUserBlocked, 'Disabled users cannot keep using an existing session token');
+  db.prepare("UPDATE users SET status = 'active' WHERE id = 10").run();
+
+  db.prepare("UPDATE store_subscriptions SET starts_at = '2025-01-01', ends_at = '2025-02-01' WHERE store_id = 100").run();
+  let expiredPlanWriteBlocked = false;
+  const expiredPlanRes = { status: (code: number) => ({ json: () => { if (code === 402) expiredPlanWriteBlocked = true; } }) } as any;
+  AuthMiddleware.authenticate({ headers: { authorization: `Bearer ${jwtOwnerA}` }, method: 'POST', path: '/api/products' } as any, expiredPlanRes, () => {});
+  let expiredPlanReadAllowed = false;
+  AuthMiddleware.authenticate({ headers: { authorization: `Bearer ${jwtOwnerA}` }, method: 'GET', path: '/api/plan' } as any, expiredPlanRes, () => { expiredPlanReadAllowed = true; });
+  assert(expiredPlanWriteBlocked && expiredPlanReadAllowed, 'Expired plans become read-only while plan information remains accessible');
+  db.prepare("UPDATE store_subscriptions SET starts_at = '2026-08-14', ends_at = '2027-02-14' WHERE store_id = 100").run();
 
   console.log('\n6️⃣ TENANT TEST 2: Cross-Tenant Store B Access Rejection for Store A User');
   const jwtFakeB = AuthMiddleware.generateToken({ userId: 10, storeId: 200, role: 'OWNER', email: 'owner_a@iscworks.com' });

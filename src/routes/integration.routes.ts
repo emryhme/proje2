@@ -24,7 +24,13 @@ function encryptToken(token: string): string {
 
 function htmlResponse(title: string, message: string, success = false): string {
   const color = success ? '#16a34a' : '#dc2626';
-  return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><title>${title}</title></head><body style="font-family:Arial,sans-serif;padding:48px;text-align:center"><h1 style="color:${color}">${title}</h1><p>${message}</p><p>Bu pencereyi kapatıp mağaza paneline dönebilirsiniz.</p><script>if (window.opener) window.opener.postMessage({type:'instagram-oauth-complete',success:${success}}, window.location.origin);</script></body></html>`;
+  const escapeHtml = (value: string) => value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+  return `<!doctype html><html lang="tr"><head><meta charset="utf-8"><meta name="referrer" content="no-referrer"><title>${escapeHtml(title)}</title></head><body style="font-family:Arial,sans-serif;padding:48px;text-align:center"><h1 style="color:${color}">${escapeHtml(title)}</h1><p>${escapeHtml(message)}</p><p>Bu pencereyi kapatıp mağaza paneline dönebilirsiniz.</p><script>if (window.opener) window.opener.postMessage({type:'instagram-oauth-complete',success:${success}}, window.location.origin);</script></body></html>`;
 }
 
 type InstagramSignedRequest = { user_id?: string; [key: string]: unknown };
@@ -258,7 +264,7 @@ router.get('/api/integration/status', AuthMiddleware.authenticate, (req: Authent
     const storeId = req.auth!.storeId;
     const store = db.prepare('SELECT id, name, slug, status, meta_page_id, instagram_account_id, instagram_username, last_webhook_at FROM stores WHERE id = ?').get(storeId) as any;
     if (!store) {
-      return res.status(404).json({ success: false, error: 'MaÃ„Å¸aza bulunamadÃ„Â±.' });
+      return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
     }
 
     const hasInstagramToken = !!db.prepare("SELECT 1 FROM settings WHERE store_id = ? AND key = 'instagram_access_token'").get(storeId);
@@ -309,7 +315,7 @@ router.post('/api/integration/meta', AuthMiddleware.authenticate, AuthMiddleware
 
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'UPDATE_META_INTEGRATION', 'stores', String(storeId));
 
-    return res.json({ success: true, message: 'Meta / Instagram entegrasyon bilgileri baÃ…Å¸arÃ„Â±yla gÃƒÂ¼ncellendi.' });
+    return res.json({ success: true, message: 'Meta / Instagram entegrasyon bilgileri başarıyla güncellendi.' });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }

@@ -67,18 +67,13 @@ function showToast(message, type = 'info') {
 
 // Central Interceptor for Master Admin Requests
 async function apiFetch(url, options = {}) {
-  const token = localStorage.getItem('barons_admin_token');
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
   try {
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
 
     if (response.status === 401) {
       localStorage.removeItem('barons_admin_token');
@@ -109,15 +104,14 @@ async function apiFetch(url, options = {}) {
   }
 }
 
-function checkMasterAuth() {
+async function checkMasterAuth() {
   if (window.location.pathname.includes('login.html')) {
     return;
   }
 
-  const token = localStorage.getItem('barons_admin_token');
   const rawUser = localStorage.getItem('barons_admin_user');
 
-  if (!token || !rawUser) {
+  if (!rawUser) {
     window.location.href = '/master-admin/login.html';
     return;
   }
@@ -157,7 +151,10 @@ function renderMasterUser() {
   }
 }
 
-function logoutMasterAdmin() {
+async function logoutMasterAdmin() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  } catch {}
   localStorage.removeItem('barons_admin_token');
   localStorage.removeItem('barons_admin_user');
   showToast('👋 Master Admin oturumu kapatıldı.', 'info');

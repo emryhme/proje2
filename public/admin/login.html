@@ -243,7 +243,7 @@
     const submitBtn = document.getElementById('btnLoginSubmit');
 
     const username = document.getElementById('loginUsername').value.trim();
-    const password = document.getElementById('loginPassword').value.trim();
+    const password = document.getElementById('loginPassword').value;
 
     if (!username || !password) {
       alertText.textContent = 'Lütfen kullanıcı adı ve şifrenizi girin.';
@@ -259,14 +259,15 @@
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
 
       const data = await response.json();
 
-      if (response.ok && data.success && data.token) {
-        localStorage.setItem('barons_admin_token', data.token);
+      if (response.ok && data.success) {
+        localStorage.removeItem('barons_admin_token');
         localStorage.setItem('barons_admin_user', JSON.stringify(data.user || { name: username, role: 'OWNER' }));
         window.location.href = 'index.html';
       } else {

@@ -137,7 +137,7 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
   try {
     const targetStoreId = Number(req.params.storeId);
     if (!targetStoreId || isNaN(targetStoreId)) {
-      return res.status(400).json({ success: false, error: 'GeÃƒÆ’Ã‚Â§ersiz maÃƒâ€Ã…Â¸aza ID.' });
+      return res.status(400).json({ success: false, error: 'Geçersiz mağaza ID.' });
     }
 
     const store = db.prepare(`
@@ -147,7 +147,7 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
       WHERE s.id = ? AND u.email_verified_at IS NOT NULL AND ma.status IN ('approved', 'active')
     `).get(targetStoreId) as any;
     if (!store) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+      return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
     }
 
     const owner = db.prepare("SELECT id, full_name, email, phone, status, created_at FROM users WHERE id = ?").get(store.owner_id) as any;
@@ -218,7 +218,7 @@ router.post('/api/master-admin/applications/:id/approve', AuthMiddleware.authent
     const appId = Number(req.params.id);
     const appRow = db.prepare('SELECT * FROM merchant_applications WHERE id = ?').get(appId) as any;
     if (!appRow) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu bulunamadÃƒâ€Ã‚Â±.' });
+      return res.status(404).json({ success: false, error: 'Mağaza başvurusu bulunamadı.' });
     }
 
     const verifiedUser = db.prepare('SELECT email_verified_at FROM users WHERE LOWER(email) = LOWER(?)').get(appRow.email) as any;
@@ -263,7 +263,7 @@ router.post('/api/master-admin/applications/:id/reject', AuthMiddleware.authenti
     const appId = Number(req.params.id);
     const appRow = db.prepare('SELECT * FROM merchant_applications WHERE id = ?').get(appId) as any;
     if (!appRow) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu bulunamadÃƒâ€Ã‚Â±.' });
+      return res.status(404).json({ success: false, error: 'Mağaza başvurusu bulunamadı.' });
     }
 
     db.transaction(() => {
@@ -279,7 +279,7 @@ router.post('/api/master-admin/applications/:id/reject', AuthMiddleware.authenti
       AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_REJECT_APPLICATION', 'merchant_applications', String(appId), '', appRow.email);
     })();
 
-    return res.json({ success: true, message: `${appRow.store_name} maÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu reddedildi.` });
+    return res.json({ success: true, message: `${appRow.store_name} mağaza başvurusu reddedildi.` });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -290,12 +290,12 @@ router.post('/api/master-admin/stores/:storeId/suspend', AuthMiddleware.authenti
   try {
     const targetStoreId = Number(req.params.storeId);
     if (targetStoreId === 1) {
-      return res.status(400).json({ success: false, error: 'Master Admin maÃƒâ€Ã…Â¸azasÃƒâ€Ã‚Â± askÃƒâ€Ã‚Â±ya alÃƒâ€Ã‚Â±namaz.' });
+      return res.status(400).json({ success: false, error: 'Master Admin mağazası askıya alınamaz.' });
     }
 
     const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(targetStoreId) as any;
     if (!store) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+      return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
     }
 
     db.transaction(() => {
@@ -304,7 +304,7 @@ router.post('/api/master-admin/stores/:storeId/suspend', AuthMiddleware.authenti
       AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_SUSPEND_STORE', 'stores', String(targetStoreId), store.status, 'suspended');
     })();
 
-    return res.json({ success: true, message: `${store.name} maÃƒâ€Ã…Â¸azasÃƒâ€Ã‚Â± baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla askÃƒâ€Ã‚Â±ya alÃƒâ€Ã‚Â±ndÃƒâ€Ã‚Â±.` });
+    return res.json({ success: true, message: `${store.name} mağazası başarıyla askıya alındı.` });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -316,7 +316,7 @@ router.post('/api/master-admin/stores/:storeId/activate', AuthMiddleware.authent
     const targetStoreId = Number(req.params.storeId);
     const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(targetStoreId) as any;
     if (!store) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+      return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
     }
 
     db.transaction(() => {
@@ -326,7 +326,7 @@ router.post('/api/master-admin/stores/:storeId/activate', AuthMiddleware.authent
       AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_ACTIVATE_STORE', 'stores', String(targetStoreId), store.status, 'active');
     })();
 
-    return res.json({ success: true, message: `${store.name} maÃƒâ€Ã…Â¸azasÃƒâ€Ã‚Â± yeniden aktifleÃƒâ€¦Ã…Â¸tirildi!` });
+    return res.json({ success: true, message: `${store.name} mağazası yeniden aktifleştirildi!` });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -342,12 +342,12 @@ router.post('/api/master-admin/stores/:storeId/change-plan', AuthMiddleware.auth
 
     const plan = String(req.body?.plan || '').trim();
     if (!ALLOWED_PLANS.includes(plan)) {
-      return res.status(400).json({ success: false, error: 'Yeni paket adÃƒâ€Ã‚Â± zorunludur.' });
+      return res.status(400).json({ success: false, error: 'Yeni paket adı zorunludur.' });
     }
 
     const store = db.prepare('SELECT * FROM stores WHERE id = ?').get(targetStoreId) as any;
     if (!store) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+      return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
     }
 
     const owner = db.prepare('SELECT email FROM users WHERE id = ?').get(store.owner_id) as any;
@@ -358,7 +358,7 @@ router.post('/api/master-admin/stores/:storeId/change-plan', AuthMiddleware.auth
 
     AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_CHANGE_PLAN', 'stores', String(targetStoreId), '', String(plan));
 
-    return res.json({ success: true, message: `${store.name} maÃƒâ€Ã…Â¸azasÃƒâ€Ã‚Â±nÃƒâ€Ã‚Â±n paketi "${plan}" olarak gÃƒÆ’Ã‚Â¼ncellendi.` });
+    return res.json({ success: true, message: `${store.name} mağazasının paketi "${plan}" olarak güncellendi.` });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -463,7 +463,7 @@ router.put('/api/master-admin/stores/:storeId/subscription', AuthMiddleware.auth
 });
 
 // POST /api/master-admin/plan-support-requests/:id/status
-router.post('/api/master-admin/plan-support-requests/:id/status', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, (req: AuthenticatedRequest, res) => {
+router.post('/api/master-admin/plan-support-requests/:id/status', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, async (req: AuthenticatedRequest, res) => {
   try {
     const requestId = Number(req.params.id);
     const status = String(req.body?.status || '').trim();
@@ -472,7 +472,13 @@ router.post('/api/master-admin/plan-support-requests/:id/status', AuthMiddleware
       return res.status(400).json({ success: false, error: 'Geçerli bir talep durumu seçin.' });
     }
     if (adminNote.length < 3) return res.status(400).json({ success: false, error: 'Müşteriye gösterilecek yanıt en az 3 karakter olmalıdır.' });
-    const request = db.prepare('SELECT * FROM plan_support_requests WHERE id = ?').get(requestId) as any;
+    const request = db.prepare(`
+      SELECT psr.*, u.email, u.full_name, s.name AS store_name
+      FROM plan_support_requests psr
+      JOIN users u ON u.id = psr.user_id
+      JOIN stores s ON s.id = psr.store_id
+      WHERE psr.id = ?
+    `).get(requestId) as any;
     if (!request) return res.status(404).json({ success: false, error: 'Destek talebi bulunamadı.' });
     if (request.status !== 'open') return res.status(409).json({ success: false, error: 'Bu destek talebi daha önce sonuçlandırılmış.' });
 
@@ -482,7 +488,22 @@ router.post('/api/master-admin/plan-support-requests/:id/status', AuthMiddleware
       WHERE id = ?
     `).run(status, adminNote, req.auth!.userId, requestId);
     AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_RESOLVE_PLAN_REQUEST', 'plan_support_requests', String(requestId), request.status, status);
-    return res.json({ success: true, message: status === 'resolved' ? 'Destek talebi çözüldü.' : 'Destek talebi reddedildi.' });
+    let notificationSent = true;
+    try {
+      await EmailVerificationService.sendPlanSupportResponseEmail({
+        email: request.email,
+        fullName: request.full_name,
+        storeName: request.store_name,
+        requestedPlan: request.requested_plan,
+        adminNote,
+        resolved: status === 'resolved',
+        requestId
+      });
+    } catch (emailError: any) {
+      notificationSent = false;
+      console.error('[Plan Support Email] Send failed:', emailError?.response?.data || emailError?.message || emailError);
+    }
+    return res.json({ success: true, notificationSent, message: status === 'resolved' ? 'Destek talebi çözüldü.' : 'Destek talebi reddedildi.' });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message });
   }

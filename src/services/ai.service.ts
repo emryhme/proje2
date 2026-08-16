@@ -600,7 +600,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             const autoDmText = `🎉 TEBRİKLER / VIP ÖDÜL KAZANDINIZ!\nSayın ${customerName.trim()}, profilinize özel %20 VIP İNDİRİM tanımlanmıştır! (Ödül Kodu: ${rewardCode})\nKeyifli alışverişler dileriz! 🎁✨`;
             const autoRewardNotificationSent = await FacebookService.sendMessage(senderId, autoDmText, storeId);
             if (!autoRewardNotificationSent) {
-              console.warn(`[Auto Reward DM] VIP ödülü tanımlandı ancak Instagram DM gönderilemedi (Store: ${storeId}, Sender: ${senderId}, Code: ${rewardCode}).`);
+              console.warn(`[Auto Reward DM] VIP ödülü tanımlandı ancak Instagram DM gönderilemedi (Store: ${storeId}).`);
             }
           }
 

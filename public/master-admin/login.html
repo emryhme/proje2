@@ -231,7 +231,7 @@
     const submitBtn = document.getElementById('btnMasterSubmit');
 
     const username = document.getElementById('masterUsername').value.trim();
-    const password = document.getElementById('masterPassword').value.trim();
+    const password = document.getElementById('masterPassword').value;
 
     if (!username || !password) {
       alertText.textContent = 'Lütfen kullanıcı adı ve şifrenizi girin.';
@@ -246,13 +246,14 @@
     try {
       const response = await fetch('/api/auth/login', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, password })
       });
 
       const data = await response.json();
 
-      if (response.ok && data.success && data.token) {
+      if (response.ok && data.success) {
         const u = data.user || {};
         
         // Master Admin Verification Check (storeId === 1 && role === OWNER)
@@ -268,8 +269,8 @@
           return;
         }
 
-        // Store Token & User info in localStorage
-        localStorage.setItem('barons_admin_token', data.token);
+        // Session token is held only in the secure HttpOnly cookie.
+        localStorage.removeItem('barons_admin_token');
         localStorage.setItem('barons_admin_user', JSON.stringify(u));
         window.location.href = '/master-admin/index.html';
       } else {

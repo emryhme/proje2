@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
 import { env } from '../config/env';
+import { encryptSettingSecret } from '../utils/secret.util';
 
 /**
  * BARON'S SILLAGE SQLite Veritabanı Yöneticisi (barons.db)
@@ -219,6 +220,28 @@ function runSchemaMigrations(): void {
         LEFT JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
         WHERE s.id != 1;
       `);
+    }
+  }, {
+    version: '20260816_009_encrypt_legacy_setting_secrets',
+    name: 'Encrypt legacy integration credentials stored in settings',
+    up: () => {
+      const secretKeys = ['facebook_page_access_token', 'telegram_bot_token', 'telegram_chat_id', 'gemini_api_key', 'openai_api_key'];
+      const placeholders = secretKeys.map(() => '?').join(',');
+      const rows = db.prepare(`SELECT key, value FROM settings WHERE key IN (${placeholders})`).all(...secretKeys) as Array<{ key: string; value: string }>;
+      const update = db.prepare('UPDATE settings SET value = ? WHERE key = ? AND value = ?');
+      rows.forEach(row => update.run(encryptSettingSecret(String(row.value || '')), row.key, row.value));
+    }
+  }, {
+    version: '20260816_010_platform_branding',
+    name: 'Remove legacy sample branding from the platform store',
+    up: () => {
+      db.prepare("UPDATE stores SET name = 'ISCWORKS Platform', updated_at = CURRENT_TIMESTAMP WHERE id = 1 AND name = ?").run("BARON'S SILLAGE");
+    }
+  }, {
+    version: '20260816_011_revocable_sessions',
+    name: 'Allow immediate session revocation',
+    up: () => {
+      addColumnIfMissing('users', 'session_version', 'INTEGER NOT NULL DEFAULT 0');
     }
   }];
 
@@ -678,9 +701,33 @@ export function initDatabase() {
   `);
 
   // Varsayılan Başlangıç Stok & Kampanya Verilerini Yükle
-  seedInitialProducts();
   seedInitialSettings();
-  seedInitialCampaigns();
+}
+
+export function performDataMaintenance(retentionDays = 180, pendingRegistrationRetentionDays = 30): void {
+  const safeRetentionDays = Math.min(3650, Math.max(30, Math.trunc(retentionDays)));
+  const safePendingDays = Math.min(365, Math.max(7, Math.trunc(pendingRegistrationRetentionDays)));
+  db.transaction(() => {
+    db.prepare("DELETE FROM instagram_oauth_states WHERE expires_at <= CURRENT_TIMESTAMP").run();
+    db.prepare("DELETE FROM email_verification_tokens WHERE expires_at < datetime('now', '-7 days')").run();
+    db.prepare("DELETE FROM webhook_events WHERE processed_at < datetime('now', '-30 days')").run();
+    db.prepare(`DELETE FROM messages WHERE created_at < datetime('now', ?)`).run(`-${safeRetentionDays} days`);
+    db.prepare("DELETE FROM conversations WHERE NOT EXISTS (SELECT 1 FROM messages WHERE messages.conversation_id = conversations.id) AND created_at < datetime('now', '-30 days')").run();
+    const abandonedUsers = db.prepare(`
+      SELECT id, email FROM users
+      WHERE status = 'pending' AND email_verified_at IS NULL AND created_at < datetime('now', ?)
+    `).all(`-${safePendingDays} days`) as Array<{ id: number; email: string }>;
+    const deleteMemberships = db.prepare('DELETE FROM memberships WHERE user_id = ?');
+    const deleteStores = db.prepare("DELETE FROM stores WHERE owner_id = ? AND status = 'pending'");
+    const deleteApplication = db.prepare("DELETE FROM merchant_applications WHERE LOWER(email) = LOWER(?) AND status = 'email_pending'");
+    const deleteUser = db.prepare("DELETE FROM users WHERE id = ? AND status = 'pending' AND email_verified_at IS NULL");
+    abandonedUsers.forEach(user => {
+      deleteMemberships.run(user.id);
+      deleteStores.run(user.id);
+      deleteApplication.run(user.email);
+      deleteUser.run(user.id);
+    });
+  })();
 }
 
 /**

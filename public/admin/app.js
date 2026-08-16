@@ -14,20 +14,15 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-// Central Safe API Wrapper with JWT Authentication Interceptor
+// Central Safe API Wrapper. The session token stays in an HttpOnly cookie.
 async function apiFetch(url, options = {}) {
-  const token = localStorage.getItem('barons_admin_token');
   const headers = {
     'Content-Type': 'application/json',
     ...(options.headers || {})
   };
 
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
-  }
-
   try {
-    const response = await fetch(url, { ...options, headers });
+    const response = await fetch(url, { ...options, headers, credentials: 'same-origin' });
 
     if (response.status === 401) {
       localStorage.removeItem('barons_admin_token');
@@ -146,7 +141,7 @@ function applyCurrentUserProfile() {
   const roleElement = document.querySelector('.user-text span');
   const brand = document.querySelector('.logo');
   let ownerNameElement = brand?.querySelector('.admin-owner-name') || brand?.querySelector('span');
-  let storeLabel = 'MaÄŸazam';
+  let storeLabel = 'Mağazam';
 
   if (rawUser) {
     try {
@@ -175,17 +170,22 @@ function applyCurrentUserProfile() {
   }
 }
 
-function checkAuthStatus() {
+async function checkAuthStatus() {
   const path = window.location.pathname;
   if (path.endsWith('login.html')) return;
-
-  const token = localStorage.getItem('barons_admin_token');
-  if (!token) {
+  try {
+    const response = await fetch('/api/auth/verify', { credentials: 'same-origin' });
+    if (!response.ok) throw new Error('UNAUTHORIZED');
+  } catch {
+    localStorage.removeItem('barons_admin_user');
     window.location.href = 'login.html';
   }
 }
 
-function logoutUser() {
+async function logoutUser() {
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin' });
+  } catch {}
   localStorage.removeItem('barons_admin_token');
   localStorage.removeItem('barons_admin_user');
   state.products = [];
@@ -2746,7 +2746,7 @@ async function fetchMerchantApplications() {
   if (!tableBody) return;
 
   try {
-    const data = await apiFetch('/api/admin/applications');
+    const data = await apiFetch('/api/master-admin/applications');
     if (data && data.success && Array.isArray(data.applications)) {
       if (data.applications.length === 0) {
         tableBody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 1.5rem; color: #94a3b8;">Henüz mağaza başvurusu bulunmuyor.</td></tr>`;
@@ -2788,7 +2788,7 @@ async function fetchMerchantApplications() {
 async function approveMerchantApplication(id) {
   if (!confirm('Bu mağaza başvurusunu onaylamak ve mağazayı aktifleştirmek istiyor musunuz?')) return;
   try {
-    const data = await apiFetch(`/api/admin/applications/${id}/approve`, { method: 'POST' });
+    const data = await apiFetch(`/api/master-admin/applications/${id}/approve`, { method: 'POST' });
     showToast(data.message || 'Mağaza başvurusu başarıyla onaylandı!', 'success');
     fetchMerchantApplications();
   } catch (e) {}
@@ -2797,7 +2797,7 @@ async function approveMerchantApplication(id) {
 async function rejectMerchantApplication(id) {
   if (!confirm('Bu mağaza başvurusunu reddetmek istediğinizden emin misiniz?')) return;
   try {
-    const data = await apiFetch(`/api/admin/applications/${id}/reject`, { method: 'POST' });
+    const data = await apiFetch(`/api/master-admin/applications/${id}/reject`, { method: 'POST' });
     showToast(data.message || 'Mağaza başvurusu reddedildi.', 'info');
     fetchMerchantApplications();
   } catch (e) {}

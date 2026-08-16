@@ -104,6 +104,26 @@ export class EmailVerificationService {
     });
   }
 
+  public static async sendPlanSupportResponseEmail(input: { email: string; fullName: string; storeName: string; requestedPlan: string; adminNote: string; resolved: boolean; requestId: number }): Promise<void> {
+    if (!this.isConfigured()) throw new Error('E-posta servisi yapılandırılmamış.');
+    const planUrl = 'https://www.iscworks.info/admin/plan.html';
+    const statusText = input.resolved ? 'yanıtlandı' : 'sonuçlandırıldı';
+    await axios.post('https://api.resend.com/emails', {
+      from: env.emailFrom,
+      to: [input.email],
+      subject: `ISCWORKS plan talebiniz ${statusText}`,
+      html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#111827"><h2>Merhaba ${this.escapeHtml(input.fullName)},</h2><p><strong>${this.escapeHtml(input.storeName)}</strong> mağazanız için oluşturduğunuz <strong>${this.escapeHtml(input.requestedPlan)}</strong> plan talebi ${statusText}.</p><div style="background:#f3f4f6;padding:18px;border-radius:10px;margin:22px 0"><strong>Destek yanıtı</strong><p style="white-space:pre-wrap">${this.escapeHtml(input.adminNote)}</p></div><p><a href="${planUrl}" style="background:#111827;color:#fff;padding:13px 20px;border-radius:8px;text-decoration:none;font-weight:700">Plan Yönetimini Aç</a></p></div>`,
+      text: `Merhaba ${input.fullName},\n\n${input.storeName} mağazanızın ${input.requestedPlan} plan talebi ${statusText}.\n\nDestek yanıtı:\n${input.adminNote}\n\n${planUrl}`
+    }, {
+      headers: {
+        Authorization: `Bearer ${env.resendApiKey}`,
+        'Content-Type': 'application/json',
+        'Idempotency-Key': `plan-support-${input.requestId}-${input.resolved ? 'resolved' : 'rejected'}`
+      },
+      timeout: 15_000
+    });
+  }
+
   private static escapeHtml(value: string): string {
     return String(value).replace(/[&<>"']/g, character => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[character] || character));
   }

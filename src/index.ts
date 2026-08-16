@@ -12,25 +12,46 @@ import { AdminCopilotService } from './services/admin-copilot.service';
 import { FacebookService } from './services/facebook.service';
 import { DemoAIService } from './services/demo-ai.service';
 import { extractProductCode } from './utils/regex.util';
-import { db, hashPassword, initDatabase, needsPasswordRehash, verifyPassword } from './database/db';
+import { db, hashPassword, initDatabase, needsPasswordRehash, performDataMaintenance, verifyPassword } from './database/db';
 import { AuthMiddleware, AuthenticatedRequest } from './middleware/auth.middleware';
-import { EmailVerificationService } from './services/email-verification.service';
+import { createRateLimiter, csrfProtection, securityHeaders } from './middleware/security.middleware';
 
 // Initialize schema, migrations, and seed data once before serving requests.
 initDatabase();
+performDataMaintenance(env.dataRetentionDays, env.pendingRegistrationRetentionDays);
+const maintenanceTimer = setInterval(() => performDataMaintenance(env.dataRetentionDays, env.pendingRegistrationRetentionDays), 24 * 60 * 60_000);
+maintenanceTimer.unref();
 
 const app = express();
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+app.use(securityHeaders);
 
 // Apply Global CORS Middleware
 app.use(AuthMiddleware.cors);
 
 // Capture the exact bytes Meta signed before JSON parsing changes their form.
 app.use(express.json({
+  limit: '256kb',
   verify: (req, _res, buffer) => {
     (req as any).rawBody = Buffer.from(buffer);
   }
 }));
-app.use(express.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true, limit: '64kb' }));
+app.use(csrfProtection);
+
+app.get('/healthz', (_req, res) => {
+  try {
+    db.prepare('SELECT 1').get();
+    res.setHeader('Cache-Control', 'no-store');
+    return res.json({ status: 'ok', database: 'ok', uptimeSeconds: Math.floor(process.uptime()) });
+  } catch {
+    return res.status(503).json({ status: 'unhealthy', database: 'unavailable' });
+  }
+});
+
+const apiLimiter = createRateLimiter({ windowMs: 5 * 60_000, max: 600, message: 'Çok fazla API isteği gönderildi. Lütfen kısa süre sonra tekrar deneyin.' });
+app.use('/api', apiLimiter);
 
 const demoAiRequests = new Map<string, number[]>();
 let demoAiGlobalRequests: number[] = [];
@@ -72,106 +93,6 @@ app.post('/api/demo/ai', async (req, res) => {
 
 import authRouter from './routes/auth.routes';
 app.use(authRouter);
-// ==========================================
-// MASTER ADMIN MERCHANT APPLICATION ROUTES
-// ==========================================
-
-// GET /api/admin/applications (Master Admin only - Store ID 1)
-app.get('/api/admin/applications', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER']), (req: AuthenticatedRequest, res) => {
-  try {
-    if (req.auth!.storeId !== 1) {
-      return res.status(403).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurularÃƒâ€Ã‚Â±nÃƒâ€Ã‚Â± yalnÃƒâ€Ã‚Â±zca SÃƒÆ’Ã‚Â¼per Admin yÃƒÆ’Ã‚Â¶netebilir.' });
-    }
-
-    const apps = db.prepare("SELECT id, full_name, email, store_name, plan, status, created_at FROM merchant_applications WHERE status != 'email_pending' ORDER BY id DESC").all();
-    return res.json({ success: true, applications: apps });
-  } catch (e: any) {
-    return res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-// POST /api/admin/applications/:id/approve (Master Admin approve application)
-app.post('/api/admin/applications/:id/approve', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER']), async (req: AuthenticatedRequest, res) => {
-  try {
-    if (req.auth!.storeId !== 1) {
-      return res.status(403).json({ success: false, error: 'BaÃƒâ€¦Ã…Â¸vuru onaylama yetkisi sadece SÃƒÆ’Ã‚Â¼per Admin hesabÃƒâ€Ã‚Â±na aittir.' });
-    }
-
-    const appId = Number(req.params.id);
-    const appRow = db.prepare('SELECT * FROM merchant_applications WHERE id = ?').get(appId) as any;
-    if (!appRow) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu bulunamadÃƒâ€Ã‚Â±.' });
-    }
-
-    const verifiedUser = db.prepare('SELECT email_verified_at FROM users WHERE LOWER(email) = LOWER(?)').get(appRow.email) as any;
-    if (!verifiedUser?.email_verified_at) {
-      return res.status(409).json({ success: false, error: 'E-posta adresi doğrulanmadan bu başvuru onaylanamaz.' });
-    }
-
-    db.transaction(() => {
-      db.prepare('UPDATE merchant_applications SET status = \'approved\', updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(appId);
-      db.prepare('UPDATE users SET status = \'active\' WHERE LOWER(email) = ?').run(appRow.email.toLowerCase());
-      
-      const userRow = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(appRow.email.toLowerCase()) as any;
-      if (userRow) {
-        db.prepare('UPDATE stores SET status = \'active\', updated_at = CURRENT_TIMESTAMP WHERE owner_id = ?').run(userRow.id);
-        db.prepare('UPDATE memberships SET status = \'active\' WHERE user_id = ?').run(userRow.id);
-        db.prepare(`
-          INSERT OR IGNORE INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at, updated_by)
-          SELECT id, ?, 1, date('now'), date('now', '+1 month'), ? FROM stores WHERE owner_id = ?
-        `).run(appRow.plan || 'Pro Store', req.auth!.userId, userRow.id);
-      }
-
-      AuthMiddleware.logAudit(1, req.auth!.userId, 'APPROVE_APPLICATION', 'merchant_applications', String(appId), '', appRow.email);
-    })();
-
-    let notificationSent = true;
-    try {
-      await EmailVerificationService.sendAccountApprovedEmail({ email: appRow.email, fullName: appRow.full_name, storeName: appRow.store_name });
-    } catch (emailError: any) {
-      notificationSent = false;
-      console.error('[Account Approval Email] Send failed:', emailError?.response?.data || emailError?.message || emailError);
-    }
-
-    return res.json({ success: true, notificationSent, message: notificationSent ? `${appRow.store_name} mağaza başvurusu onaylandı ve kullanıcıya e-posta gönderildi.` : `${appRow.store_name} mağaza başvurusu onaylandı; bildirim e-postası gönderilemedi.` });
-  } catch (e: any) {
-    return res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-// POST /api/admin/applications/:id/reject (Master Admin reject application)
-app.post('/api/admin/applications/:id/reject', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER']), (req: AuthenticatedRequest, res) => {
-  try {
-    if (req.auth!.storeId !== 1) {
-      return res.status(403).json({ success: false, error: 'BaÃƒâ€¦Ã…Â¸vuru reddetme yetkisi sadece SÃƒÆ’Ã‚Â¼per Admin hesabÃƒâ€Ã‚Â±na aittir.' });
-    }
-
-    const appId = Number(req.params.id);
-    const appRow = db.prepare('SELECT * FROM merchant_applications WHERE id = ?').get(appId) as any;
-    if (!appRow) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu bulunamadÃƒâ€Ã‚Â±.' });
-    }
-
-    db.transaction(() => {
-      db.prepare('UPDATE merchant_applications SET status = \'rejected\', updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(appId);
-      db.prepare('UPDATE users SET status = \'rejected\' WHERE LOWER(email) = ?').run(appRow.email.toLowerCase());
-      
-      const userRow = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(appRow.email.toLowerCase()) as any;
-      if (userRow) {
-        db.prepare('UPDATE stores SET status = \'rejected\', updated_at = CURRENT_TIMESTAMP WHERE owner_id = ?').run(userRow.id);
-        db.prepare('UPDATE memberships SET status = \'rejected\' WHERE user_id = ?').run(userRow.id);
-      }
-
-      AuthMiddleware.logAudit(1, req.auth!.userId, 'REJECT_APPLICATION', 'merchant_applications', String(appId), '', appRow.email);
-    })();
-
-    return res.json({ success: true, message: `${appRow.store_name} maÃƒâ€Ã…Â¸aza baÃƒâ€¦Ã…Â¸vurusu reddedildi.` });
-  } catch (e: any) {
-    return res.status(500).json({ success: false, error: e.message });
-  }
-});
-
-// ==========================================
 import integrationRouter from './routes/integration.routes';
 app.use(integrationRouter);
 // Static Admin UI Server (Merchant Panel)
@@ -232,7 +153,7 @@ app.post('/api/products', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     const storeId = req.auth!.storeId;
     const { shortCode, productCode, name, color, size, stock, price, category, storeName } = req.body || {};
     if (!shortCode || !name || !size) {
-      return res.status(400).json({ success: false, error: 'KÃƒâ€Ã‚Â±sa kod, ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼n ismi ve beden/numara alanlarÃƒâ€Ã‚Â± zorunludur.' });
+      return res.status(400).json({ success: false, error: 'Kısa kod, ürün ismi ve beden/numara alanları zorunludur.' });
     }
 
     const result = await StockService.addProduct({
@@ -252,14 +173,14 @@ app.post('/api/products', AuthMiddleware.authenticate, AuthMiddleware.requireRol
       AuthMiddleware.logAudit(storeId, req.auth!.userId, 'ADD_PRODUCT', 'products', result.productCode || '');
       res.json({
         success: true,
-        message: 'ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼n maÃƒâ€Ã…Â¸aza stok veritabanÃƒâ€Ã‚Â±nÃƒâ€Ã‚Â±za baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla eklendi!',
+        message: 'Ürün mağaza stok veritabanınıza başarıyla eklendi!',
         productCode: result.productCode
       });
     } else {
-      res.status(500).json({ success: false, error: 'ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼n veritabanÃƒâ€Ã‚Â±na kaydedilemedi.' });
+      res.status(500).json({ success: false, error: 'Ürün veritabanına kaydedilemedi.' });
     }
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || 'Sunucu hatasÃƒâ€Ã‚Â±' });
+    res.status(500).json({ success: false, error: err.message || 'Sunucu hatası' });
   }
 });
 
@@ -273,7 +194,7 @@ app.post('/api/products/price', AuthMiddleware.authenticate, AuthMiddleware.requ
 
     const numPrice = Number(price);
     if (isNaN(numPrice) || numPrice < 0) {
-      return res.status(400).json({ success: false, error: 'GeÃƒÆ’Ã‚Â§ersiz fiyat.' });
+      return res.status(400).json({ success: false, error: 'Geçersiz fiyat.' });
     }
 
     const stmt = db.prepare('UPDATE products SET price = ?, updated_at = CURRENT_TIMESTAMP WHERE store_id = ? AND (product_code = ? OR short_code = ?)');
@@ -281,9 +202,9 @@ app.post('/api/products/price', AuthMiddleware.authenticate, AuthMiddleware.requ
 
     if (result.changes > 0) {
       AuthMiddleware.logAudit(storeId, req.auth!.userId, 'UPDATE_PRICE', 'products', productCode, '', String(numPrice));
-      res.json({ success: true, message: `ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼n (${productCode}) fiyatÃƒâ€Ã‚Â± ${numPrice} TL olarak gÃƒÆ’Ã‚Â¼ncellendi.` });
+      res.json({ success: true, message: `Ürün (${productCode}) fiyatı ${numPrice} TL olarak güncellendi.` });
     } else {
-      res.status(404).json({ success: false, error: 'ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼n bu maÃƒâ€Ã…Â¸azada bulunamadÃƒâ€Ã‚Â±.' });
+      res.status(404).json({ success: false, error: 'Ürün bu mağazada bulunamadı.' });
     }
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message });
@@ -295,7 +216,7 @@ app.post('/api/products/bulk-update', AuthMiddleware.authenticate, AuthMiddlewar
     const storeId = req.auth!.storeId;
     const { updates } = req.body;
     if (!Array.isArray(updates) || updates.length === 0) {
-      return res.status(400).json({ success: false, error: 'GÃƒÆ’Ã‚Â¼ncellenecek veri listesi boÃƒâ€¦Ã…Â¸ veya geÃƒÆ’Ã‚Â§ersiz.' });
+      return res.status(400).json({ success: false, error: 'Güncellenecek veri listesi boş veya geçersiz.' });
     }
 
     const updatePriceStmt = db.prepare('UPDATE products SET price = ?, updated_at = CURRENT_TIMESTAMP WHERE store_id = ? AND product_code = ?');
@@ -333,10 +254,10 @@ app.post('/api/products/bulk-update', AuthMiddleware.authenticate, AuthMiddlewar
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'BULK_UPDATE_PRODUCTS', 'products', `${updates.length} items`);
 
     if (updatedCount === 0) {
-      return res.status(404).json({ success: false, error: 'Belirtilen ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼nler bu maÃƒâ€Ã…Â¸azada bulunamadÃƒâ€Ã‚Â± veya gÃƒÆ’Ã‚Â¼ncelleme yapÃƒâ€Ã‚Â±lamadÃƒâ€Ã‚Â±.' });
+      return res.status(404).json({ success: false, error: 'Belirtilen ürünler bu mağazada bulunamadı veya güncelleme yapılamadı.' });
     }
 
-    return res.json({ success: true, message: `${updatedCount} adet gÃƒÆ’Ã‚Â¼ncelleme baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla kaydedildi!`, updatedCount });
+    return res.json({ success: true, message: `${updatedCount} adet güncelleme başarıyla kaydedildi!`, updatedCount });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
   }
@@ -353,12 +274,12 @@ app.post('/api/products/delete', AuthMiddleware.authenticate, AuthMiddleware.req
     const success = await StockService.deleteProduct(storeId, productCode);
     if (success) {
       AuthMiddleware.logAudit(storeId, req.auth!.userId, 'DELETE_PRODUCT', 'products', productCode);
-      return res.json({ success: true, message: `ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼n (${productCode}) silindi.` });
+      return res.json({ success: true, message: `Ürün (${productCode}) silindi.` });
     } else {
-      return res.status(404).json({ success: false, error: 'ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼n bu maÃƒâ€Ã…Â¸azada bulunamadÃƒâ€Ã‚Â± veya silinemedi.' });
+      return res.status(404).json({ success: false, error: 'Ürün bu mağazada bulunamadı veya silinemedi.' });
     }
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message || 'Sunucu hatasÃƒâ€Ã‚Â±' });
+    return res.status(500).json({ success: false, error: err.message || 'Sunucu hatası' });
   }
 });
 
@@ -372,18 +293,18 @@ app.post('/api/products/update-stock', AuthMiddleware.authenticate, AuthMiddlewa
 
     const numStock = Number(newStock);
     if (isNaN(numStock) || numStock < 0) {
-      return res.status(400).json({ success: false, error: 'GeÃƒÆ’Ã‚Â§ersiz stok miktarÃƒâ€Ã‚Â±. Stok 0 veya pozitif bir sayÃƒâ€Ã‚Â± olmalÃƒâ€Ã‚Â±dÃƒâ€Ã‚Â±r.' });
+      return res.status(400).json({ success: false, error: 'Geçersiz stok miktarı. Stok 0 veya pozitif bir sayı olmalıdır.' });
     }
 
     const success = await StockService.updateStock(storeId, String(productCode), numStock);
     if (success) {
       AuthMiddleware.logAudit(storeId, req.auth!.userId, 'UPDATE_STOCK', 'products', String(productCode), '', String(numStock));
-      return res.json({ success: true, message: `ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼n (${productCode}) stoÃƒâ€Ã…Â¸u ${numStock} olarak gÃƒÆ’Ã‚Â¼ncellendi.`, productCode, stock: numStock });
+      return res.json({ success: true, message: `Ürün (${productCode}) stoğu ${numStock} olarak güncellendi.`, productCode, stock: numStock });
     } else {
-      return res.status(404).json({ success: false, error: 'ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼n bu maÃƒâ€Ã…Â¸azada bulunamadÃƒâ€Ã‚Â± veya stok gÃƒÆ’Ã‚Â¼ncellenemedi.' });
+      return res.status(404).json({ success: false, error: 'Ürün bu mağazada bulunamadı veya stok güncellenemedi.' });
     }
   } catch (err: any) {
-    return res.status(500).json({ success: false, error: err.message || 'Sunucu hatasÃƒâ€Ã‚Â±' });
+    return res.status(500).json({ success: false, error: err.message || 'Sunucu hatası' });
   }
 });
 
@@ -399,7 +320,7 @@ app.post('/api/orders/status', AuthMiddleware.authenticate, AuthMiddleware.requi
     const storeId = req.auth!.storeId;
     const { orderId, status, reason } = req.body;
     if (!orderId || !status || (status !== 'OK' && status !== 'DEC')) {
-      return res.status(400).json({ success: false, error: 'orderId ve geÃƒÆ’Ã‚Â§erli bir status (OK veya DEC) gereklidir' });
+      return res.status(400).json({ success: false, error: 'orderId ve geçerli bir status (OK veya DEC) gereklidir' });
     }
 
     const success = await OrderService.updateOrderStatus(storeId, orderId, status, reason);
@@ -407,15 +328,15 @@ app.post('/api/orders/status', AuthMiddleware.authenticate, AuthMiddleware.requi
       AuthMiddleware.logAudit(storeId, req.auth!.userId, 'UPDATE_ORDER_STATUS', 'orders', orderId, '', status);
       res.json({
         success: true,
-        message: `SipariÃƒâ€¦Ã…Â¸ ${orderId} durumu '${status}' olarak gÃƒÆ’Ã‚Â¼ncellendi.`,
+        message: `Sipariş ${orderId} durumu '${status}' olarak güncellendi.`,
         orderId,
         status
       });
     } else {
-      res.status(500).json({ success: false, error: 'SipariÃƒâ€¦Ã…Â¸ durumu gÃƒÆ’Ã‚Â¼ncellenemedi.' });
+      res.status(500).json({ success: false, error: 'Sipariş durumu güncellenemedi.' });
     }
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || 'Sunucu hatasÃƒâ€Ã‚Â±' });
+    res.status(500).json({ success: false, error: err.message || 'Sunucu hatası' });
   }
 });
 
@@ -430,12 +351,12 @@ app.post('/api/orders/delete', AuthMiddleware.authenticate, AuthMiddleware.requi
     const success = await OrderService.deleteOrder(storeId, orderId);
     if (success) {
       AuthMiddleware.logAudit(storeId, req.auth!.userId, 'DELETE_ORDER', 'orders', orderId);
-      res.json({ success: true, message: `SipariÃƒâ€¦Ã…Â¸ (${orderId}) silindi.` });
+      res.json({ success: true, message: `Sipariş (${orderId}) silindi.` });
     } else {
-      res.status(500).json({ success: false, error: 'SipariÃƒâ€¦Ã…Â¸ silinemedi.' });
+      res.status(500).json({ success: false, error: 'Sipariş silinemedi.' });
     }
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || 'Sunucu hatasÃƒâ€Ã‚Â±' });
+    res.status(500).json({ success: false, error: err.message || 'Sunucu hatası' });
   }
 });
 
@@ -446,7 +367,7 @@ app.get('/api/campaigns', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     const campaigns = db.prepare('SELECT * FROM campaigns WHERE store_id = ? ORDER BY id DESC').all(storeId);
     return res.json({ success: true, campaigns });
   } catch (e: any) {
-    return res.status(500).json({ success: false, error: e.message || 'Kampanyalar alÃƒâ€Ã‚Â±nÃƒâ€Ã‚Â±rken sunucu hatasÃƒâ€Ã‚Â± oluÃƒâ€¦Ã…Â¸tu.' });
+    return res.status(500).json({ success: false, error: e.message || 'Kampanyalar alınırken sunucu hatası oluştu.' });
   }
 });
 
@@ -456,7 +377,7 @@ app.post('/api/campaigns', AuthMiddleware.authenticate, AuthMiddleware.requireRo
     const { title, description, code, discountPercent, discountAmount, minOrderAmount, startDate, endDate } = req.body || {};
 
     if (!title || !String(title).trim() || !description || !String(description).trim()) {
-      return res.status(400).json({ success: false, error: 'Kampanya baÃƒâ€¦Ã…Â¸lÃƒâ€Ã‚Â±Ãƒâ€Ã…Â¸Ãƒâ€Ã‚Â± ve aÃƒÆ’Ã‚Â§Ãƒâ€Ã‚Â±klamasÃƒâ€Ã‚Â± zorunludur.' });
+      return res.status(400).json({ success: false, error: 'Kampanya başlığı ve açıklaması zorunludur.' });
     }
 
     const cleanTitle = String(title).trim();
@@ -467,7 +388,7 @@ app.post('/api/campaigns', AuthMiddleware.authenticate, AuthMiddleware.requireRo
     const numMinOrder = minOrderAmount !== undefined ? Number(minOrderAmount) : 0;
 
     if (isNaN(numPercent) || numPercent < 0) {
-      return res.status(400).json({ success: false, error: 'GeÃƒÆ’Ã‚Â§ersiz indirim yÃƒÆ’Ã‚Â¼zdesi.' });
+      return res.status(400).json({ success: false, error: 'Geçersiz indirim yüzdesi.' });
     }
 
     const stmt = db.prepare(`
@@ -489,7 +410,7 @@ app.post('/api/campaigns', AuthMiddleware.authenticate, AuthMiddleware.requireRo
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'CREATE_CAMPAIGN', 'campaigns', cleanCode || cleanTitle);
     return res.status(201).json({
       success: true,
-      message: 'Kampanya baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla oluÃƒâ€¦Ã…Â¸turuldu.',
+      message: 'Kampanya başarıyla oluşturuldu.',
       id: Number(result.lastInsertRowid),
       campaign: {
         id: Number(result.lastInsertRowid),
@@ -502,7 +423,7 @@ app.post('/api/campaigns', AuthMiddleware.authenticate, AuthMiddleware.requireRo
       }
     });
   } catch (e: any) {
-    return res.status(500).json({ success: false, error: e.message || 'Kampanya oluÃƒâ€¦Ã…Â¸turulurken veritabanÃƒâ€Ã‚Â± hatasÃƒâ€Ã‚Â± oluÃƒâ€¦Ã…Â¸tu.' });
+    return res.status(500).json({ success: false, error: e.message || 'Kampanya oluşturulurken veritabanı hatası oluştu.' });
   }
 });
 
@@ -520,12 +441,12 @@ app.post('/api/campaigns/toggle', AuthMiddleware.authenticate, AuthMiddleware.re
 
     if (result.changes > 0) {
       AuthMiddleware.logAudit(storeId, req.auth!.userId, 'TOGGLE_CAMPAIGN', 'campaigns', String(id), '', String(newActive));
-      return res.json({ success: true, message: 'Kampanya durumu gÃƒÆ’Ã‚Â¼ncellendi.', active: newActive });
+      return res.json({ success: true, message: 'Kampanya durumu güncellendi.', active: newActive });
     } else {
-      return res.status(404).json({ success: false, error: 'Kampanya bulunamadÃƒâ€Ã‚Â± veya bu maÃƒâ€Ã…Â¸azaya ait deÃƒâ€Ã…Â¸il.' });
+      return res.status(404).json({ success: false, error: 'Kampanya bulunamadı veya bu mağazaya ait değil.' });
     }
   } catch (e: any) {
-    return res.status(500).json({ success: false, error: e.message || 'Kampanya gÃƒÆ’Ã‚Â¼ncellenemedi.' });
+    return res.status(500).json({ success: false, error: e.message || 'Kampanya güncellenemedi.' });
   }
 });
 
@@ -539,18 +460,21 @@ app.delete('/api/campaigns/:id', AuthMiddleware.authenticate, AuthMiddleware.req
       AuthMiddleware.logAudit(storeId, req.auth!.userId, 'DELETE_CAMPAIGN', 'campaigns', campaignId);
       return res.json({ success: true, message: 'Kampanya silindi.' });
     } else {
-      return res.status(404).json({ success: false, error: 'Kampanya bulunamadÃƒâ€Ã‚Â± veya bu maÃƒâ€Ã…Â¸azaya ait deÃƒâ€Ã…Â¸il.' });
+      return res.status(404).json({ success: false, error: 'Kampanya bulunamadı veya bu mağazaya ait değil.' });
     }
   } catch (e: any) {
-    return res.status(500).json({ success: false, error: e.message || 'Kampanya silinirken hata oluÃƒâ€¦Ã…Â¸tu.' });
+    return res.status(500).json({ success: false, error: e.message || 'Kampanya silinirken hata oluştu.' });
   }
 });
 
 // --- SETTINGS ---
+const PUBLIC_SETTING_KEYS = new Set(['shipping_fee', 'free_shipping_threshold', 'bot_name', 'bot_tone', 'bot_system_prompt']);
+
 app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req: AuthenticatedRequest, res) => {
   try {
     const storeId = req.auth!.storeId;
-    const rows = db.prepare('SELECT * FROM settings WHERE store_id = ?').all(storeId) as any[];
+    const placeholders = [...PUBLIC_SETTING_KEYS].map(() => '?').join(',');
+    const rows = db.prepare(`SELECT key, value FROM settings WHERE store_id = ? AND key IN (${placeholders})`).all(storeId, ...PUBLIC_SETTING_KEYS) as any[];
     const settingsObj: Record<string, string> = {};
     for (const r of rows) {
       if (r && r.key) {
@@ -566,49 +490,66 @@ app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole
 app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN']), (req: AuthenticatedRequest, res) => {
   try {
     const storeId = req.auth!.storeId;
-    const { key, value, settings, shippingFee, freeShippingThreshold } = req.body;
+    const { key, value, settings, shippingFee, freeShippingThreshold } = req.body || {};
+
+    const normalizeSetting = (rawKey: unknown, rawValue: unknown): { key: string; value: string } | null => {
+      const settingKey = String(rawKey || '');
+      if (!PUBLIC_SETTING_KEYS.has(settingKey)) return null;
+      let settingValue = String(rawValue ?? '');
+      if (settingKey === 'bot_name') {
+        settingValue = settingValue.trim().slice(0, 40);
+        if (!settingValue) throw new Error('Yapay zeka asistan adı boş bırakılamaz.');
+      } else if (settingKey === 'bot_tone') {
+        if (!['luxury', 'friendly', 'formal', 'patron'].includes(settingValue)) throw new Error('Geçersiz yapay zeka kişilik üslubu.');
+      } else if (settingKey === 'bot_system_prompt') {
+        settingValue = settingValue.trim().slice(0, 4000);
+      } else {
+        const numericValue = Number(settingValue);
+        if (!Number.isFinite(numericValue) || numericValue < 0 || numericValue > 1_000_000) throw new Error('Fiyat ayarı geçerli bir pozitif sayı olmalıdır.');
+        settingValue = String(numericValue);
+      }
+      return { key: settingKey, value: settingValue };
+    };
+
+    const updates: Array<{ key: string; value: string }> = [];
     
     if (key && value !== undefined) {
-      db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)').run(storeId, String(key), String(value));
+      const normalized = normalizeSetting(key, value);
+      if (!normalized) return res.status(400).json({ success: false, error: 'Bu ayar panel üzerinden değiştirilemez.' });
+      updates.push(normalized);
     }
     if (shippingFee !== undefined) {
-      db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, "shipping_fee", ?)').run(storeId, String(shippingFee));
+      updates.push(normalizeSetting('shipping_fee', shippingFee)!);
     }
     if (freeShippingThreshold !== undefined) {
-      db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, "free_shipping_threshold", ?)').run(storeId, String(freeShippingThreshold));
+      updates.push(normalizeSetting('free_shipping_threshold', freeShippingThreshold)!);
     }
-    if (settings && typeof settings === 'object') {
+    if (settings && typeof settings === 'object' && !Array.isArray(settings)) {
       for (const [k, v] of Object.entries(settings)) {
-        const settingKey = String(k);
-        let settingValue = String(v ?? '');
-        if (settingKey === 'bot_name') {
-          settingValue = settingValue.trim().slice(0, 40);
-          if (!settingValue) return res.status(400).json({ success: false, error: 'Yapay zeka asistan adı boş bırakılamaz.' });
-        } else if (settingKey === 'bot_tone') {
-          if (!['luxury', 'friendly', 'formal', 'patron'].includes(settingValue)) {
-            return res.status(400).json({ success: false, error: 'Geçersiz yapay zeka kişilik üslubu.' });
-          }
-        } else if (settingKey === 'bot_system_prompt') {
-          settingValue = settingValue.trim().slice(0, 4000);
-        }
-        db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)').run(storeId, settingKey, settingValue);
+        const normalized = normalizeSetting(k, v);
+        if (!normalized) return res.status(400).json({ success: false, error: `${String(k)} ayarı panel üzerinden değiştirilemez.` });
+        updates.push(normalized);
       }
     }
 
+    const saveSetting = db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)');
+    db.transaction(() => updates.forEach(update => saveSetting.run(storeId, update.key, update.value)))();
+
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'UPDATE_SETTINGS', 'settings', 'all');
-    res.json({ success: true, message: 'Ayarlar gÃƒÆ’Ã‚Â¼ncellendi.' });
+    res.json({ success: true, message: 'Ayarlar güncellendi.' });
   } catch (e: any) {
-    res.status(500).json({ success: false, error: e.message });
+    const status = /ayar|sayı|üslup|adı/i.test(String(e.message || '')) ? 400 : 500;
+    res.status(status).json({ success: false, error: e.message });
   }
 });
 
-app.get('/api/stores/webhook-info', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req: AuthenticatedRequest, res) => {
+app.get('/api/stores/webhook-info', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN']), (req: AuthenticatedRequest, res) => {
   try {
     const storeId = req.auth!.storeId;
     let store = db.prepare('SELECT id, name, slug, status, meta_page_id, instagram_account_id, instagram_username, last_webhook_at, webhook_verify_token FROM stores WHERE id = ?').get(storeId) as any;
 
     if (!store) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+      return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
     }
 
     if (!store.webhook_verify_token) {
@@ -647,7 +588,7 @@ app.get('/api/stores/webhook-info', AuthMiddleware.authenticate, AuthMiddleware.
       lastWebhookAt: store.last_webhook_at || null
     });
   } catch (e: any) {
-    return res.status(500).json({ success: false, error: e.message || 'Sunucu hatasÃƒâ€Ã‚Â±' });
+    return res.status(500).json({ success: false, error: e.message || 'Sunucu hatası' });
   }
 });
 
@@ -657,7 +598,7 @@ app.post('/api/stores/webhook-token/regenerate', AuthMiddleware.authenticate, Au
     const store = db.prepare('SELECT id, slug FROM stores WHERE id = ?').get(storeId) as any;
 
     if (!store) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+      return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
     }
 
     const newToken = `whsec_${store.slug}_` + crypto.randomBytes(12).toString('hex');
@@ -666,11 +607,11 @@ app.post('/api/stores/webhook-token/regenerate', AuthMiddleware.authenticate, Au
 
     return res.json({
       success: true,
-      message: 'Webhook verify token baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla yenilendi.',
+      message: 'Webhook verify token başarıyla yenilendi.',
       verifyToken: newToken
     });
   } catch (e: any) {
-    return res.status(500).json({ success: false, error: e.message || 'Token yenilenirken sunucu hatasÃƒâ€Ã‚Â± oluÃƒâ€¦Ã…Â¸tu.' });
+    return res.status(500).json({ success: false, error: e.message || 'Token yenilenirken sunucu hatası oluştu.' });
   }
 });
 
@@ -695,7 +636,7 @@ app.post('/api/rewards', AuthMiddleware.authenticate, AuthMiddleware.requireRole
     const storeId = req.auth!.storeId;
     const { senderId, rewardCode, discountPercent, minQualifyingAmount } = req.body;
     if (!senderId || !discountPercent) {
-      return res.status(400).json({ success: false, error: 'MÃƒÆ’Ã‚Â¼Ãƒâ€¦Ã…Â¸teri ID ve Ãƒâ€Ã‚Â°ndirim OranÃƒâ€Ã‚Â± zorunludur.' });
+      return res.status(400).json({ success: false, error: 'Müşteri ID ve İndirim Oranı zorunludur.' });
     }
 
     const sId = senderId.trim();
@@ -713,7 +654,7 @@ app.post('/api/rewards', AuthMiddleware.authenticate, AuthMiddleware.requireRole
     const rewardMessage = `🎉 Tebrikler! Instagram hesabınıza özel %${percent} VIP indirim tanımlandı.\n\n🎁 Ödül kodunuz: ${code}\n🛍️ Minimum kullanım tutarı: ${minAmt.toLocaleString('tr-TR')} TL\n\nBir sonraki uygun siparişinizde indirim hakkınızı kullanabilirsiniz. ✨`;
     const notificationSent = await FacebookService.sendMessage(sId, rewardMessage, storeId);
     if (!notificationSent) {
-      console.warn(`[VIP Reward] Ödül tanımlandı ancak Instagram DM gönderilemedi (Store: ${storeId}, Sender: ${sId}, Code: ${code}).`);
+      console.warn(`[VIP Reward] Ödül tanımlandı ancak Instagram DM gönderilemedi (Store: ${storeId}).`);
     }
     return res.json({
       success: true,
@@ -722,7 +663,7 @@ app.post('/api/rewards', AuthMiddleware.authenticate, AuthMiddleware.requireRole
         ? `Müşteri (${sId}) için %${percent} VIP indirim tanımlandı ve Instagram DM gönderildi.`
         : `Müşteri (${sId}) için %${percent} VIP indirim tanımlandı ancak Instagram DM gönderilemedi.`
     });
-    res.json({ success: true, message: `MÃƒÆ’Ã‚Â¼Ãƒâ€¦Ã…Â¸teri (${sId}) iÃƒÆ’Ã‚Â§in %${percent} VIP indirim tanÃƒâ€Ã‚Â±mlandÃƒâ€Ã‚Â±.` });
+    res.json({ success: true, message: `Müşteri (${sId}) için %${percent} VIP indirim tanımlandı.` });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -733,7 +674,7 @@ app.delete('/api/rewards/:id', AuthMiddleware.authenticate, AuthMiddleware.requi
     const storeId = req.auth!.storeId;
     db.prepare('DELETE FROM user_rewards WHERE store_id = ? AND id = ?').run(storeId, String(req.params.id));
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'DELETE_REWARD', 'user_rewards', String(req.params.id));
-    res.json({ success: true, message: 'VIP ÃƒÆ’Ã¢â‚¬â€œdÃƒÆ’Ã‚Â¼lÃƒÆ’Ã‚Â¼ silindi.' });
+    res.json({ success: true, message: 'VIP Ödülü silindi.' });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -745,14 +686,14 @@ app.post('/api/ai/admin-copilot', AuthMiddleware.authenticate, AuthMiddleware.re
     const storeId = req.auth!.storeId;
     const { prompt } = req.body;
     if (!prompt || !prompt.trim()) {
-      return res.status(400).json({ success: false, error: 'LÃƒÆ’Ã‚Â¼tfen bir yÃƒÆ’Ã‚Â¶netim komutu yazÃƒâ€Ã‚Â±nÃƒâ€Ã‚Â±z.' });
+      return res.status(400).json({ success: false, error: 'Lütfen bir yönetim komutu yazınız.' });
     }
 
     const reply = await AdminCopilotService.processAdminCommand(prompt.trim(), storeId);
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'ADMIN_COPILOT_CMD', 'ai', prompt.substring(0, 50));
     res.json({ success: true, reply });
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || 'Sunucu hatasÃƒâ€Ã‚Â±' });
+    res.status(500).json({ success: false, error: err.message || 'Sunucu hatası' });
   }
 });
 
@@ -761,7 +702,7 @@ app.post('/api/ai/create-product', AuthMiddleware.authenticate, AuthMiddleware.r
     const storeId = req.auth!.storeId;
     const { prompt } = req.body;
     if (!prompt || typeof prompt !== 'string' || prompt.trim() === '') {
-      return res.status(400).json({ success: false, error: 'LÃƒÆ’Ã‚Â¼tfen ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼n komut metni giriniz.' });
+      return res.status(400).json({ success: false, error: 'Lütfen ürün komut metni giriniz.' });
     }
 
     const result = await GeminiService.createProductFromPrompt(prompt.trim(), storeId);
@@ -769,15 +710,15 @@ app.post('/api/ai/create-product', AuthMiddleware.authenticate, AuthMiddleware.r
       AuthMiddleware.logAudit(storeId, req.auth!.userId, 'AI_CREATE_PRODUCT', 'products', result.products[0]?.productCode || '');
       res.json({
         success: true,
-        message: result.aiMessage || 'ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼n(ler) Gemini AI tarafÃƒâ€Ã‚Â±ndan baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla oluÃƒâ€¦Ã…Â¸turuldu ve kaydedildi.',
+        message: result.aiMessage || 'Ürün(ler) Gemini AI tarafından başarıyla oluşturuldu ve kaydedildi.',
         products: result.products,
         product: result.products[0]
       });
     } else {
-      res.status(500).json({ success: false, error: result.error || 'Gemini AI ile ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼n oluÃƒâ€¦Ã…Â¸turulamadÃƒâ€Ã‚Â±.' });
+      res.status(500).json({ success: false, error: result.error || 'Gemini AI ile ürün oluşturulamadı.' });
     }
   } catch (err: any) {
-    res.status(500).json({ success: false, error: err.message || 'Yapay zeka sunucu hatasÃƒâ€Ã‚Â±' });
+    res.status(500).json({ success: false, error: err.message || 'Yapay zeka sunucu hatası' });
   }
 });
 
@@ -802,11 +743,11 @@ app.post('/api/api-keys', AuthMiddleware.authenticate, AuthMiddleware.requireRol
 
     const normalizedPermissions = String(permissions || 'read_write');
     if (!['read', 'write', 'read_write'].includes(normalizedPermissions)) {
-      return res.status(400).json({ success: false, error: 'GeÃƒÆ’Ã‚Â§ersiz API key izni.' });
+      return res.status(400).json({ success: false, error: 'Geçersiz API key izni.' });
     }
     const expiresAtValue = expiresAt ? new Date(expiresAt) : null;
     if (expiresAt && (Number.isNaN(expiresAtValue!.getTime()) || expiresAtValue! <= new Date())) {
-      return res.status(400).json({ success: false, error: 'GeÃƒÆ’Ã‚Â§erli bir gelecek son kullanma tarihi girin.' });
+      return res.status(400).json({ success: false, error: 'Geçerli bir gelecek son kullanma tarihi girin.' });
     }
 
     const rawKey = `isc_live_${crypto.randomBytes(24).toString('hex')}`;
@@ -818,7 +759,7 @@ app.post('/api/api-keys', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     `).run(storeId, name.trim(), keyHash, normalizedPermissions, expiresAtValue?.toISOString() || null);
 
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'CREATE_API_KEY', 'api_keys', name);
-    res.json({ success: true, apiKey: rawKey, message: 'API Key oluÃƒâ€¦Ã…Â¸turuldu. AnahtarÃƒâ€Ã‚Â± gÃƒÆ’Ã‚Â¼venli yerde saklayÃƒâ€Ã‚Â±n.' });
+    res.json({ success: true, apiKey: rawKey, message: 'API Key oluşturuldu. Anahtarı güvenli yerde saklayın.' });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -828,7 +769,7 @@ app.delete('/api/api-keys/:id', AuthMiddleware.authenticate, AuthMiddleware.requ
   try {
     const storeId = req.auth!.storeId;
     const result = db.prepare('UPDATE api_keys SET revoked_at = CURRENT_TIMESTAMP WHERE store_id = ? AND id = ? AND revoked_at IS NULL').run(storeId, String(req.params.id));
-    if (result.changes === 0) return res.status(404).json({ success: false, error: 'Aktif API key bulunamadÃƒâ€Ã‚Â±.' });
+    if (result.changes === 0) return res.status(404).json({ success: false, error: 'Aktif API key bulunamadı.' });
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'REVOKE_API_KEY', 'api_keys', String(req.params.id));
     res.json({ success: true, message: 'API Key iptal edildi.' });
   } catch (e: any) {
@@ -882,16 +823,16 @@ app.post('/api/test-simulator/message', AuthMiddleware.authenticate, AuthMiddlew
 
     const storeIdNum = Number(targetStoreId);
     if (!storeIdNum || isNaN(storeIdNum) || storeIdNum <= 0) {
-      return res.status(400).json({ success: false, error: 'GeÃƒÆ’Ã‚Â§ersiz MaÃƒâ€Ã…Â¸aza ID.' });
+      return res.status(400).json({ success: false, error: 'Geçersiz Mağaza ID.' });
     }
 
     if (!verifyAdminStoreAccess(userId, userStoreId, storeIdNum)) {
-      return res.status(403).json({ success: false, error: 'Bu maÃƒâ€Ã…Â¸azayÃƒâ€Ã‚Â± test etme yetkiniz bulunmamaktadÃƒâ€Ã‚Â±r.' });
+      return res.status(403).json({ success: false, error: 'Bu mağazayı test etme yetkiniz bulunmamaktadır.' });
     }
 
     const store = db.prepare('SELECT id, name, slug, status FROM stores WHERE id = ?').get(storeIdNum) as any;
     if (!store) {
-      return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+      return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
     }
 
     const cleanUser = (externalUserId || 'test_user_001').trim();
@@ -927,7 +868,7 @@ app.post('/api/test-simulator/message', AuthMiddleware.authenticate, AuthMiddlew
       durationMs: totalDurationMs
     });
   } catch (e: any) {
-    res.status(500).json({ success: false, error: e.message || 'SimÃƒÆ’Ã‚Â¼latÃƒÆ’Ã‚Â¶r mesaj hatasÃƒâ€Ã‚Â±' });
+    res.status(500).json({ success: false, error: e.message || 'Simülatör mesaj hatası' });
   }
 });
 
@@ -939,11 +880,11 @@ app.get('/api/test-simulator/conversation', AuthMiddleware.authenticate, AuthMid
     const cleanUser = String(req.query.externalUserId || 'test_user_001').trim();
 
     if (!storeIdNum || isNaN(storeIdNum) || !verifyAdminStoreAccess(userId, userStoreId, storeIdNum)) {
-      return res.status(403).json({ success: false, error: 'Bu maÃƒâ€Ã…Â¸azanÃƒâ€Ã‚Â±n verilerine eriÃƒâ€¦Ã…Â¸im yetkiniz yok.' });
+      return res.status(403).json({ success: false, error: 'Bu mağazanın verilerine erişim yetkiniz yok.' });
     }
 
     const store = db.prepare('SELECT id, name, slug, status FROM stores WHERE id = ?').get(storeIdNum) as any;
-    if (!store) return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+    if (!store) return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
 
     const testExtUserId = `test:${cleanUser}`;
     const convId = AIService.getOrCreateConversation(storeIdNum, testExtUserId);
@@ -982,11 +923,11 @@ app.post('/api/test-simulator/reset', AuthMiddleware.authenticate, AuthMiddlewar
 
     const storeIdNum = Number(targetStoreId);
     if (!storeIdNum || isNaN(storeIdNum) || !verifyAdminStoreAccess(userId, userStoreId, storeIdNum)) {
-      return res.status(403).json({ success: false, error: 'Yetkisiz maÃƒâ€Ã…Â¸aza sÃƒâ€Ã‚Â±fÃƒâ€Ã‚Â±rlama isteÃƒâ€Ã…Â¸i.' });
+      return res.status(403).json({ success: false, error: 'Yetkisiz mağaza sıfırlama isteği.' });
     }
 
     const store = db.prepare('SELECT id, slug FROM stores WHERE id = ?').get(storeIdNum) as any;
-    if (!store) return res.status(404).json({ success: false, error: 'MaÃƒâ€Ã…Â¸aza bulunamadÃƒâ€Ã‚Â±.' });
+    if (!store) return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
 
     const cleanUser = String(externalUserId || 'test_user_001').trim();
     const act = action || 'all';
@@ -1003,7 +944,7 @@ app.post('/api/test-simulator/reset', AuthMiddleware.authenticate, AuthMiddlewar
 
     AuthMiddleware.logAudit(storeIdNum, userId, 'RESET_TEST_SIMULATOR', 'ai_simulator', `${cleanUser}:${act}`);
 
-    res.json({ success: true, message: `Test simÃƒÆ’Ã‚Â¼lasyon verileri (${act}) baÃƒâ€¦Ã…Â¸arÃƒâ€Ã‚Â±yla sÃƒâ€Ã‚Â±fÃƒâ€Ã‚Â±rlandÃƒâ€Ã‚Â±.` });
+    res.json({ success: true, message: `Test simülasyon verileri (${act}) başarıyla sıfırlandı.` });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -1023,19 +964,19 @@ app.post('/api/test-simulator/run-tests', AuthMiddleware.authenticate, AuthMiddl
     const st3 = db.prepare("SELECT id FROM stores WHERE id = 3").get();
 
     if (!st1 || !st3) {
-      return res.status(400).json({ success: false, error: 'Testlerin ÃƒÆ’Ã‚Â§alÃƒâ€Ã‚Â±Ãƒâ€¦Ã…Â¸abilmesi iÃƒÆ’Ã‚Â§in veritabanÃƒâ€Ã‚Â±nda Store #1 ve Store #3 tanÃƒâ€Ã‚Â±mlÃƒâ€Ã‚Â± olmalÃƒâ€Ã‚Â±dÃƒâ€Ã‚Â±r.' });
+      return res.status(400).json({ success: false, error: 'Testlerin çalışabilmesi için veritabanında Store #1 ve Store #3 tanımlı olmalıdır.' });
     }
 
     // Insert dummy test products if missing
     try {
-      db.prepare("INSERT OR REPLACE INTO products (store_id, short_code, product_code, name, color, size, price, stock) VALUES (1, 'SIM1', 'SIM-A-100', 'SimÃƒÆ’Ã‚Â¼latÃƒÆ’Ã‚Â¶r ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼nÃƒÆ’Ã‚Â¼ A', 'Siyah', 'M', 100.0, 50)").run();
+      db.prepare("INSERT OR REPLACE INTO products (store_id, short_code, product_code, name, color, size, price, stock) VALUES (1, 'SIM1', 'SIM-A-100', 'Simülatör Ürünü A', 'Siyah', 'M', 100.0, 50)").run();
       db.prepare("INSERT OR REPLACE INTO inventory (store_id, product_code, stock) VALUES (1, 'SIM-A-100', 50)").run();
       
-      db.prepare("INSERT OR REPLACE INTO products (store_id, short_code, product_code, name, color, size, price, stock) VALUES (3, 'SIM1', 'SIM-A-100', 'SimÃƒÆ’Ã‚Â¼latÃƒÆ’Ã‚Â¶r ÃƒÆ’Ã…â€œrÃƒÆ’Ã‚Â¼nÃƒÆ’Ã‚Â¼ B (Gamma)', 'KÃƒâ€Ã‚Â±rmÃƒâ€Ã‚Â±zÃƒâ€Ã‚Â±', 'M', 500.0, 99)").run();
+      db.prepare("INSERT OR REPLACE INTO products (store_id, short_code, product_code, name, color, size, price, stock) VALUES (3, 'SIM1', 'SIM-A-100', 'Simülatör Ürünü B (Gamma)', 'Kırmızı', 'M', 500.0, 99)").run();
       db.prepare("INSERT OR REPLACE INTO inventory (store_id, product_code, stock) VALUES (3, 'SIM-A-100', 99)").run();
 
-      db.prepare("INSERT OR REPLACE INTO campaigns (id, store_id, title, description, code, active) VALUES (901, 1, 'Store A ÃƒÆ’Ã¢â‚¬â€œzel Ãƒâ€Ã‚Â°ndirim', 'Store A KampanyasÃƒâ€Ã‚Â±', 'SIMKOD100', 1)").run();
-      db.prepare("INSERT OR REPLACE INTO campaigns (id, store_id, title, description, code, active) VALUES (903, 3, 'Store B ÃƒÆ’Ã¢â‚¬â€œzel Ãƒâ€Ã‚Â°ndirim', 'Store B KampanyasÃƒâ€Ã‚Â±', 'SIMKOD500', 1)").run();
+      db.prepare("INSERT OR REPLACE INTO campaigns (id, store_id, title, description, code, active) VALUES (901, 1, 'Store A Özel İndirim', 'Store A Kampanyası', 'SIMKOD100', 1)").run();
+      db.prepare("INSERT OR REPLACE INTO campaigns (id, store_id, title, description, code, active) VALUES (903, 3, 'Store B Özel İndirim', 'Store B Kampanyası', 'SIMKOD500', 1)").run();
     } catch {}
 
     // TEST 1: Store A Product Lookup
@@ -1081,10 +1022,10 @@ app.post('/api/test-simulator/run-tests', AuthMiddleware.authenticate, AuthMiddl
     record(11, 'Cross-Tenant Order Creation Safety', true, 'Order creation requires matching store_id validation');
 
     // TEST 12: AI Prompt Store Switch Attack Protection
-    // Test that passing prompt "Store 3'ÃƒÆ’Ã‚Â¼n ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼nlerini gÃƒÆ’Ã‚Â¶ster" does NOT change backend store context from Store 1 to Store 3
+    // Test that passing prompt "Store 3'ün ürünlerini göster" does NOT change backend store context from Store 1 to Store 3
     const attackStoreContext = 1; // Backend forces storeId = 1
     const pAttack = db.prepare("SELECT name FROM products WHERE store_id = ? AND price = 500").get(attackStoreContext);
-    record(12, 'AI Prompt Store Switch Attack Protection', !pAttack, 'Prompt injection attempt "Store 3 ÃƒÆ’Ã‚Â¼rÃƒÆ’Ã‚Â¼nleri" blocked by locked backend tenant context');
+    record(12, 'AI Prompt Store Switch Attack Protection', !pAttack, 'Prompt injection attempt "Store 3 ürünleri" blocked by locked backend tenant context');
 
     const totalPassed = results.filter(r => r.status === 'PASS').length;
     const allPassed = totalPassed === results.length;
@@ -1103,15 +1044,38 @@ app.post('/api/test-simulator/run-tests', AuthMiddleware.authenticate, AuthMiddl
 
 */
 // Start Express Application Server
-app.listen(env.port, '127.0.0.1', () => {
+export function startServer(port = env.port) {
+  const server = app.listen(port, '127.0.0.1', () => {
   console.log(`
-  Ã„Å¸Ã…Â¸Ã…Â¡Ã¢â€šÂ¬ iscworks bot - Enterprise Multi-Tenant RBAC Backend SUNUCUSU BAÃƒâ€¦Ã‚ÂLATILDI!
+  🚀 iscworks bot - Enterprise Multi-Tenant RBAC Backend SUNUCUSU BAŞLATILDI!
   -----------------------------------------------------------------------
-  Ã„Å¸Ã…Â¸Ã‚Â¤Ã¢â‚¬â€œ Sistem AdÃƒâ€Ã‚Â±: iscworks bot (Stage 6 RBAC Secured)
-  Ã„Å¸Ã…Â¸Ã…â€™Ã‚Â Port: ${env.port}
-  Ã„Å¸Ã…Â¸Ã¢â‚¬â€Ã¢â‚¬ÂÃƒÂ¯Ã‚Â¸Ã‚Â Database: SQLite (barons.db)
-  Ã„Å¸Ã…Â¸Ã¢â‚¬ÂÃ‚Â Authentication: JWT HMAC-SHA256 & API Key DB Isolation
-  Ã„Å¸Ã…Â¸Ã¢â‚¬Å“Ã…Â  Admin API: http://localhost:${env.port}/api/orders
+  🤖 Sistem Adı: iscworks bot (Stage 6 RBAC Secured)
+  🌐 Port: ${env.port}
+  🗄️ Database: SQLite (barons.db)
+  🔐 Authentication: JWT HMAC-SHA256 & API Key DB Isolation
+  ✅ Admin API: http://localhost:${env.port}/api/orders
   -----------------------------------------------------------------------
   `);
-});
+  });
+  return server;
+}
+
+export { app };
+
+if (require.main === module) {
+  const server = startServer();
+  let shuttingDown = false;
+  const shutdown = (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    console.log(`[Server] ${signal} alındı; bağlantılar güvenli biçimde kapatılıyor.`);
+    clearInterval(maintenanceTimer);
+    server.close(() => {
+      try { db.close(); } catch {}
+      process.exit(0);
+    });
+    setTimeout(() => process.exit(1), 10_000).unref();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
+}

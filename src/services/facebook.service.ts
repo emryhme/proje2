@@ -2,6 +2,7 @@ import axios from 'axios';
 import crypto from 'crypto';
 import { db } from '../database/db';
 import { env } from '../config/env';
+import { decryptSettingSecret } from '../utils/secret.util';
 
 /**
  * Facebook Graph API (Instagram DM / Messenger) Yanıt Gönderme Servisi (Store Scoped)
@@ -32,14 +33,14 @@ export class FacebookService {
     `).get(storeId) as any;
     const setting = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'facebook_page_access_token'").get(storeId) as any;
     const isInstagramLogin = Boolean(instagram?.instagram_account_id && instagram?.encrypted_token);
-    let accessToken = String(setting?.value || '').trim();
+    let accessToken = decryptSettingSecret(String(setting?.value || '')).trim();
     if (isInstagramLogin) {
       accessToken = this.decryptToken(String(instagram.encrypted_token));
     }
 
     if (!accessToken) {
       console.warn(`[FacebookService] ⚠️ FB Page Access Token eksik (Store: ${storeId || 'default'}), mesaj konsola yazdırılıyor:`);
-      console.log(`[FB Mock -> ${recipientId}]: ${text}`);
+      console.log('[FacebookService] Geliştirme modunda mesaj gönderimi simüle edildi.');
       return false;
     }
 
@@ -92,7 +93,7 @@ export class FacebookService {
     const isInstagramLogin = Boolean(instagram?.instagram_account_id && instagram?.encrypted_token);
     const accessToken = isInstagramLogin
       ? this.decryptToken(String(instagram.encrypted_token))
-      : String(pageSetting?.value || '').trim();
+      : decryptSettingSecret(String(pageSetting?.value || '')).trim();
 
     if (!instagram?.instagram_account_id || !accessToken) {
       console.warn(`[FacebookService] ⚠️ Instagram yorum yanıtı için hesap veya token eksik (Store: ${storeId}).`);
@@ -137,7 +138,7 @@ export class FacebookService {
     const isInstagramLogin = Boolean(instagram?.instagram_account_id && instagram?.encrypted_token);
     const accessToken = isInstagramLogin
       ? this.decryptToken(String(instagram.encrypted_token))
-      : String(pageSetting?.value || '').trim();
+      : decryptSettingSecret(String(pageSetting?.value || '')).trim();
     if (!accessToken) return null;
 
     try {

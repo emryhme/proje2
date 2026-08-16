@@ -388,7 +388,7 @@ export class OrderService {
               const approvalMessage = `Sayın ${customerName},\n\n🎉 ${targetOrderId} numaralı siparişiniz onaylandı!\n\n📦 Ürün: ${productName}${size ? ` (${size} beden)` : ''}\n🔢 Adet: ${qty}\n\nSiparişiniz hazırlanarak kargo sürecine alınacaktır. Bizi tercih ettiğiniz için teşekkür ederiz. ✨`;
               const notificationSent = await FacebookService.sendMessage(senderId, approvalMessage, storeId);
               if (!notificationSent) {
-                console.warn(`[OrderService] Sipariş onaylandı ancak Instagram DM gönderilemedi (Store: ${storeId}, Order: ${targetOrderId}, Sender: ${senderId}).`);
+                console.warn(`[OrderService] Sipariş onaylandı ancak Instagram DM gönderilemedi (Store: ${storeId}, Order: ${targetOrderId}).`);
               }
             } else {
               console.warn(`[OrderService] Sipariş onaylandı ancak sender_id boş olduğu için Instagram DM gönderilemedi (Store: ${storeId}, Order: ${targetOrderId}).`);

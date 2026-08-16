@@ -2,11 +2,26 @@ import { Router } from 'express';
 import { db, hashPassword, needsPasswordRehash, verifyPassword } from '../database/db';
 import { AuthMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { EmailVerificationService } from '../services/email-verification.service';
+import { clearSessionCookie, createRateLimiter, sessionCookie, setSessionCookie } from '../middleware/security.middleware';
 
 const router = Router();
 const STRONG_PASSWORD_PATTERN = /^(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9]).{8,}$/;
+const registerLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: 5, message: 'Çok fazla kayıt denemesi yapıldı. Lütfen daha sonra tekrar deneyin.' });
+const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 8, message: 'Çok fazla giriş denemesi yapıldı. Lütfen 15 dakika sonra tekrar deneyin.' });
+const verificationLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 10, message: 'Çok fazla doğrulama denemesi yapıldı. Lütfen daha sonra tekrar deneyin.' });
+const resendLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 3, message: 'Çok fazla kod gönderim isteği yapıldı. Lütfen daha sonra tekrar deneyin.' });
 
-router.post('/api/auth/register', async (req, res) => {
+function uniqueStoreSlug(storeName: string): string {
+  const base = storeName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'magaza';
+  if (!db.prepare('SELECT 1 FROM stores WHERE slug = ?').get(base)) return base;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = `${base}-${Math.floor(1000 + Math.random() * 9000)}`;
+    if (!db.prepare('SELECT 1 FROM stores WHERE slug = ?').get(candidate)) return candidate;
+  }
+  return `${base}-${Date.now()}`;
+}
+
+router.post('/api/auth/register', registerLimiter, async (req, res) => {
   try {
     const { fullName, phone, email, storeName, plan, password } = req.body || {};
     if (!fullName || !phone || !email || !storeName || !password) {
@@ -18,11 +33,11 @@ router.post('/api/auth/register', async (req, res) => {
 
     const cleanEmail = String(email).trim().toLowerCase();
     const cleanStoreName = String(storeName).trim();
-    const storeSlug = cleanStoreName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || `store-${Date.now()}`;
+    const storeSlug = uniqueStoreSlug(cleanStoreName);
     const existingUser = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(cleanEmail);
     if (existingUser) return res.status(400).json({ success: false, error: 'Bu e-posta adresi ile zaten bir hesap veya başvuru mevcuttur.' });
 
-    const hashedPassword = hashPassword(String(password).trim());
+    const hashedPassword = hashPassword(String(password));
     let resultUser: any = null;
     let resultStore: any = null;
     db.transaction(() => {
@@ -60,7 +75,7 @@ router.post('/api/auth/register', async (req, res) => {
   }
 });
 
-router.post('/api/auth/verify-email', (req, res) => {
+router.post('/api/auth/verify-email', verificationLimiter, (req, res) => {
   const email = String(req.body?.email || '');
   const code = String(req.body?.code || '');
   const result = EmailVerificationService.consumeCode(email, code);
@@ -73,7 +88,7 @@ router.post('/api/auth/verify-email', (req, res) => {
   return res.json({ success: true, message: 'E-posta adresiniz doğrulandı. Başvurunuz süper admin onayına gönderildi.' });
 });
 
-router.post('/api/auth/resend-verification', async (req, res) => {
+router.post('/api/auth/resend-verification', resendLimiter, async (req, res) => {
   const cleanEmail = String(req.body?.email || '').trim().toLowerCase();
   const genericResponse = { success: true, message: 'Hesap doğrulama bekliyorsa yeni bağlantı e-posta adresine gönderildi.' };
   if (!cleanEmail) return res.status(400).json({ success: false, error: 'E-posta adresi zorunludur.' });
@@ -89,13 +104,13 @@ router.post('/api/auth/resend-verification', async (req, res) => {
   }
 });
 
-router.post('/api/auth/login', (req, res) => {
+router.post('/api/auth/login', loginLimiter, (req, res) => {
   const { username, email, password } = req.body || {};
   const cleanEmail = (email || username || '').trim().toLowerCase();
-  const cleanPass = (password || '').trim();
+  const cleanPass = typeof password === 'string' ? password : '';
   if (!cleanEmail || !cleanPass) return res.status(400).json({ success: false, error: 'E-posta ve şifre zorunludur.' });
 
-  const user = db.prepare('SELECT id, full_name, email, password_hash, status, email_verified_at FROM users WHERE LOWER(email) = ?').get(cleanEmail) as any;
+  const user = db.prepare('SELECT id, full_name, email, password_hash, status, email_verified_at, session_version FROM users WHERE LOWER(email) = ?').get(cleanEmail) as any;
   if (!user || !verifyPassword(cleanPass, user.password_hash)) return res.status(401).json({ success: false, error: 'Geçersiz e-posta veya şifre.' });
   if (needsPasswordRehash(user.password_hash)) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(cleanPass), user.id);
   if (!user.email_verified_at && user.id !== 1) return res.status(403).json({ success: false, code: 'EMAIL_NOT_VERIFIED', error: 'Giriş yapmadan önce e-posta adresinizi doğrulayın.' });
@@ -106,9 +121,19 @@ router.post('/api/auth/login', (req, res) => {
   if (!memberships.length) return res.status(403).json({ success: false, error: 'Aktif ve onaylanmış bir mağaza üyeliğiniz bulunmamaktadır.' });
   const reqStoreId = Number(req.body?.storeId);
   const activeMem = (reqStoreId && memberships.find(m => m.store_id === reqStoreId)) || memberships[0];
-  const token = AuthMiddleware.generateToken({ userId: user.id, storeId: activeMem.store_id, role: activeMem.role, email: user.email });
+  const token = AuthMiddleware.generateToken({ userId: user.id, storeId: activeMem.store_id, role: activeMem.role, email: user.email, sessionVersion: user.session_version });
+  setSessionCookie(res, token);
   AuthMiddleware.logAudit(activeMem.store_id, user.id, 'LOGIN', 'users', String(user.id), '', user.email);
   return res.json({ success: true, token, user: { id:user.id, email:user.email, name:user.full_name, storeId:activeMem.store_id, storeName:activeMem.store_name, storeSlug:activeMem.store_slug, role:activeMem.role } });
+});
+
+router.post('/api/auth/logout', (req, res) => {
+  const authorization = String(req.headers.authorization || '');
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7).trim() : sessionCookie(req);
+  const payload = AuthMiddleware.verifyToken(token);
+  if (payload?.userId) db.prepare('UPDATE users SET session_version = session_version + 1 WHERE id = ?').run(payload.userId);
+  clearSessionCookie(res);
+  return res.json({ success: true });
 });
 
 router.get('/api/auth/verify', AuthMiddleware.authenticate, (req: AuthenticatedRequest, res) => res.json({ success: true, valid: true, user: req.auth }));

@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
 import { env } from '../config/env';
 import { db } from '../database/db';
+import { sessionCookie } from './security.middleware';
 
 export interface AuthContext {
   userId: number;
@@ -23,13 +24,14 @@ export class AuthMiddleware {
   /**
    * Generates signed JWT Token
    */
-  public static generateToken(payload: { userId: number; storeId: number; role: string; email: string }): string {
+  public static generateToken(payload: { userId: number; storeId: number; role: string; email: string; sessionVersion?: number }): string {
     const secret = env.jwtSecret;
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const body = Buffer.from(JSON.stringify({
       ...payload,
+      sessionVersion: Number(payload.sessionVersion || 0),
       iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + (86400 * 30) // 30 Days
+      exp: Math.floor(Date.now() / 1000) + (3600 * env.sessionTtlHours)
     })).toString('base64url');
 
     const signature = crypto.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url');
@@ -39,7 +41,7 @@ export class AuthMiddleware {
   /**
    * Verifies JWT Token Signature and Claims
    */
-  public static verifyToken(token: string): { userId: number; storeId: number; role: string; email: string } | null {
+  public static verifyToken(token: string): { userId: number; storeId: number; role: string; email: string; sessionVersion: number } | null {
     if (!token) return null;
     const parts = token.split('.');
     if (parts.length !== 3) return null;
@@ -48,19 +50,23 @@ export class AuthMiddleware {
     const secret = env.jwtSecret;
     const expectedSig = crypto.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url');
 
-    if (signature !== expectedSig) return null;
+    const suppliedSignature = Buffer.from(signature, 'base64url');
+    const expectedSignature = Buffer.from(expectedSig, 'base64url');
+    if (suppliedSignature.length !== expectedSignature.length || !crypto.timingSafeEqual(suppliedSignature, expectedSignature)) return null;
 
     try {
+      const parsedHeader = JSON.parse(Buffer.from(header, 'base64url').toString('utf8'));
+      if (parsedHeader?.alg !== 'HS256' || parsedHeader?.typ !== 'JWT') return null;
       const payload = JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));
-      if (payload.exp && payload.exp < Math.floor(Date.now() / 1000)) {
-        return null; // Expired
-      }
+      const now = Math.floor(Date.now() / 1000);
+      if (!Number.isInteger(payload.iat) || !Number.isInteger(payload.exp) || payload.exp <= now || payload.iat > now + 60) return null;
       if (!payload.userId || !payload.storeId) return null;
       return {
         userId: Number(payload.userId),
         storeId: Number(payload.storeId),
         role: payload.role || 'STAFF',
-        email: payload.email || ''
+        email: payload.email || '',
+        sessionVersion: Number(payload.sessionVersion || 0)
       };
     } catch {
       return null;
@@ -78,6 +84,8 @@ export class AuthMiddleware {
       token = authHeader.substring(7).trim();
     } else if (req.headers['x-access-token']) {
       token = String(req.headers['x-access-token']).trim();
+    } else {
+      token = sessionCookie(req);
     }
 
     // API Key Authentication Support
@@ -111,7 +119,7 @@ export class AuthMiddleware {
       req.auth = {
         userId: 0,
         storeId: apiKeyRecord.store_id,
-        role: 'STAFF',
+        role: permission === 'read' ? 'STAFF' : 'MANAGER',
         email: `api_key:${apiKeyRecord.name}`,
         tokenType: 'api_key'
       };
@@ -137,9 +145,12 @@ export class AuthMiddleware {
 
     // Database verification: Validate active Membership & active Store
     const membershipRecord = db.prepare(`
-      SELECT m.role, m.status as membership_status, s.status as store_status, s.slug as store_slug
+      SELECT m.role, m.status as membership_status, s.status as store_status, s.slug as store_slug,
+             u.status as user_status, u.session_version, u.email as user_email, ss.ends_at as plan_ends_at
       FROM memberships m
       JOIN stores s ON s.id = m.store_id
+      JOIN users u ON u.id = m.user_id
+      LEFT JOIN store_subscriptions ss ON ss.store_id = s.id
       WHERE m.user_id = ? AND m.store_id = ?
     `).get(authPayload.userId, authPayload.storeId) as any;
 
@@ -151,10 +162,27 @@ export class AuthMiddleware {
       return;
     }
 
-    if (membershipRecord.membership_status !== 'active' || membershipRecord.store_status !== 'active') {
+    if (membershipRecord.user_status !== 'active' || membershipRecord.membership_status !== 'active' || membershipRecord.store_status !== 'active') {
       res.status(403).json({
         success: false,
         error: { code: 'FORBIDDEN', message: 'Mağaza üyeliğiniz veya mağaza pasif durumdadır.' }
+      });
+      return;
+    }
+    if (Number(membershipRecord.session_version || 0) !== authPayload.sessionVersion) {
+      res.status(401).json({ success: false, error: { code: 'SESSION_REVOKED', message: 'Oturumunuz sonlandırılmış. Lütfen yeniden giriş yapın.' } });
+      return;
+    }
+
+    const planExpired = authPayload.storeId !== 1
+      && membershipRecord.plan_ends_at
+      && String(membershipRecord.plan_ends_at).slice(0, 10) < new Date().toISOString().slice(0, 10);
+    const expiredPlanAllowed = ['GET', 'HEAD', 'OPTIONS'].includes(req.method)
+      || (req.method === 'POST' && req.path === '/api/plan/support-requests');
+    if (planExpired && !expiredPlanAllowed) {
+      res.status(402).json({
+        success: false,
+        error: { code: 'PLAN_EXPIRED', message: 'Plan süreniz dolduğu için panel salt okunur durumda. Plan Yönetimi bölümünden destek talebi açabilirsiniz.' }
       });
       return;
     }
@@ -163,7 +191,7 @@ export class AuthMiddleware {
       userId: authPayload.userId,
       storeId: authPayload.storeId,
       role: (membershipRecord.role || authPayload.role) as any,
-      email: authPayload.email,
+      email: membershipRecord.user_email,
       storeSlug: membershipRecord.store_slug,
       tokenType: 'jwt'
     };
@@ -229,7 +257,7 @@ export class AuthMiddleware {
    */
   public static cors(req: Request, res: Response, next: NextFunction): void {
     const origin = req.headers.origin;
-    const allowedOrigins = env.corsOrigins === '*' ? '*' : env.corsOrigins.split(',');
+    const allowedOrigins = env.corsOrigins === '*' ? '*' : env.corsOrigins.split(',').map(value => value.trim()).filter(Boolean);
 
     if (allowedOrigins === '*' || (origin && allowedOrigins.includes(origin))) {
       res.setHeader('Access-Control-Allow-Origin', origin || '*');

@@ -1,6 +1,7 @@
 import axios from 'axios';
 import { db } from '../database/db';
 import { SavedOrder } from './order.service';
+import { decryptSettingSecret } from '../utils/secret.util';
 
 /**
  * Telegram Bildirim Servisi (İşletme Sahibi & Müşteri Bildirimleri)
@@ -15,7 +16,7 @@ export class TelegramService {
       SELECT key, value FROM settings
       WHERE store_id = ? AND key IN ('telegram_bot_token', 'telegram_chat_id')
     `).all(storeId) as Array<{ key: string; value: string }>;
-    const values = new Map(rows.map((row) => [row.key, row.value?.trim()]));
+    const values = new Map(rows.map((row) => [row.key, decryptSettingSecret(String(row.value || '')).trim()]));
     const botToken = values.get('telegram_bot_token') || '';
     const chatId = values.get('telegram_chat_id') || '';
     return botToken && chatId ? { botToken, chatId } : null;
@@ -79,9 +80,7 @@ Sayın <b>${this.escapeHtml(order.customerName)}</b>,
 Siparişiniz kargo birimine sevk edilmiş olup en kısa sürede adresinize teslim edilecektir. BARON'S SILLAGE'i tercih ettiğiniz için teşekkür ederiz! ✨
     `.trim();
 
-    console.log(`[Customer Notification] 📩 Müşteriye Sipariş Onay Mesajı Yollandı (${order.customerName} - ${order.customerPhone}):`);
-    console.log(messageHtml);
-
+    console.log('[Customer Notification] Müşteri sipariş onay bildirimi gönderildi.');
     const credentials = this.getStoreCredentials(storeId);
     if (credentials) {
       try {

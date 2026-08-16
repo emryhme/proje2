@@ -114,7 +114,7 @@ export class WebhookController {
     const token = String(req.query['hub.verify_token'] || '');
     const challenge = req.query['hub.challenge'];
 
-    console.log(`[WebhookController] 🔍 Webhook Doğrulama İsteği Geldi: mode=${mode}, token=${token}`);
+    console.log(`[WebhookController] 🔍 Webhook doğrulama isteği geldi: mode=${mode}, tokenPresent=${Boolean(token)}`);
     const expectedToken = env.fbVerifyToken;
 
     if (mode === 'subscribe' && token === expectedToken) {
@@ -136,7 +136,7 @@ export class WebhookController {
     const token = String(req.query['hub.verify_token'] || '');
     const challenge = req.query['hub.challenge'];
 
-    console.log(`[WebhookController] 🔍 Store Webhook Doğrulama İsteği (${storeSlug}): mode=${mode}, token=${token}`);
+    console.log(`[WebhookController] 🔍 Store webhook doğrulama isteği (${storeSlug}): mode=${mode}, tokenPresent=${Boolean(token)}`);
 
     const store = WebhookController.resolveStore(storeSlug);
     if (!store) {
@@ -226,7 +226,7 @@ export class WebhookController {
         }
 
         if (incomingText.trim()) {
-          console.log(`[Store Webhook: ${store.slug} (ID: ${store.id})] 🚀 DM Mesajı İşleniyor (${senderId}): "${incomingText}"`);
+          console.log(`[Store Webhook: ${store.slug} (ID: ${store.id})] DM mesajı işleniyor.`);
           WebhookController.processAndReply(senderId, incomingText, store.slug, store.id);
         }
       }
@@ -262,7 +262,7 @@ export class WebhookController {
 
         const incomingText = typeof message === 'string' ? message : message?.text || '';
         if (incomingText.trim()) {
-          console.log(`[Store Webhook Changes: ${store.slug} (ID: ${store.id})] 🚀 Mesaj İşleniyor (${senderId}): "${incomingText}"`);
+          console.log(`[Store Webhook Changes: ${store.slug} (ID: ${store.id})] Mesaj işleniyor.`);
           WebhookController.processAndReply(senderId, incomingText, store.slug, store.id);
         }
       }
@@ -340,7 +340,7 @@ export class WebhookController {
         }
 
         if (incomingText.trim()) {
-          console.log(`[Global Webhook -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] 🚀 DM Mesajı İşleniyor (${senderId}): "${incomingText}"`);
+          console.log(`[Global Webhook -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] DM mesajı işleniyor.`);
           WebhookController.processAndReply(senderId, incomingText, matchedStore.slug, matchedStore.id);
         }
       }
@@ -376,7 +376,7 @@ export class WebhookController {
 
         const incomingText = typeof message === 'string' ? message : message?.text || '';
         if (incomingText.trim()) {
-          console.log(`[Global Webhook Changes -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] 🚀 Mesaj İşleniyor (${senderId}): "${incomingText}"`);
+          console.log(`[Global Webhook Changes -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] Mesaj işleniyor.`);
           WebhookController.processAndReply(senderId, incomingText, matchedStore.slug, matchedStore.id);
         }
       }
@@ -395,11 +395,11 @@ export class WebhookController {
       AIService.persistMessage(conversationId, 'assistant', reply);
 
       for (const trace of toolTraces) {
-        console.log(`[AI Tool] Store=${storeId} Sender=${senderId} Tool=${trace.toolName} Status=${trace.status} Args=${JSON.stringify(trace.args)} Result=${String(trace.result).slice(0, 500)}`);
+        console.log(`[AI Tool] Store=${storeId} Tool=${trace.toolName} Status=${trace.status}`);
       }
       await FacebookService.sendMessage(senderId, reply, storeId);
     } catch (error: any) {
-      console.error(`[WebhookController] ❌ Mesaj işleme hatası (Store: ${storeSlug}/${storeId}, Sender: ${senderId}):`, error?.message || error);
+      console.error(`[WebhookController] Mesaj işleme hatası (Store: ${storeSlug}/${storeId}):`, error?.message || error);
     }
   }
 
