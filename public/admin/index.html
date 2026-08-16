@@ -28,7 +28,12 @@
 
     <a href="index.html" class="nav-item active">
         <i data-lucide="layout-dashboard"></i>
-        Dashboard &amp; Stok
+        Dashboard
+    </a>
+
+    <a href="stock.html" class="nav-item">
+        <i data-lucide="package-search"></i>
+        Stok Yönetimi
     </a>
 
     <a href="orders.html" class="nav-item">
@@ -93,11 +98,7 @@
                 <i data-lucide="menu"></i>
             </button>
 
-            <div class="search">
-                <i data-lucide="search" size="15"></i>
-                <input type="text" id="searchInput" placeholder="Ürün kodu, ismi, rengi veya sipariş no ara...">
-                <span style="font-size:9px;color:#9ca3af">⌘ K</span>
-            </div>
+            <div style="font-size:12px;font-weight:700;color:#9ca3af">GENEL BAKIŞ</div>
         </div>
 
         <div class="top-actions">
@@ -135,15 +136,15 @@
 
         <div class="page-header">
             <div class="page-title">
-                <h1>Mağaza &amp; Stok Dashboard</h1>
-                <p>SQLite veritabanıyla canlı senkronize çalışan yönetim konsolu.</p>
+                <h1>Mağaza Dashboard</h1>
+                <p>Satış, sipariş ve mağaza performansınızı tek ekrandan izleyin.</p>
             </div>
 
             <div class="header-actions">
-                <button class="btn btn-primary" id="btnSaveAllPricesAndStocks" onclick="saveAllPricesAndStocks()">
-                    <i data-lucide="save" size="14"></i>
-                    Değişiklikleri Toplu Kaydet
-                </button>
+                <a href="stock.html" class="btn btn-secondary">
+                    <i data-lucide="package-search" size="14"></i>
+                    Stok Yönetimine Git
+                </a>
 
                 <a href="ai-product.html" class="btn btn-primary">
                     <i data-lucide="sparkles" size="14"></i>
@@ -240,51 +241,13 @@
             </div>
         </div>
 
-        <!-- LIVE STOCKS TABLE -->
-        <div class="card table-card">
-            <div class="table-header">
-                <div>
-                    <div class="table-title">Stok &amp; Ürün Listesi (Canlı Düzenlenebilir)</div>
-                    <span style="font-size:10px;color:#6b7280;" id="productsTableCount">0 ürün listelendi</span>
-                </div>
-                <button class="btn btn-primary btn-sm" onclick="saveAllPricesAndStocks()">
-                    <i data-lucide="save" size="13"></i> Toplu Kaydet
-                </button>
-            </div>
-
-            <div class="table-responsive">
-                <table id="productsTable">
-                    <thead>
-                        <tr>
-                            <th>KISA KOD</th>
-                            <th>ÜRÜN KODU</th>
-                            <th>ÜRÜN İSMİ</th>
-                            <th>RENK</th>
-                            <th>NUMARA</th>
-                            <th>STOK</th>
-                            <th>FİYAT (TL)</th>
-                            <th>KATEGORİ</th>
-                            <th>İŞLEM</th>
-                        </tr>
-                    </thead>
-                    <tbody id="productsTableBody">
-                        <tr>
-                            <td colspan="9" style="text-align:center;padding:40px;color:#6b7280;">
-                                Stok verileri SQLite ile senkronize ediliyor...
-                            </td>
-                        </tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
     </section>
 </main>
 </div>
 
 <div class="toast-container" id="toastContainer"></div>
 
-<script src="app.js?v=20260814-owner-label"></script>
+<script src="app.js?v=20260817-dashboard-stock-split"></script>
 <script>
   function toggleSidebar(){
     document.getElementById("sidebar").classList.toggle("open");

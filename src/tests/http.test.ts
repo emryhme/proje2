@@ -38,6 +38,21 @@ async function run(): Promise<void> {
     const health = await fetch(`${origin}/healthz`);
     assert(health.ok && health.headers.get('x-content-type-options') === 'nosniff', 'Health endpoint and security headers are active');
 
+    const [dashboardPage, stockPage] = await Promise.all([
+      fetch(`${origin}/admin/index.html`),
+      fetch(`${origin}/admin/stock.html`)
+    ]);
+    const dashboardHtml = await dashboardPage.text();
+    const stockHtml = await stockPage.text();
+    assert(
+      dashboardPage.ok
+        && stockPage.ok
+        && !dashboardHtml.includes('id="productsTableBody"')
+        && stockHtml.includes('id="productsTableBody"')
+        && stockHtml.includes('Stok Yönetimi'),
+      'Dashboard analytics and editable stock management are served as separate pages'
+    );
+
     const login = await fetch(`${origin}/api/auth/login`, {
       method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ email, password })
     });

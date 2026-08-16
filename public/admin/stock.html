@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+  <title>Stok Yönetimi — ISCWORKS</title>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="logo"><div class="logo-mark"><i data-lucide="crown" size="20"></i></div>ISCWORKS<span> Admin</span></a>
+    <div class="section-title">ANA MENÜ</div>
+    <a href="index.html" class="nav-item"><i data-lucide="layout-dashboard"></i>Dashboard</a>
+    <a href="stock.html" class="nav-item active"><i data-lucide="package-search"></i>Stok Yönetimi</a>
+    <a href="orders.html" class="nav-item"><i data-lucide="shopping-cart"></i>Siparişler<span class="nav-badge" id="ordersBadgeCount">0</span></a>
+    <a href="new-product.html" class="nav-item"><i data-lucide="package-plus"></i>Yeni Ürün Girişi</a>
+    <a href="campaigns.html" class="nav-item"><i data-lucide="badge-percent"></i>Kampanyalar</a>
+    <a href="rewards.html" class="nav-item"><i data-lucide="gift"></i>VIP Ödüller</a>
+    <div class="section-title">AI &amp; YÖNETİM</div>
+    <a href="ai-product.html" class="nav-item"><i data-lucide="sparkles"></i>S.E.T.T AI Copilot</a>
+    <a href="settings.html" class="nav-item"><i data-lucide="settings"></i>Fiyat &amp; Kargo Ayarları</a>
+    <div class="section-title">SİSTEM</div>
+    <a href="api-settings.html" class="nav-item"><i data-lucide="sliders"></i>API &amp; AI Kişiselleştirme</a>
+    <div class="sidebar-bottom"><div class="store-card"><div class="store-avatar">IS</div><div class="store-info"><strong>ISCWORKS</strong><small>Admin Kontrol Paneli</small></div></div></div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="icon-button mobile-menu" onclick="toggleSidebar()"><i data-lucide="menu"></i></button>
+        <div class="search"><i data-lucide="search" size="15"></i><input type="text" id="searchInput" placeholder="Ürün kodu, ismi, rengi veya kategori ara..."></div>
+      </div>
+      <div class="top-actions">
+        <div class="sync-badge" id="syncStatusBadge" style="margin-right:8px"><span class="pulse-dot"></span><span>Instagram Bağlantısı Kontrol Ediliyor...</span></div>
+        <button class="icon-button" id="btnToggleSound" title="Bildirim Seslerini Aç/Kapat"><i data-lucide="bell" size="17"></i><span class="notification-dot"></span></button>
+        <button class="icon-button" id="btnRefreshData" title="Stokları Yenile"><i data-lucide="refresh-cw" size="17"></i></button>
+        <button class="icon-button" id="btnOpenSystemSettings" title="API & AI Kişiselleştirme Ayarları" onclick="openSystemSettingsModal()"><i data-lucide="sliders" size="17"></i></button>
+        <div class="user" id="userProfileTrigger"><div class="avatar">KU</div><div class="user-text"><strong>Yükleniyor...</strong><span>Mağaza kullanıcısı</span></div><i data-lucide="chevron-down" size="13"></i></div>
+      </div>
+    </header>
+
+    <section class="content">
+      <div class="page-header">
+        <div class="page-title"><h1>Stok Yönetimi</h1><p>Ürünlerin stok ve fiyat bilgilerini canlı olarak yönetin.</p></div>
+        <div class="header-actions">
+          <a href="data-sources.html" class="btn btn-secondary"><i data-lucide="file-input" size="14"></i>Veri İçe Aktar</a>
+          <a href="new-product.html" class="btn btn-secondary"><i data-lucide="package-plus" size="14"></i>Yeni Ürün</a>
+          <button class="btn btn-primary" id="btnSaveAllPricesAndStocks" onclick="saveAllPricesAndStocks()"><i data-lucide="save" size="14"></i>Değişiklikleri Toplu Kaydet</button>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="card kpi"><div class="kpi-top"><span class="kpi-label">TOPLAM ÜRÜN KODU</span><div class="kpi-icon orange"><i data-lucide="boxes" size="16"></i></div></div><div class="kpi-value" id="statTotalProducts">--</div><div class="kpi-bottom"><span class="up">Canlı</span><span class="muted">ürün çeşidi</span></div></div>
+        <div class="card kpi"><div class="kpi-top"><span class="kpi-label">TOPLAM STOK ADEDİ</span><div class="kpi-icon blue"><i data-lucide="package" size="16"></i></div></div><div class="kpi-value" id="statTotalStock">--</div><div class="kpi-bottom"><span class="up">Anlık</span><span class="muted">depo miktarı</span></div></div>
+        <div class="card kpi"><div class="kpi-top"><span class="kpi-label">KRİTİK STOK</span><div class="kpi-icon orange"><i data-lucide="triangle-alert" size="16"></i></div></div><div class="kpi-value" id="statLowStock">--</div><div class="kpi-bottom"><span class="muted">1–5 adet kalan ürün</span></div></div>
+        <div class="card kpi"><div class="kpi-top"><span class="kpi-label">TÜKENEN ÜRÜN</span><div class="kpi-icon purple"><i data-lucide="package-x" size="16"></i></div></div><div class="kpi-value" id="statOutOfStock">--</div><div class="kpi-bottom"><span class="muted">stok adedi sıfır olan</span></div></div>
+      </div>
+
+      <div class="card table-card">
+        <div class="table-header">
+          <div><div class="table-title">Stok &amp; Ürün Listesi</div><span style="font-size:10px;color:#6b7280" id="productsTableCount">0 ürün listelendi</span></div>
+          <button class="btn btn-primary btn-sm" onclick="saveAllPricesAndStocks()"><i data-lucide="save" size="13"></i>Toplu Kaydet</button>
+        </div>
+        <div class="table-responsive">
+          <table id="productsTable">
+            <thead><tr><th>KISA KOD</th><th>ÜRÜN KODU</th><th>ÜRÜN İSMİ</th><th>RENK</th><th>NUMARA</th><th>STOK</th><th>FİYAT (TL)</th><th>KATEGORİ</th><th>İŞLEM</th></tr></thead>
+            <tbody id="productsTableBody"><tr><td colspan="9" style="text-align:center;padding:40px;color:#6b7280">Stok verileri SQLite ile senkronize ediliyor...</td></tr></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+<div class="toast-container" id="toastContainer"></div>
+<script src="app.js?v=20260817-dashboard-stock-split"></script>
+<script>function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}lucide.createIcons();</script>
+</body>
+</html>

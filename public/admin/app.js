@@ -209,6 +209,24 @@ function ensurePlanNavigation() {
   apiSettingsLink.before(link);
 }
 
+function ensureDashboardStockNavigation() {
+  const dashboardLink = document.querySelector('.nav-item[href="index.html"]');
+  if (!dashboardLink) return;
+
+  dashboardLink.innerHTML = '<i data-lucide="layout-dashboard"></i>Dashboard';
+  dashboardLink.classList.toggle('active', window.location.pathname.endsWith('/index.html') || window.location.pathname.endsWith('/admin/'));
+
+  let stockLink = document.querySelector('.nav-item[href="stock.html"]');
+  if (!stockLink) {
+    stockLink = document.createElement('a');
+    stockLink.href = 'stock.html';
+    stockLink.className = 'nav-item';
+    stockLink.innerHTML = '<i data-lucide="package-search"></i>Stok Yönetimi';
+    dashboardLink.after(stockLink);
+  }
+  stockLink.classList.toggle('active', window.location.pathname.endsWith('/stock.html'));
+}
+
 function ensureDataSourcesNavigation() {
   if (document.querySelector('.nav-item[href="data-sources.html"]')) return;
   const apiSettingsLink = document.querySelector('.nav-item[href="api-settings.html"]');
@@ -360,6 +378,7 @@ function setupUserDropdown() {
 // Initialize Application Robustly (Supports readyState interactive & complete)
 function initApp() {
   checkAuthStatus();
+  ensureDashboardStockNavigation();
   ensurePlanNavigation();
   ensureDataSourcesNavigation();
   setupThemeToggle();
@@ -667,15 +686,21 @@ function updateMetrics() {
   const totalProducts = currentProducts.length;
   const totalStock = currentProducts.reduce((acc, p) => acc + (Number(p.stock) || 0), 0);
   const totalOrders = currentOrders.length;
+  const lowStockProducts = currentProducts.filter(p => Number(p.stock) > 0 && Number(p.stock) <= 5).length;
+  const outOfStockProducts = currentProducts.filter(p => Number(p.stock) <= 0).length;
 
   const statTotalProducts = document.getElementById('statTotalProducts');
   const statTotalStock = document.getElementById('statTotalStock');
   const statTotalOrders = document.getElementById('statTotalOrders');
+  const statLowStock = document.getElementById('statLowStock');
+  const statOutOfStock = document.getElementById('statOutOfStock');
   const ordersBadgeCount = document.getElementById('ordersBadgeCount');
 
   if (statTotalProducts) statTotalProducts.textContent = totalProducts.toLocaleString('tr-TR');
   if (statTotalStock) statTotalStock.textContent = totalStock.toLocaleString('tr-TR');
   if (statTotalOrders) statTotalOrders.textContent = totalOrders.toLocaleString('tr-TR');
+  if (statLowStock) statLowStock.textContent = lowStockProducts.toLocaleString('tr-TR');
+  if (statOutOfStock) statOutOfStock.textContent = outOfStockProducts.toLocaleString('tr-TR');
   if (ordersBadgeCount) ordersBadgeCount.textContent = totalOrders;
 
   // AI Asistan Kartı - sabit
@@ -1017,7 +1042,7 @@ function handleNewProductSubmit(e) {
   if (form) form.reset();
 
   setTimeout(() => {
-    window.location.href = 'index.html';
+    window.location.href = 'stock.html';
   }, 1000);
 }
 
@@ -2556,7 +2581,7 @@ async function importFromCustomGoogleSheet() {
     showToast(`🎉 Başarılı! Google Sheet tablosundan ${importedProducts.length} adet stok ürünü veritabanınıza içe aktarıldı!`, 'success');
     
     setTimeout(() => {
-      window.location.href = 'index.html';
+      window.location.href = 'stock.html';
     }, 1200);
 
   } catch (err) {
@@ -2921,7 +2946,7 @@ async function handleNewProductSubmit(e) {
       if (form) form.reset();
       updateProductCodePreview();
       setTimeout(() => {
-        window.location.href = 'index.html';
+        window.location.href = 'stock.html';
       }, 800);
     } else {
       showToast(`❌ Hata: ${data?.error || 'Ürün kaydedilemedi.'}`, 'error');
