@@ -385,6 +385,33 @@ async function runTestSuite() {
   db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (100, 'instagram_comment_automation_enabled', '1')").run();
   assert(WebhookController.isInstagramCommentAutomationEnabled(100) === false, 'Instagram comments remain disabled even when stale legacy settings exist');
 
+  console.log('\n2️⃣6️⃣-B DM BUFFER TEST: Rapid messages trigger one tenant-scoped AI request');
+  const webhookControllerForBuffer = WebhookController as any;
+  const originalProcessAndReply = webhookControllerForBuffer.processAndReply;
+  const bufferedCalls: any[] = [];
+  try {
+    webhookControllerForBuffer.processAndReply = async (...args: any[]) => { bufferedCalls.push(args); };
+    webhookControllerForBuffer.enqueueMessage('rapid_sender', 'Merhaba', 'store-alpha', 100);
+    webhookControllerForBuffer.enqueueMessage('rapid_sender', 'HBL ürününün', 'store-alpha', 100);
+    webhookControllerForBuffer.enqueueMessage('rapid_sender', 'fiyatı nedir?', 'store-alpha', 100);
+    webhookControllerForBuffer.enqueueMessage('rapid_sender', 'Farklı mağaza mesajı', 'store-beta', 200);
+    await Promise.all([
+      webhookControllerForBuffer.flushBufferedMessages('100:rapid_sender'),
+      webhookControllerForBuffer.flushBufferedMessages('200:rapid_sender')
+    ]);
+  } finally {
+    webhookControllerForBuffer.processAndReply = originalProcessAndReply;
+  }
+  const storeABufferCall = bufferedCalls.find(call => call[3] === 100);
+  const storeBBufferCall = bufferedCalls.find(call => call[3] === 200);
+  assert(
+    bufferedCalls.length === 2 &&
+    storeABufferCall?.[1] === 'Merhaba\nHBL ürününün\nfiyatı nedir?' &&
+    storeABufferCall?.[4]?.length === 3 &&
+    storeBBufferCall?.[1] === 'Farklı mağaza mesajı',
+    'Rapid messages are combined once per store and sender while different tenants remain isolated'
+  );
+
   // 7. STOCK BUG FIX TESTS (ADD, SET, ISOLATION, COLLISION & SANITATION)
   console.log('\n2️⃣7️⃣ STOCK BUG FIX TEST 1: Stock Add (+5 from 10 -> 15)');
   await StockService.addProduct({ storeId: 100, shortCode: 'TST', productCode: 'TEST-STOCK', name: 'Test Product', size: 'M', stock: 10, price: 200 });

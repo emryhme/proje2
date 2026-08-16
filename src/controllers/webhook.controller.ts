@@ -7,6 +7,19 @@ import { FacebookService } from '../services/facebook.service';
 import { db } from '../database/db';
 
 export class WebhookController {
+  private static readonly DM_BUFFER_DELAY_MS = 1_500;
+  private static readonly DM_BUFFER_MAX_WAIT_MS = 5_000;
+  private static readonly DM_BUFFER_MAX_MESSAGES = 10;
+  private static dmMessageBuffers = new Map<string, {
+    senderId: string;
+    storeSlug: string;
+    storeId: number;
+    messages: string[];
+    firstReceivedAt: number;
+    timer?: NodeJS.Timeout;
+  }>();
+  private static dmProcessingQueues = new Map<string, Promise<void>>();
+
   /**
    * Helper: Resolves store by slug strictly from database (No Fallbacks!)
    */
@@ -248,7 +261,7 @@ export class WebhookController {
 
         if (incomingText.trim()) {
           console.log(`[Store Webhook: ${store.slug} (ID: ${store.id})] DM mesajı işleniyor.`);
-          WebhookController.processAndReply(senderId, incomingText, store.slug, store.id);
+          WebhookController.enqueueMessage(senderId, incomingText, store.slug, store.id);
         }
       }
 
@@ -284,7 +297,7 @@ export class WebhookController {
         const incomingText = typeof message === 'string' ? message : message?.text || '';
         if (incomingText.trim()) {
           console.log(`[Store Webhook Changes: ${store.slug} (ID: ${store.id})] Mesaj işleniyor.`);
-          WebhookController.processAndReply(senderId, incomingText, store.slug, store.id);
+          WebhookController.enqueueMessage(senderId, incomingText, store.slug, store.id);
         }
       }
     }
@@ -354,7 +367,7 @@ export class WebhookController {
 
         if (incomingText.trim()) {
           console.log(`[Global Webhook -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] DM mesajı işleniyor.`);
-          WebhookController.processAndReply(senderId, incomingText, matchedStore.slug, matchedStore.id);
+          WebhookController.enqueueMessage(senderId, incomingText, matchedStore.slug, matchedStore.id);
         }
       }
 
@@ -390,19 +403,69 @@ export class WebhookController {
         const incomingText = typeof message === 'string' ? message : message?.text || '';
         if (incomingText.trim()) {
           console.log(`[Global Webhook Changes -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] Mesaj işleniyor.`);
-          WebhookController.processAndReply(senderId, incomingText, matchedStore.slug, matchedStore.id);
+          WebhookController.enqueueMessage(senderId, incomingText, matchedStore.slug, matchedStore.id);
         }
       }
     }
   }
 
   /**
+   * Combines rapid messages from the same tenant/customer before invoking the AI.
+   * A maximum wait prevents a continuously typing customer from being held forever.
+   */
+  private static enqueueMessage(senderId: string, text: string, storeSlug: string, storeId: number): void {
+    const cleanText = String(text || '').trim().slice(0, 4_000);
+    if (!cleanText) return;
+    const key = `${storeId}:${senderId}`;
+    const now = Date.now();
+    let entry = this.dmMessageBuffers.get(key);
+    if (!entry) {
+      entry = { senderId, storeSlug, storeId, messages: [], firstReceivedAt: now };
+      this.dmMessageBuffers.set(key, entry);
+    }
+    if (entry.timer) clearTimeout(entry.timer);
+    entry.storeSlug = storeSlug;
+    entry.messages.push(cleanText);
+
+    const maxWaitRemaining = Math.max(0, this.DM_BUFFER_MAX_WAIT_MS - (now - entry.firstReceivedAt));
+    const delay = entry.messages.length >= this.DM_BUFFER_MAX_MESSAGES
+      ? 0
+      : Math.min(this.DM_BUFFER_DELAY_MS, maxWaitRemaining);
+    entry.timer = setTimeout(() => { void this.flushBufferedMessages(key); }, delay);
+    entry.timer.unref();
+    console.log(`[DM Buffer] Store=${storeId} Sender=${senderId} Mesaj=${entry.messages.length} Bekleme=${delay}ms`);
+  }
+
+  private static async flushBufferedMessages(key: string): Promise<void> {
+    const entry = this.dmMessageBuffers.get(key);
+    if (!entry) return;
+    this.dmMessageBuffers.delete(key);
+    if (entry.timer) clearTimeout(entry.timer);
+    const individualMessages = entry.messages.filter(Boolean);
+    if (!individualMessages.length) return;
+    const combinedText = individualMessages.join('\n');
+
+    const previous = this.dmProcessingQueues.get(key) || Promise.resolve();
+    const task = previous
+      .catch(() => undefined)
+      .then(() => this.processAndReply(entry.senderId, combinedText, entry.storeSlug, entry.storeId, individualMessages));
+    this.dmProcessingQueues.set(key, task);
+    try {
+      await task;
+    } finally {
+      if (this.dmProcessingQueues.get(key) === task) this.dmProcessingQueues.delete(key);
+    }
+  }
+
+  /**
    * AI Yanıtı Üretip Meta Graph API Üzerinden Müşteriye Gönderir (Store Scoped)
    */
-  private static async processAndReply(senderId: string, text: string, storeSlug: string, storeId: number) {
+  private static async processAndReply(senderId: string, text: string, storeSlug: string, storeId: number, originalMessages: string[] = [text]) {
     try {
       const conversationId = AIService.getOrCreateConversation(storeId, `instagram:${senderId}`);
-      AIService.persistMessage(conversationId, 'user', text);
+      for (const originalMessage of originalMessages) {
+        AIService.persistMessage(conversationId, 'user', originalMessage);
+      }
 
       const { reply, toolTraces } = await AIService.processMessage(senderId, text, storeSlug, storeId);
       AIService.persistMessage(conversationId, 'assistant', reply);
