@@ -99,11 +99,24 @@ export class WebhookController {
     return false;
   }
 
-  private static resolveIncomingMessageText(message: any, storeId: number): string {
+  private static async resolveIncomingMessageText(message: any, storeId: number): Promise<string> {
     let incomingText = String(message?.text || '').trim();
     const attachments = Array.isArray(message?.attachments) ? message.attachments : [];
+    let mediaRefreshed = false;
     for (const attachment of attachments) {
-      const mapped = FacebookService.resolveInstagramAttachmentProduct(attachment, storeId);
+      let mapped = FacebookService.resolveInstagramAttachmentProduct(attachment, storeId);
+      const payload = attachment?.payload || {};
+      const attachmentType = String(attachment?.type || '').toLowerCase();
+      const isSharedInstagramMedia = Boolean(payload.id || payload.media_id || payload.post_id || payload.reel_video_id || /media_share|ig_reel|share/.test(attachmentType));
+      if (!mapped && !mediaRefreshed && isSharedInstagramMedia) {
+        mediaRefreshed = true;
+        try {
+          await FacebookService.listInstagramMedia(storeId);
+          mapped = FacebookService.resolveInstagramAttachmentProduct(attachment, storeId);
+        } catch {
+          // Continue with the attachment title fallback when Meta is temporarily unavailable.
+        }
+      }
       if (mapped) {
         const mediaContext = `Paylaşılan Instagram gönderisinin Media ID değeri ${mapped.mediaId} ve veri setindeki ürün kısa kodu ${mapped.shortCode}. Müşteri bu gönderideki üründen bahsediyor; ürün kodunu tekrar sorma.`;
         incomingText = incomingText ? `${incomingText}\n\n${mediaContext}` : `Müşteri bir Instagram gönderisi paylaştı. ${mediaContext}`;
@@ -231,7 +244,7 @@ export class WebhookController {
           continue;
         }
 
-        const incomingText = WebhookController.resolveIncomingMessageText(message, store.id);
+        const incomingText = await WebhookController.resolveIncomingMessageText(message, store.id);
 
         if (incomingText.trim()) {
           console.log(`[Store Webhook: ${store.slug} (ID: ${store.id})] DM mesajı işleniyor.`);
@@ -337,7 +350,7 @@ export class WebhookController {
           continue;
         }
 
-        const incomingText = WebhookController.resolveIncomingMessageText(message, matchedStore.id);
+        const incomingText = await WebhookController.resolveIncomingMessageText(message, matchedStore.id);
 
         if (incomingText.trim()) {
           console.log(`[Global Webhook -> Resolved Store: ${matchedStore.slug} (ID: ${matchedStore.id})] DM mesajı işleniyor.`);

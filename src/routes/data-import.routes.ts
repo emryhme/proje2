@@ -12,6 +12,7 @@ import {
   parseImportContent,
   suggestMapping
 } from '../services/data-import.service';
+import { FacebookService } from '../services/facebook.service';
 
 const router = Router();
 const MAX_SOURCE_BYTES = 1_800_000;
@@ -190,6 +191,8 @@ router.post('/api/data-import/commit', AuthMiddleware.authenticate, AuthMiddlewa
       db.prepare('UPDATE data_import_previews SET committed_at = CURRENT_TIMESTAMP WHERE id = ?').run(preview.id);
       AuthMiddleware.logAudit(req.auth!.storeId, req.auth!.userId, 'COMMIT_DATA_IMPORT', 'data_import_jobs', String(jobId), '', `${insertedRows} inserted, ${updatedRows} updated`);
     })();
+    // A product may arrive after its Instagram post was cached. Reconcile immediately without waiting for the media page.
+    FacebookService.reconcileCachedInstagramMedia(req.auth!.storeId);
     return res.json({ success: true, jobId, insertedRows, updatedRows, totalImported: insertedRows + updatedRows, message: `${insertedRows} yeni ürün eklendi, ${updatedRows} ürün güncellendi.` });
   } catch (error: any) {
     return res.status(500).json({ success: false, error: error.message || 'İçe aktarma tamamlanamadı.' });

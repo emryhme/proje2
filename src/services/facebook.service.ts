@@ -173,6 +173,36 @@ export class FacebookService {
     return this.attachProductMappings(storeId, rows);
   }
 
+  /** Re-runs caption-to-product matching from the local catalog without a Meta request. */
+  public static reconcileCachedInstagramMedia(storeId: number): number {
+    if (!Number.isInteger(storeId) || storeId <= 0) return 0;
+    return this.getCachedInstagramMedia(storeId).length;
+  }
+
+  /** Background refresh for every active tenant with a connected Instagram account. */
+  public static async syncConnectedInstagramStores(): Promise<{ stores: number; refreshed: number; failed: number }> {
+    const stores = db.prepare(`
+      SELECT DISTINCT s.id
+      FROM stores s
+      JOIN settings token ON token.store_id = s.id AND token.key IN ('instagram_access_token', 'facebook_page_access_token') AND token.value != ''
+      WHERE s.status = 'active' AND s.instagram_account_id != ''
+      ORDER BY s.id ASC
+    `).all() as Array<{ id: number }>;
+    let refreshed = 0;
+    let failed = 0;
+    for (const store of stores) {
+      try {
+        const result = await this.listInstagramMedia(Number(store.id));
+        if (result.source === 'instagram') refreshed += 1;
+        else failed += 1;
+      } catch (error: any) {
+        failed += 1;
+        console.warn(`[Instagram Background Sync] Store=${store.id} yenilenemedi: ${String(error?.message || error)}`);
+      }
+    }
+    return { stores: stores.length, refreshed, failed };
+  }
+
   /** Resolves a shared post/reel attachment to one unambiguous tenant product family. */
   public static resolveInstagramAttachmentProduct(attachment: any, storeId: number): { mediaId: string; productCode: string; shortCode: string } | null {
     if (!Number.isInteger(storeId) || storeId <= 0) return null;

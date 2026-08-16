@@ -173,6 +173,7 @@ app.post('/api/products', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     });
 
     if (result.success) {
+      FacebookService.reconcileCachedInstagramMedia(storeId);
       AuthMiddleware.logAudit(storeId, req.auth!.userId, 'ADD_PRODUCT', 'products', result.productCode || '');
       res.json({
         success: true,
@@ -1067,12 +1068,33 @@ export { app };
 
 if (require.main === module) {
   const server = startServer();
+  let instagramSyncRunning = false;
+  const runInstagramBackgroundSync = async () => {
+    if (instagramSyncRunning) return;
+    instagramSyncRunning = true;
+    try {
+      const result = await FacebookService.syncConnectedInstagramStores();
+      if (result.stores > 0) {
+        console.log(`[Instagram Background Sync] Mağaza=${result.stores} Yenilenen=${result.refreshed} Hatalı=${result.failed}`);
+      }
+    } catch (error: any) {
+      console.warn(`[Instagram Background Sync] İşlem tamamlanamadı: ${String(error?.message || error)}`);
+    } finally {
+      instagramSyncRunning = false;
+    }
+  };
+  const instagramInitialSyncTimer = setTimeout(runInstagramBackgroundSync, 10_000);
+  const instagramSyncTimer = setInterval(runInstagramBackgroundSync, 15 * 60_000);
+  instagramInitialSyncTimer.unref();
+  instagramSyncTimer.unref();
   let shuttingDown = false;
   const shutdown = (signal: string) => {
     if (shuttingDown) return;
     shuttingDown = true;
     console.log(`[Server] ${signal} alındı; bağlantılar güvenli biçimde kapatılıyor.`);
     clearInterval(maintenanceTimer);
+    clearTimeout(instagramInitialSyncTimer);
+    clearInterval(instagramSyncTimer);
     server.close(() => {
       try { db.close(); } catch {}
       process.exit(0);

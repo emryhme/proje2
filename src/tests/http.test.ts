@@ -102,6 +102,22 @@ async function run(): Promise<void> {
     const assignedProduct = db.prepare('SELECT instagram_media_id FROM products WHERE store_id = ? AND product_code = ?').get(storeId, 'HBL-M') as any;
     assert(assignedMedia.ok && assignedBody.products?.[0]?.shortCode === 'HBL' && assignedProduct?.instagram_media_id === 'media_http_assign', 'A catalog post can be assigned to a tenant product family from the media detail page');
 
+    db.prepare(`
+      INSERT INTO instagram_media_catalog (store_id, media_id, caption, media_type, synced_at)
+      VALUES (?, 'media_import_reconcile', 'Yeni ürün\nÜrün Kodu: CAP-M', 'IMAGE', CURRENT_TIMESTAMP)
+    `).run(storeId);
+    const lateProductAnalysis = await fetch(`${origin}/api/data-import/analyze`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceType: 'csv', sourceName: 'late-product.csv', content: 'urun_kodu;urun_adi;beden;fiyat;stok\nCAP-M;Caption Product;M;650;9' })
+    });
+    const lateProductPreview = await lateProductAnalysis.json() as any;
+    const lateProductCommit = await fetch(`${origin}/api/data-import/commit`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ previewToken: lateProductPreview.previewToken })
+    });
+    const lateMappedProduct = db.prepare("SELECT instagram_media_id FROM products WHERE store_id = ? AND product_code = 'CAP-M'").get(storeId) as any;
+    assert(lateProductAnalysis.ok && lateProductCommit.ok && lateMappedProduct?.instagram_media_id === 'media_import_reconcile', 'A newly imported dataset is immediately reconciled with cached Instagram caption product codes without opening the media page');
+
     const disconnectedMediaCatalog = await fetch(`${origin}/api/integrations/instagram/media`, { headers: { Cookie: cookie } });
     assert(disconnectedMediaCatalog.status === 409, 'Instagram media catalog requires a connected tenant account without exposing credentials');
 
