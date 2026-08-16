@@ -2524,7 +2524,7 @@ function initializeDataSourcesPage() {
 }
 
 // INSTAGRAM GÖNDERİ KATALOĞU (YORUMLARA ERİŞMEDEN)
-const instagramMediaState = { media: [], nextCursor: '', query: '' };
+const instagramMediaState = { media: [], nextCursor: '', query: '', selectedMediaId: '' };
 
 function renderInstagramMediaCatalog() {
   const grid = document.getElementById('instagramMediaGrid');
@@ -2544,17 +2544,12 @@ function renderInstagramMediaCatalog() {
       ? `<div class="ig-media-mapping linked"><i data-lucide="link" size="13"></i><span>${productCodes.map(escapeHtml).join(', ')}</span></div>`
       : '<div class="ig-media-mapping"><i data-lucide="unlink" size="13"></i><span>Veri setinde eşleşen ürün yok</span></div>';
     return `
-      <article class="ig-media-card">
-        <div class="ig-media-preview">${previewUrl ? `<img src="${escapeHtml(previewUrl)}" alt="Instagram gönderisi" loading="lazy">` : '<i data-lucide="image-off" size="34"></i>'}</div>
+      <article class="ig-media-card" data-instagram-media-id="${escapeHtml(item.id)}" tabindex="0" role="button" aria-label="Gönderi detayını ve ürün atamasını aç">
+        <div class="ig-media-preview">${previewUrl ? `<img src="${escapeHtml(previewUrl)}" alt="Instagram gönderisi" loading="lazy">` : '<i data-lucide="image-off" size="34"></i>'}<span class="ig-media-open-hint"><i data-lucide="maximize-2" size="13"></i></span></div>
         <div class="ig-media-body">
           <div class="ig-media-top"><span class="status-badge in-stock">${escapeHtml(item.mediaProductType || item.mediaType || 'POST')}</span><small>${item.timestamp ? new Date(item.timestamp).toLocaleDateString('tr-TR') : '-'}</small></div>
           <div class="ig-media-id"><span>MEDIA ID</span><code>${escapeHtml(item.id)}</code></div>
-          <p class="ig-media-caption">${escapeHtml(item.caption || 'Açıklama bulunmuyor.')}</p>
           ${mapping}
-          <div class="ig-media-actions">
-            <button class="btn btn-secondary btn-sm" type="button" onclick="copyInstagramMediaId('${escapeHtml(item.id)}')"><i data-lucide="copy" size="13"></i>ID’yi Kopyala</button>
-            ${item.permalink ? `<a class="btn btn-secondary btn-sm" href="${escapeHtml(item.permalink)}" target="_blank" rel="noopener noreferrer"><i data-lucide="external-link" size="13"></i>Gönderiyi Aç</a>` : ''}
-          </div>
         </div>
       </article>`;
   }).join('') : '<div class="ig-media-empty"><i data-lucide="images" size="34"></i><strong>Gönderi bulunamadı</strong><span>Instagram bağlantısını ve arama metnini kontrol edin.</span></div>';
@@ -2609,6 +2604,111 @@ async function copyInstagramMediaId(mediaId) {
   }
 }
 
+function closeInstagramMediaDetail() {
+  const modal = document.getElementById('instagramMediaDetailModal');
+  modal?.classList.remove('open');
+  document.body.style.overflow = '';
+  instagramMediaState.selectedMediaId = '';
+}
+
+function getInstagramProductFamilies(products) {
+  const families = new Map();
+  (Array.isArray(products) ? products : []).forEach(product => {
+    const shortCode = String(product.shortCode || '').trim().toUpperCase();
+    if (!shortCode) return;
+    if (!families.has(shortCode)) families.set(shortCode, { shortCode, name: product.name || '', productCodes: [] });
+    if (product.productCode && !families.get(shortCode).productCodes.includes(product.productCode)) {
+      families.get(shortCode).productCodes.push(product.productCode);
+    }
+  });
+  return [...families.values()].sort((a, b) => a.shortCode.localeCompare(b.shortCode, 'tr'));
+}
+
+function renderInstagramMediaCurrentMapping(item) {
+  const current = document.getElementById('instagramMediaDetailCurrent');
+  if (!current) return;
+  const products = Array.isArray(item?.products) ? item.products : [];
+  const productCodes = [...new Set(products.map(product => product.productCode).filter(Boolean))];
+  current.innerHTML = productCodes.length
+    ? `<div class="ig-media-mapping linked"><i data-lucide="link" size="13"></i><span>Bağlı ürünler: ${productCodes.map(escapeHtml).join(', ')}</span></div>`
+    : '<div class="ig-media-mapping"><i data-lucide="unlink" size="13"></i><span>Henüz bir ürüne atanmamış</span></div>';
+}
+
+async function openInstagramMediaDetail(mediaId) {
+  const item = instagramMediaState.media.find(media => String(media.id) === String(mediaId));
+  const modal = document.getElementById('instagramMediaDetailModal');
+  if (!item || !modal) return;
+  instagramMediaState.selectedMediaId = String(item.id);
+
+  document.getElementById('instagramMediaDetailId').textContent = item.id;
+  document.getElementById('instagramMediaDetailCaption').textContent = item.caption || 'Açıklama bulunmuyor.';
+  document.getElementById('instagramMediaDetailType').textContent = item.mediaProductType || item.mediaType || 'POST';
+  document.getElementById('instagramMediaDetailDate').textContent = item.timestamp ? new Date(item.timestamp).toLocaleDateString('tr-TR') : '-';
+  const previewUrl = item.thumbnailUrl || item.mediaUrl || '';
+  document.getElementById('instagramMediaDetailImage').innerHTML = previewUrl
+    ? `<img src="${escapeHtml(previewUrl)}" alt="Instagram gönderisi">`
+    : '<i data-lucide="image-off" size="42"></i>';
+  const postLink = document.getElementById('btnOpenInstagramMediaPost');
+  postLink.hidden = !item.permalink;
+  if (item.permalink) postLink.href = item.permalink;
+  renderInstagramMediaCurrentMapping(item);
+
+  if (!state.products.length) {
+    try {
+      const stocks = await apiFetch('/api/stocks');
+      state.products = Array.isArray(stocks.stocks) ? stocks.stocks : [];
+    } catch (error) {
+      showToast('Ürün kodları yüklenemedi.', 'error');
+    }
+  }
+  const currentShortCode = String(item.products?.[0]?.shortCode || '').trim().toUpperCase();
+  const select = document.getElementById('instagramMediaProductSelect');
+  const families = getInstagramProductFamilies(state.products);
+  select.innerHTML = '<option value="">Ürün kodu seçin</option>' + families.map(family => {
+    const variants = family.productCodes.length ? ` · ${family.productCodes.join(', ')}` : '';
+    return `<option value="${escapeHtml(family.shortCode)}"${family.shortCode === currentShortCode ? ' selected' : ''}>${escapeHtml(family.shortCode)} — ${escapeHtml(family.name)}${escapeHtml(variants)}</option>`;
+  }).join('');
+  select.disabled = !families.length;
+  document.getElementById('btnAssignInstagramMedia').disabled = !families.length;
+  document.getElementById('btnUnassignInstagramMedia').disabled = !item.products?.length;
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  if (window.lucide) lucide.createIcons();
+}
+
+async function saveInstagramMediaAssignment(remove = false) {
+  const mediaId = instagramMediaState.selectedMediaId;
+  const select = document.getElementById('instagramMediaProductSelect');
+  const shortCode = remove ? '' : String(select?.value || '').trim().toUpperCase();
+  if (!mediaId) return;
+  if (!remove && !shortCode) {
+    showToast('Lütfen atanacak ürün kodunu seçin.', 'warning');
+    return;
+  }
+  const button = document.getElementById(remove ? 'btnUnassignInstagramMedia' : 'btnAssignInstagramMedia');
+  button.disabled = true;
+  try {
+    const data = await apiFetch(`/api/integrations/instagram/media/${encodeURIComponent(mediaId)}/assignment`, {
+      method: 'PUT', body: JSON.stringify({ shortCode })
+    });
+    instagramMediaState.media.forEach(item => {
+      if (String(item.id) === mediaId) item.products = Array.isArray(data.products) ? data.products : [];
+      else if (shortCode) item.products = (item.products || []).filter(product => String(product.shortCode || '').toUpperCase() !== shortCode);
+    });
+    state.products.forEach(product => {
+      if (String(product.instagramMediaId || '') === mediaId) product.instagramMediaId = '';
+      if (shortCode && String(product.shortCode || '').toUpperCase() === shortCode) product.instagramMediaId = mediaId;
+    });
+    renderInstagramMediaCatalog();
+    showToast(data.message || 'Gönderi eşleştirmesi güncellendi.', 'success');
+    closeInstagramMediaDetail();
+  } catch (error) {
+    showToast(error.message || 'Ürün ataması kaydedilemedi.', 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 function initializeInstagramMediaPage() {
   if (!document.getElementById('instagramMediaPage')) return;
   document.getElementById('btnRefreshInstagramMedia')?.addEventListener('click', () => loadInstagramMedia(true));
@@ -2616,6 +2716,27 @@ function initializeInstagramMediaPage() {
   document.getElementById('instagramMediaSearch')?.addEventListener('input', event => {
     instagramMediaState.query = event.target.value || '';
     renderInstagramMediaCatalog();
+  });
+  document.getElementById('instagramMediaGrid')?.addEventListener('click', event => {
+    const card = event.target.closest('[data-instagram-media-id]');
+    if (card) openInstagramMediaDetail(card.dataset.instagramMediaId);
+  });
+  document.getElementById('instagramMediaGrid')?.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    const card = event.target.closest('[data-instagram-media-id]');
+    if (!card) return;
+    event.preventDefault();
+    openInstagramMediaDetail(card.dataset.instagramMediaId);
+  });
+  document.getElementById('btnCloseInstagramMediaDetail')?.addEventListener('click', closeInstagramMediaDetail);
+  document.getElementById('instagramMediaDetailModal')?.addEventListener('click', event => {
+    if (event.target.id === 'instagramMediaDetailModal') closeInstagramMediaDetail();
+  });
+  document.getElementById('btnCopyInstagramMediaDetailId')?.addEventListener('click', () => copyInstagramMediaId(instagramMediaState.selectedMediaId));
+  document.getElementById('btnAssignInstagramMedia')?.addEventListener('click', () => saveInstagramMediaAssignment(false));
+  document.getElementById('btnUnassignInstagramMedia')?.addEventListener('click', () => saveInstagramMediaAssignment(true));
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.getElementById('instagramMediaDetailModal')?.classList.contains('open')) closeInstagramMediaDetail();
   });
   loadInstagramMedia(true);
 }

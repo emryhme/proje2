@@ -91,6 +91,17 @@ async function run(): Promise<void> {
     const importedProduct = db.prepare('SELECT name, size, price, stock, instagram_media_id FROM products WHERE store_id = ? AND product_code = ?').get(storeId, 'HBL-M') as any;
     assert(committedImport.ok && importedProduct?.name === 'HBL Gömlek' && importedProduct?.size === 'M' && importedProduct?.stock === 24 && importedProduct?.instagram_media_id === 'media_http_1', 'Approved import atomically persists Media ID only to the authenticated store');
 
+    db.prepare(`
+      INSERT INTO instagram_media_catalog (store_id, media_id, caption, media_type, synced_at)
+      VALUES (?, 'media_http_assign', 'HTTP assignment post', 'IMAGE', CURRENT_TIMESTAMP)
+    `).run(storeId);
+    const assignedMedia = await fetch(`${origin}/api/integrations/instagram/media/media_http_assign/assignment`, {
+      method: 'PUT', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ shortCode: 'HBL' })
+    });
+    const assignedBody = await assignedMedia.json() as any;
+    const assignedProduct = db.prepare('SELECT instagram_media_id FROM products WHERE store_id = ? AND product_code = ?').get(storeId, 'HBL-M') as any;
+    assert(assignedMedia.ok && assignedBody.products?.[0]?.shortCode === 'HBL' && assignedProduct?.instagram_media_id === 'media_http_assign', 'A catalog post can be assigned to a tenant product family from the media detail page');
+
     const disconnectedMediaCatalog = await fetch(`${origin}/api/integrations/instagram/media`, { headers: { Cookie: cookie } });
     assert(disconnectedMediaCatalog.status === 409, 'Instagram media catalog requires a connected tenant account without exposing credentials');
 

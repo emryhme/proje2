@@ -46,6 +46,51 @@ export class FacebookService {
     }
   }
 
+  private static normalizeProductCode(value: unknown): string {
+    return String(value || '').trim().toLocaleUpperCase('tr-TR');
+  }
+
+  private static extractCaptionProductCode(caption: unknown): string {
+    const text = String(caption || '');
+    const match = text.match(/(?:ürün|urun)\s*kodu\s*[:：=\-]\s*([a-z0-9çğıöşü][a-z0-9çğıöşü._\/-]{0,79})/iu);
+    return this.normalizeProductCode(String(match?.[1] || '').replace(/[.,;!?)}\]]+$/u, ''));
+  }
+
+  /** Maps the newest post containing "Ürün Kodu: ..." to the matching product family. */
+  private static autoAssignCaptionProducts(storeId: number, media: any[]): void {
+    const products = db.prepare(`
+      SELECT product_code AS productCode, short_code AS shortCode, instagram_media_id AS mediaId
+      FROM products WHERE store_id = ? ORDER BY id ASC
+    `).all(storeId) as any[];
+    if (!products.length) return;
+
+    const claimedFamilies = new Set<string>();
+    const findFamily = (code: string): string => {
+      const exactVariant = products.find(product => this.normalizeProductCode(product.productCode) === code);
+      const exactFamily = products.find(product => this.normalizeProductCode(product.shortCode) === code);
+      return this.normalizeProductCode(exactVariant?.shortCode || exactFamily?.shortCode || '');
+    };
+
+    const assign = db.transaction((mediaId: string, shortCode: string) => {
+      db.prepare("UPDATE products SET instagram_media_id = '', updated_at = CURRENT_TIMESTAMP WHERE store_id = ? AND instagram_media_id = ?")
+        .run(storeId, mediaId);
+      db.prepare("UPDATE products SET instagram_media_id = '', updated_at = CURRENT_TIMESTAMP WHERE store_id = ? AND UPPER(short_code) = UPPER(?)")
+        .run(storeId, shortCode);
+      db.prepare('UPDATE products SET instagram_media_id = ?, updated_at = CURRENT_TIMESTAMP WHERE store_id = ? AND UPPER(short_code) = UPPER(?)')
+        .run(mediaId, storeId, shortCode);
+    });
+
+    for (const item of media) {
+      const captionCode = this.extractCaptionProductCode(item?.caption);
+      const shortCode = captionCode ? findFamily(captionCode) : '';
+      if (!shortCode || claimedFamilies.has(shortCode)) continue;
+      claimedFamilies.add(shortCode);
+      const familyRows = products.filter(product => this.normalizeProductCode(product.shortCode) === shortCode);
+      const alreadyAssigned = familyRows.length > 0 && familyRows.every(product => String(product.mediaId || '') === String(item.id));
+      if (!alreadyAssigned) assign(String(item.id), shortCode);
+    }
+  }
+
   /** Synchronizes the connected professional account's own posts without reading comments. */
   public static async listInstagramMedia(storeId: number, after = ''): Promise<{ media: any[]; nextCursor: string; source: 'instagram' | 'cache'; warning?: string }> {
     if (!Number.isInteger(storeId) || storeId <= 0) throw new Error('Store ID zorunludur.');
@@ -105,6 +150,7 @@ export class FacebookService {
   }
 
   private static attachProductMappings(storeId: number, media: any[]): any[] {
+    this.autoAssignCaptionProducts(storeId, media);
     const mappings = db.prepare(`
       SELECT instagram_media_id AS mediaId, product_code AS productCode, short_code AS shortCode, name
       FROM products WHERE store_id = ? AND instagram_media_id != ''

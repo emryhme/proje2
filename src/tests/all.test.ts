@@ -404,6 +404,19 @@ async function runTestSuite() {
   const urlMediaMatch = FacebookService.resolveInstagramAttachmentProduct({ type: 'ig_reel', payload: { url: 'https://cdn.example.com/hbl.jpg?token=new' } }, 100);
   const crossTenantMediaMatch = FacebookService.resolveInstagramAttachmentProduct({ type: 'MEDIA_SHARE', payload: { id: 'media_hbl_1' } }, 200);
   assert(directMediaMatch?.shortCode === 'HBL' && urlMediaMatch?.shortCode === 'HBL' && crossTenantMediaMatch === null, 'Shared Instagram posts resolve to one tenant-isolated product family by Media ID or cached URL');
+  db.prepare(`
+    INSERT OR REPLACE INTO instagram_media_catalog (store_id, media_id, caption, media_type, synced_at)
+    VALUES (100, 'media_caption_hbl', 'Yeni sezon gömlek\nÜrün Kodu: HBL-M', 'IMAGE', CURRENT_TIMESTAMP)
+  `).run();
+  const captionMappedCatalog = FacebookService.getCachedInstagramMedia(100);
+  const captionMappedProducts = db.prepare("SELECT product_code, instagram_media_id FROM products WHERE store_id = 100 AND short_code = 'HBL' ORDER BY product_code").all() as any[];
+  const captionMediaMatch = FacebookService.resolveInstagramAttachmentProduct({ type: 'MEDIA_SHARE', payload: { id: 'media_caption_hbl' } }, 100);
+  assert(
+    captionMappedCatalog.some(item => item.id === 'media_caption_hbl' && item.products.length === 2) &&
+    captionMappedProducts.every(product => product.instagram_media_id === 'media_caption_hbl') &&
+    captionMediaMatch?.shortCode === 'HBL',
+    'Instagram captions containing Ürün Kodu automatically map the matching dataset product family and all variants'
+  );
   const variantCtx = AIService.getSessionContext('variant-test', 'store-alpha', 100, 'TEST');
   variantCtx.productCode = 'HBL';
   variantCtx.variantVerified = false;

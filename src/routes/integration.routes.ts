@@ -199,6 +199,44 @@ router.get('/api/integrations/instagram/media', AuthMiddleware.authenticate, Aut
   }
 });
 
+router.put('/api/integrations/instagram/media/:mediaId/assignment', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER']), (req: AuthenticatedRequest, res) => {
+  const storeId = req.auth!.storeId;
+  const mediaId = String(req.params.mediaId || '').trim().slice(0, 128);
+  const shortCode = String(req.body?.shortCode || '').trim().toUpperCase().slice(0, 80);
+  if (!mediaId) return res.status(400).json({ success: false, error: 'Instagram Media ID zorunludur.' });
+
+  const media = db.prepare('SELECT media_id FROM instagram_media_catalog WHERE store_id = ? AND media_id = ?').get(storeId, mediaId);
+  if (!media) return res.status(404).json({ success: false, error: 'Gönderi bu mağazanın kataloğunda bulunamadı.' });
+
+  if (shortCode) {
+    const product = db.prepare('SELECT short_code FROM products WHERE store_id = ? AND UPPER(short_code) = ? LIMIT 1').get(storeId, shortCode);
+    if (!product) return res.status(404).json({ success: false, error: 'Seçilen ürün kodu mağaza stoklarında bulunamadı.' });
+  }
+
+  db.transaction(() => {
+    // Bir gönderi tek ürün ailesine; bir ürün ailesi de tek gönderiye bağlı kalır.
+    db.prepare("UPDATE products SET instagram_media_id = '', updated_at = CURRENT_TIMESTAMP WHERE store_id = ? AND instagram_media_id = ?")
+      .run(storeId, mediaId);
+    if (shortCode) {
+      db.prepare("UPDATE products SET instagram_media_id = '', updated_at = CURRENT_TIMESTAMP WHERE store_id = ? AND UPPER(short_code) = ?")
+        .run(storeId, shortCode);
+      db.prepare('UPDATE products SET instagram_media_id = ?, updated_at = CURRENT_TIMESTAMP WHERE store_id = ? AND UPPER(short_code) = ?')
+        .run(mediaId, storeId, shortCode);
+    }
+    AuthMiddleware.logAudit(storeId, req.auth!.userId, shortCode ? 'ASSIGN_INSTAGRAM_MEDIA' : 'UNASSIGN_INSTAGRAM_MEDIA', 'instagram_media_catalog', mediaId);
+  })();
+
+  const products = shortCode ? db.prepare(`
+    SELECT product_code AS productCode, short_code AS shortCode, name, size
+    FROM products WHERE store_id = ? AND instagram_media_id = ? ORDER BY id ASC
+  `).all(storeId, mediaId) : [];
+  return res.json({
+    success: true,
+    message: shortCode ? `${shortCode} ürün ailesi gönderiye bağlandı.` : 'Gönderinin ürün bağlantısı kaldırıldı.',
+    products
+  });
+});
+
 router.post('/api/integrations/instagram/comments', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN']), (req: AuthenticatedRequest, res) => {
   return res.status(410).json({ success: false, error: 'Instagram yorum erişimi bu sürümde devre dışıdır.' });
 });
