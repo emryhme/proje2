@@ -12,6 +12,7 @@ import { EmailVerificationService } from '../services/email-verification.service
 import { AuthMiddleware } from '../middleware/auth.middleware';
 import { db, hashPassword, initDatabase, needsPasswordRehash, verifyPassword } from '../database/db';
 import { decryptSettingSecret, encryptSettingSecret } from '../utils/secret.util';
+import { normalizeRecords, parseImportContent, suggestMapping, collectHeaders } from '../services/data-import.service';
 
 initDatabase();
 
@@ -126,6 +127,10 @@ async function runTestSuite() {
     FROM orders WHERE store_id = ? ORDER BY id DESC LIMIT 5
   `).all(100);
   assert(Array.isArray(merchantRecentOrders), 'Master Admin merchant detail uses valid order customer columns');
+  const flexibleRows = parseImportContent('json', JSON.stringify({ payload: { items: [{ SKU: 'MAP-M', Description: 'Mapped Product', Option1: 'Medium', 'Sale Price': '₺1.299,90', Inventory: '12' }] } }));
+  const flexibleMapping = suggestMapping(collectHeaders(flexibleRows));
+  const flexibleNormalized = normalizeRecords(flexibleRows, flexibleMapping);
+  assert(flexibleNormalized.validRows[0]?.productCode === 'MAP-M' && flexibleNormalized.validRows[0]?.size === 'M' && flexibleNormalized.validRows[0]?.price === 1299.9, 'Flexible nested JSON fields are automatically mapped and normalized');
 
   console.log('\n2️⃣ AUTH TEST 2: Valid JWT Token Generation & Verification');
   const jwtOwnerA = AuthMiddleware.generateToken({ userId: 10, storeId: 100, role: 'OWNER', email: 'owner_a@iscworks.com' });

@@ -59,6 +59,21 @@ async function run(): Promise<void> {
     });
     assert(csrfRejected.status === 403, 'Cookie-authenticated cross-site writes are rejected');
 
+    const unusualCsv = 'stok_kodu;urun_basligi;varyant;satis_fiyati;mevcut_adet\nHBL-M;HBL Gömlek;Medium;₺799,90;24';
+    const analyzedImport = await fetch(`${origin}/api/data-import/analyze`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourceType: 'csv', sourceName: 'unusual.csv', content: unusualCsv })
+    });
+    const analyzedBody = await analyzedImport.json() as any;
+    assert(analyzedImport.ok && analyzedBody.validCount === 1 && analyzedBody.sampleRows[0].productCode === 'HBL-M' && analyzedBody.sampleRows[0].price === 799.9, 'Unfamiliar CSV headers are mapped into the canonical product model');
+
+    const committedImport = await fetch(`${origin}/api/data-import/commit`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ previewToken: analyzedBody.previewToken, saveProfile: true, profileName: 'HTTP mapping profile' })
+    });
+    const importedProduct = db.prepare('SELECT name, size, price, stock FROM products WHERE store_id = ? AND product_code = ?').get(storeId, 'HBL-M') as any;
+    assert(committedImport.ok && importedProduct?.name === 'HBL Gömlek' && importedProduct?.size === 'M' && importedProduct?.stock === 24, 'Approved import atomically persists only to the authenticated store');
+
     const oauthError = await fetch(`${origin}/api/integrations/instagram/callback?error=${encodeURIComponent('<script>alert(1)</script>')}`);
     const oauthHtml = await oauthError.text();
     assert(!oauthHtml.includes('<script>alert(1)</script>') && oauthHtml.includes('&lt;script&gt;'), 'OAuth error page escapes reflected HTML');

@@ -243,6 +243,71 @@ function runSchemaMigrations(): void {
     up: () => {
       addColumnIfMissing('users', 'session_version', 'INTEGER NOT NULL DEFAULT 0');
     }
+  }, {
+    version: '20260816_012_data_import_adapters',
+    name: 'Add tenant data mapping profiles and staged imports',
+    up: () => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS data_mapping_profiles (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          store_id INTEGER NOT NULL,
+          name TEXT NOT NULL,
+          source_type TEXT NOT NULL,
+          mapping_json TEXT NOT NULL,
+          options_json TEXT NOT NULL DEFAULT '{}',
+          created_by INTEGER DEFAULT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(store_id, name),
+          FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+          FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS data_import_previews (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          store_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          token_hash TEXT NOT NULL UNIQUE,
+          source_type TEXT NOT NULL,
+          source_name TEXT NOT NULL DEFAULT '',
+          headers_json TEXT NOT NULL,
+          mapping_json TEXT NOT NULL,
+          options_json TEXT NOT NULL DEFAULT '{}',
+          valid_rows_json TEXT NOT NULL,
+          errors_json TEXT NOT NULL DEFAULT '[]',
+          warnings_json TEXT NOT NULL DEFAULT '[]',
+          total_rows INTEGER NOT NULL DEFAULT 0,
+          expires_at TEXT NOT NULL,
+          committed_at TEXT DEFAULT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS data_import_jobs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          store_id INTEGER NOT NULL,
+          user_id INTEGER NOT NULL,
+          source_type TEXT NOT NULL,
+          source_name TEXT NOT NULL DEFAULT '',
+          profile_name TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL,
+          total_rows INTEGER NOT NULL DEFAULT 0,
+          valid_rows INTEGER NOT NULL DEFAULT 0,
+          invalid_rows INTEGER NOT NULL DEFAULT 0,
+          inserted_rows INTEGER NOT NULL DEFAULT 0,
+          updated_rows INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          completed_at TEXT DEFAULT NULL,
+          FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_mapping_profiles_store ON data_mapping_profiles(store_id, updated_at);
+        CREATE INDEX IF NOT EXISTS idx_import_previews_store ON data_import_previews(store_id, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_import_jobs_store ON data_import_jobs(store_id, created_at);
+      `);
+    }
   }];
 
   const isApplied = db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?');
@@ -709,6 +774,7 @@ export function performDataMaintenance(retentionDays = 180, pendingRegistrationR
   const safePendingDays = Math.min(365, Math.max(7, Math.trunc(pendingRegistrationRetentionDays)));
   db.transaction(() => {
     db.prepare("DELETE FROM instagram_oauth_states WHERE expires_at <= CURRENT_TIMESTAMP").run();
+    db.prepare("DELETE FROM data_import_previews WHERE expires_at <= CURRENT_TIMESTAMP").run();
     db.prepare("DELETE FROM email_verification_tokens WHERE expires_at < datetime('now', '-7 days')").run();
     db.prepare("DELETE FROM webhook_events WHERE processed_at < datetime('now', '-30 days')").run();
     db.prepare(`DELETE FROM messages WHERE created_at < datetime('now', ?)`).run(`-${safeRetentionDays} days`);

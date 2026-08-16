@@ -32,7 +32,7 @@ app.use(AuthMiddleware.cors);
 
 // Capture the exact bytes Meta signed before JSON parsing changes their form.
 app.use(express.json({
-  limit: '256kb',
+  limit: '2mb',
   verify: (req, _res, buffer) => {
     (req as any).rawBody = Buffer.from(buffer);
   }
@@ -132,8 +132,10 @@ app.get(['/master-admin/plans', '/master-admin/plans.html'], (req, res) => {
 // ==========================================
 import masterAdminRouter from './routes/master-admin.routes';
 import planRouter from './routes/plan.routes';
+import dataImportRouter from './routes/data-import.routes';
 app.use(masterAdminRouter);
 app.use(planRouter);
+app.use(dataImportRouter);
 app.use('/', express.static(path.resolve(__dirname, '../public')));
 // --- PRODUCTS & STOCKS ---
 app.get('/api/stocks', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), async (req: AuthenticatedRequest, res) => {

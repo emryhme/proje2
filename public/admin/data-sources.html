@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+  <title>ISCWORKS — Veri Kaynakları</title>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    .source-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:18px}.source-tab{border:1px solid var(--border);background:var(--card);color:var(--muted);padding:14px;border-radius:10px;display:flex;align-items:center;justify-content:center;gap:8px;cursor:pointer;font-weight:700}.source-tab.active{border-color:#8b5cf6;background:rgba(139,92,246,.1);color:#a78bfa}.source-drop{border:1px dashed #555b68;border-radius:12px;padding:28px;text-align:center;background:rgba(255,255,255,.02)}.source-drop input{max-width:360px}.source-help{font-size:11px;color:var(--muted);line-height:1.6;margin-top:7px}.import-toolbar{display:flex;gap:12px;align-items:end;flex-wrap:wrap;margin-top:18px}.import-toolbar .form-group{min-width:190px;flex:1}.import-map-row{display:grid;grid-template-columns:1fr 24px 1.35fr;gap:12px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--border)}.import-map-row:last-child{border-bottom:0}.import-map-row i{color:#8b5cf6}.import-map-row select{width:100%;height:38px;border-radius:8px;border:1px solid var(--border);background:var(--input,#101116);color:var(--text);padding:0 10px}.required-dot{color:#ef4444;margin-left:4px}.import-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}.import-stat{border:1px solid var(--border);border-radius:10px;padding:14px;background:rgba(255,255,255,.02)}.import-stat span{display:block;color:var(--muted);font-size:11px}.import-stat strong{font-size:24px}.import-stat.success strong{color:#22c55e}.import-stat.warning strong{color:#f59e0b}.import-stat.error strong{color:#ef4444}.import-issues{max-height:220px;overflow:auto;margin-top:14px}.import-issue{display:flex;gap:12px;padding:9px 12px;border-radius:8px;margin:6px 0;font-size:11px}.import-issue.error{background:rgba(239,68,68,.1);color:#fca5a5}.import-issue.warning{background:rgba(245,158,11,.1);color:#fcd34d}.empty-cell{text-align:center!important;padding:24px!important;color:var(--muted)}.json-input{width:100%;min-height:180px;font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:11px}.mapping-note{padding:12px 14px;border-radius:9px;background:rgba(139,92,246,.08);color:#c4b5fd;font-size:11px;margin-bottom:12px}.commit-bar{display:flex;align-items:end;gap:12px;justify-content:flex-end;margin-top:16px}.commit-bar .form-group{max-width:300px;flex:1}@media(max-width:800px){.source-tabs,.import-summary{grid-template-columns:1fr}.import-map-row{grid-template-columns:1fr}.import-map-row i{display:none}.commit-bar{align-items:stretch;flex-direction:column}.commit-bar .form-group{max-width:none}}
+  </style>
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar" id="sidebar">
+    <a href="index.html" class="logo"><div class="logo-mark"><i data-lucide="crown" size="20"></i></div>ISCWORKS</a>
+    <div class="section-title">ANA MENÜ</div>
+    <a href="index.html" class="nav-item"><i data-lucide="layout-dashboard"></i>Dashboard & Stok</a>
+    <a href="orders.html" class="nav-item"><i data-lucide="shopping-cart"></i>Siparişler<span class="nav-badge" id="ordersBadgeCount">0</span></a>
+    <a href="new-product.html" class="nav-item"><i data-lucide="package-plus"></i>Yeni Ürün Girişi</a>
+    <a href="campaigns.html" class="nav-item"><i data-lucide="badge-percent"></i>Kampanyalar</a>
+    <a href="rewards.html" class="nav-item"><i data-lucide="gift"></i>VIP Ödüller</a>
+    <div class="section-title">AI & MAĞAZA YÖNETİMİ</div>
+    <a href="ai-product.html" class="nav-item"><i data-lucide="sparkles"></i>S.E.T.T AI Copilot</a>
+    <a href="settings.html" class="nav-item"><i data-lucide="settings"></i>Fiyat & Kargo Ayarları</a>
+    <div class="section-title">SİSTEM & ALTYAPI</div>
+    <a href="data-sources.html" class="nav-item active"><i data-lucide="database-zap"></i>Veri Kaynakları</a>
+    <a href="api-settings.html" class="nav-item"><i data-lucide="sliders"></i>API & AI Kişiselleştirme</a>
+    <div class="sidebar-bottom"><div class="store-card"><div class="store-avatar">M</div><div class="store-info"><strong>Mağazam</strong><small>Mağaza kontrol paneli</small></div></div></div>
+  </aside>
+
+  <main class="main" id="dataSourcesPage">
+    <header class="topbar">
+      <div style="display:flex;align-items:center;gap:10px"><button class="icon-button mobile-menu" onclick="toggleSidebar()"><i data-lucide="menu"></i></button><div class="search"><i data-lucide="search" size="15"></i><input type="text" placeholder="Veri kaynağı ara..."></div></div>
+      <div class="top-actions"><div class="sync-badge"><span class="pulse-dot"></span><span>Instagram Bağlı</span></div><button class="icon-button" id="btnToggleSound"><i data-lucide="bell" size="17"></i></button><div class="user"><div class="avatar">KU</div><div class="user-text"><strong>Yükleniyor...</strong><span>Mağaza kullanıcısı</span></div><i data-lucide="chevron-down" size="13"></i></div></div>
+    </header>
+
+    <section class="content">
+      <div class="page-header"><div class="page-title"><h1>Veri Kaynakları</h1><p>Her formattaki ürün verisini mağazanızın stok yapısına güvenle eşleştirin.</p></div><div class="header-actions"><a href="index.html" class="btn btn-secondary"><i data-lucide="package-search" size="14"></i>Stokları Gör</a></div></div>
+
+      <div class="card table-card">
+        <div class="table-header"><div class="table-title">1. Veri kaynağını seçin</div></div>
+        <div style="padding:18px">
+          <div class="source-tabs">
+            <button class="source-tab active" data-import-source="file"><i data-lucide="file-spreadsheet"></i>CSV / JSON Dosyası</button>
+            <button class="source-tab" data-import-source="google_sheets"><i data-lucide="sheet"></i>Google Sheets</button>
+            <button class="source-tab" data-import-source="json_paste"><i data-lucide="braces"></i>JSON Yapıştır</button>
+          </div>
+          <div data-import-panel="file">
+            <div class="source-drop"><i data-lucide="upload-cloud" size="32" style="color:#8b5cf6"></i><h3>Dosyanızı seçin</h3><input id="importFile" type="file" accept=".csv,.json,text/csv,application/json"><div id="selectedImportFile" class="source-help">Maksimum 1,8 MB ve 5.000 kayıt. Dosyanız doğrudan stoklara yazılmaz.</div></div>
+          </div>
+          <div data-import-panel="google_sheets" hidden>
+            <div class="form-group"><label>Paylaşıma açık Google Sheets bağlantısı veya ID</label><input id="importSheetUrl" type="text" placeholder="https://docs.google.com/spreadsheets/d/..."><div class="source-help">Tabloyu “Bağlantıya sahip herkes görüntüleyebilir” olarak paylaşın.</div></div>
+          </div>
+          <div data-import-panel="json_paste" hidden>
+            <div class="form-group"><label>JSON veri seti</label><textarea id="importJsonText" class="json-input" placeholder='{"products":[{"sku":"HBL-M","title":"HBL Gömlek","sale_price":"799,90","inventory":25}]}'></textarea><div class="source-help">İç içe JSON içindeki en uygun kayıt dizisi otomatik bulunur; alanlar noktalı yollarla gösterilir.</div></div>
+          </div>
+          <div class="import-toolbar">
+            <div class="form-group"><label>Kayıtlı eşleştirme profili</label><select id="importProfileSelect"><option value="">Otomatik eşleştir</option></select></div>
+            <button id="btnAnalyzeImport" class="btn btn-primary"><i data-lucide="scan-search"></i>Veriyi Analiz Et</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card table-card" id="importMappingSection" hidden style="margin-top:18px">
+        <div class="table-header"><div class="table-title">2. Sütunları eşleştirin</div><button id="btnReanalyzeMapping" class="btn btn-secondary"><i data-lucide="refresh-cw" size="14"></i>Eşleştirmeyi Yeniden Uygula</button></div>
+        <div style="padding:18px"><div class="mapping-note">Sistem sütunları otomatik tahmin etti. Yanlış alan varsa sağ taraftaki listeden değiştirin; yıldızlı alanlar zorunludur.</div><div id="importMappingGrid"></div>
+          <div class="import-toolbar"><div class="form-group"><label>Beden yoksa kullanılacak değer</label><input id="importDefaultSize" value="STANDART"></div><div class="form-group"><label>Fiyat çarpanı</label><input id="importPriceMultiplier" type="number" min="0.001" step="0.001" value="1"></div><div class="form-group"><label>Stok çarpanı</label><input id="importStockMultiplier" type="number" min="0.001" step="0.001" value="1"></div></div>
+        </div>
+      </div>
+
+      <div class="card table-card" id="importPreviewSection" hidden style="margin-top:18px">
+        <div class="table-header"><div class="table-title">3. Önizleme ve onay</div></div>
+        <div style="padding:18px"><div class="import-summary" id="importPreviewSummary"></div><div class="table-responsive"><table><thead><tr><th>Satır</th><th>Ürün Kodu</th><th>Ürün Adı</th><th>Beden</th><th>Stok</th><th>Fiyat</th></tr></thead><tbody id="importPreviewBody"></tbody></table></div><div id="importIssues" class="import-issues" hidden></div>
+          <div class="commit-bar"><div class="form-group"><label>Bu eşleştirmeyi kaydet (isteğe bağlı)</label><input id="importProfileName" maxlength="80" placeholder="Örn: Trendyol ürün formatı"></div><button id="btnCommitImport" class="btn btn-primary" disabled>Geçerli Kayıtları İçe Aktar</button></div>
+        </div>
+      </div>
+
+      <div class="card table-card" style="margin-top:18px"><div class="table-header"><div class="table-title">Son içe aktarmalar</div></div><div class="table-responsive"><table><thead><tr><th>Kaynak</th><th>Profil</th><th>Durum</th><th>Eklenen</th><th>Güncellenen</th><th>Tarih</th></tr></thead><tbody id="importHistoryBody"><tr><td colspan="6" class="empty-cell">Yükleniyor...</td></tr></tbody></table></div></div>
+    </section>
+  </main>
+</div>
+<div id="toastContainer"></div>
+<script src="app.js"></script>
+<script>document.addEventListener('DOMContentLoaded',()=>window.lucide&&lucide.createIcons());</script>
+</body>
+</html>

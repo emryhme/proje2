@@ -209,6 +209,17 @@ function ensurePlanNavigation() {
   apiSettingsLink.before(link);
 }
 
+function ensureDataSourcesNavigation() {
+  if (document.querySelector('.nav-item[href="data-sources.html"]')) return;
+  const apiSettingsLink = document.querySelector('.nav-item[href="api-settings.html"]');
+  if (!apiSettingsLink) return;
+  const link = document.createElement('a');
+  link.href = 'data-sources.html';
+  link.className = `nav-item${window.location.pathname.endsWith('/data-sources.html') ? ' active' : ''}`;
+  link.innerHTML = '<i data-lucide="database-zap"></i>Veri Kaynakları';
+  apiSettingsLink.before(link);
+}
+
 function formatPlanDate(value) {
   if (!value) return 'Tanımlanmadı';
   const date = new Date(`${String(value).slice(0, 10)}T00:00:00`);
@@ -349,6 +360,8 @@ function setupUserDropdown() {
 // Initialize Application Robustly (Supports readyState interactive & complete)
 function initApp() {
   checkAuthStatus();
+  ensurePlanNavigation();
+  ensureDataSourcesNavigation();
   setupThemeToggle();
   applyDynamicStoreBranding();
   applyCurrentUserProfile();
@@ -358,6 +371,7 @@ function initApp() {
   fetchCampaigns();
   fetchSettings();
   fetchMerchantApplications();
+  initializeDataSourcesPage();
   setInterval(pollOrdersInBackground, POLL_INTERVAL_MS);
 }
 
@@ -2273,7 +2287,198 @@ async function saveSystemSettingsPage() {
 }
 
 
-// GOOGLE SHEET & CSV İÇE / DIŞA AKTARMA MOTORU (MAĞAZA ÖZEL)
+// ESNEK VERİ KAYNAĞI & ALAN EŞLEŞTİRME MOTORU
+const dataImportState = {
+  sourceType: 'csv',
+  sourceName: '',
+  content: '',
+  sheetUrl: '',
+  headers: [],
+  mapping: {},
+  options: {},
+  previewToken: '',
+  profiles: []
+};
+
+const importFieldLabels = {
+  productCode: 'Ürün Kodu / SKU', shortCode: 'Kısa Kod', name: 'Ürün Adı', size: 'Beden / Numara',
+  color: 'Renk', price: 'Fiyat', stock: 'Stok', category: 'Kategori', wpLink: 'Ürün Bağlantısı', mediaLink: 'Görsel Bağlantısı'
+};
+
+function setDataSourceType(type) {
+  if (type !== 'file') dataImportState.sourceType = type;
+  else if (!['csv', 'json'].includes(dataImportState.sourceType)) dataImportState.sourceType = 'csv';
+  document.querySelectorAll('[data-import-source]').forEach(button => button.classList.toggle('active', button.dataset.importSource === type));
+  document.querySelectorAll('[data-import-panel]').forEach(panel => panel.hidden = panel.dataset.importPanel !== type);
+}
+
+async function handleImportFile(input) {
+  const file = input.files?.[0];
+  if (!file) return;
+  if (file.size > 1800000) {
+    showToast('Dosya en fazla 1,8 MB olabilir.', 'error');
+    input.value = '';
+    return;
+  }
+  dataImportState.sourceName = file.name;
+  dataImportState.sourceType = file.name.toLowerCase().endsWith('.json') ? 'json' : 'csv';
+  dataImportState.content = await file.text();
+  document.getElementById('selectedImportFile').textContent = `${file.name} • ${(file.size / 1024).toFixed(1)} KB`;
+  setDataSourceType('file');
+}
+
+function currentImportMapping() {
+  const mapping = {};
+  document.querySelectorAll('[data-mapping-field]').forEach(select => {
+    if (select.value) mapping[select.dataset.mappingField] = select.value;
+  });
+  return mapping;
+}
+
+function currentImportOptions() {
+  return {
+    defaultSize: document.getElementById('importDefaultSize')?.value || 'STANDART',
+    priceMultiplier: Number(document.getElementById('importPriceMultiplier')?.value || 1),
+    stockMultiplier: Number(document.getElementById('importStockMultiplier')?.value || 1)
+  };
+}
+
+function renderImportMapping(headers, mapping) {
+  const container = document.getElementById('importMappingGrid');
+  if (!container) return;
+  container.innerHTML = Object.entries(importFieldLabels).map(([field, label]) => `
+    <div class="import-map-row">
+      <div><strong>${escapeHtml(label)}</strong>${['productCode', 'name', 'price'].includes(field) ? '<span class="required-dot">*</span>' : ''}</div>
+      <i data-lucide="arrow-left-right" size="15"></i>
+      <select data-mapping-field="${field}">
+        <option value="">Eşleştirme yok</option>
+        ${headers.map(header => `<option value="${escapeHtml(header)}" ${mapping[field] === header ? 'selected' : ''}>${escapeHtml(header)}</option>`).join('')}
+      </select>
+    </div>
+  `).join('');
+  document.getElementById('importMappingSection').hidden = false;
+  if (window.lucide) lucide.createIcons();
+}
+
+function renderImportPreview(data) {
+  const summary = document.getElementById('importPreviewSummary');
+  summary.innerHTML = `
+    <div class="import-stat"><span>Toplam</span><strong>${data.totalRows}</strong></div>
+    <div class="import-stat success"><span>Hazır</span><strong>${data.validCount}</strong></div>
+    <div class="import-stat warning"><span>Uyarı</span><strong>${data.warningCount}</strong></div>
+    <div class="import-stat error"><span>Hatalı</span><strong>${data.invalidCount}</strong></div>`;
+  const body = document.getElementById('importPreviewBody');
+  body.innerHTML = data.sampleRows.length ? data.sampleRows.map(row => `
+    <tr><td>${row.sourceRow}</td><td><span class="code-tag">${escapeHtml(row.productCode)}</span></td><td>${escapeHtml(row.name)}</td>
+    <td>${escapeHtml(row.size)}</td><td>${Number(row.stock).toLocaleString('tr-TR')}</td><td>${Number(row.price).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} TL</td></tr>
+  `).join('') : '<tr><td colspan="6" class="empty-cell">Geçerli kayıt bulunamadı.</td></tr>';
+  const issueBox = document.getElementById('importIssues');
+  const issues = [...data.errors.map(item => ({ ...item, type: 'error' })), ...data.warnings.map(item => ({ ...item, type: 'warning' }))];
+  issueBox.hidden = !issues.length;
+  issueBox.innerHTML = issues.slice(0, 30).map(item => `<div class="import-issue ${item.type}"><strong>Satır ${item.row}</strong><span>${escapeHtml(item.messages.join(' '))}</span></div>`).join('');
+  document.getElementById('importPreviewSection').hidden = false;
+  const commitButton = document.getElementById('btnCommitImport');
+  commitButton.disabled = data.validCount === 0;
+  commitButton.textContent = `${data.validCount} Geçerli Kaydı İçe Aktar`;
+}
+
+async function analyzeDataSource(useCurrentMapping = false) {
+  const button = document.getElementById('btnAnalyzeImport');
+  button.disabled = true;
+  button.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Veri analiz ediliyor...';
+  try {
+    let payload;
+    if (dataImportState.sourceType === 'google_sheets') {
+      const sheetUrl = document.getElementById('importSheetUrl').value.trim();
+      if (!sheetUrl) throw new Error('Google Sheets bağlantısını girin.');
+      dataImportState.sheetUrl = sheetUrl;
+      payload = { sourceType: 'google_sheets', sheetUrl };
+    } else if (dataImportState.sourceType === 'json_paste') {
+      dataImportState.content = document.getElementById('importJsonText').value.trim();
+      dataImportState.sourceName = 'Yapıştırılan JSON';
+      payload = { sourceType: 'json', sourceName: dataImportState.sourceName, content: dataImportState.content };
+    } else {
+      if (!dataImportState.content) throw new Error('Önce CSV veya JSON dosyası seçin.');
+      payload = { sourceType: dataImportState.sourceType, sourceName: dataImportState.sourceName, content: dataImportState.content };
+    }
+    const profileId = Number(document.getElementById('importProfileSelect')?.value || 0);
+    if (profileId && !useCurrentMapping) payload.profileId = profileId;
+    if (useCurrentMapping) {
+      payload.mapping = currentImportMapping();
+      payload.options = currentImportOptions();
+    }
+    const data = await apiFetch('/api/data-import/analyze', { method: 'POST', body: JSON.stringify(payload) });
+    Object.assign(dataImportState, { headers: data.headers, mapping: data.mapping, options: data.options, previewToken: data.previewToken });
+    renderImportMapping(data.headers, data.mapping);
+    document.getElementById('importDefaultSize').value = data.options.defaultSize || 'STANDART';
+    document.getElementById('importPriceMultiplier').value = data.options.priceMultiplier || 1;
+    document.getElementById('importStockMultiplier').value = data.options.stockMultiplier || 1;
+    renderImportPreview(data);
+    showToast(`${data.validCount} kayıt içe aktarmaya hazır. Önizlemeyi kontrol edin.`, data.invalidCount ? 'warning' : 'success');
+  } catch (error) {
+    showToast(error.message || 'Veri kaynağı analiz edilemedi.', 'error');
+  } finally {
+    button.disabled = false;
+    button.innerHTML = '<i data-lucide="scan-search"></i> Veriyi Analiz Et';
+    if (window.lucide) lucide.createIcons();
+  }
+}
+
+async function commitDataImport() {
+  if (!dataImportState.previewToken) return showToast('Önce veriyi analiz edin.', 'warning');
+  const button = document.getElementById('btnCommitImport');
+  button.disabled = true;
+  try {
+    const profileName = document.getElementById('importProfileName').value.trim();
+    const data = await apiFetch('/api/data-import/commit', {
+      method: 'POST',
+      body: JSON.stringify({ previewToken: dataImportState.previewToken, saveProfile: Boolean(profileName), profileName })
+    });
+    showToast(data.message, 'success');
+    dataImportState.previewToken = '';
+    button.textContent = 'İçe Aktarma Tamamlandı';
+    await Promise.all([loadImportProfiles(), loadImportHistory()]);
+  } catch (error) {
+    showToast(error.message || 'İçe aktarma tamamlanamadı.', 'error');
+    button.disabled = false;
+  }
+}
+
+async function loadImportProfiles() {
+  const select = document.getElementById('importProfileSelect');
+  if (!select) return;
+  try {
+    const data = await apiFetch('/api/data-import/profiles');
+    dataImportState.profiles = data.profiles || [];
+    select.innerHTML = '<option value="">Otomatik eşleştir</option>' + dataImportState.profiles.map(profile => `<option value="${profile.id}">${escapeHtml(profile.name)}</option>`).join('');
+  } catch {}
+}
+
+async function loadImportHistory() {
+  const body = document.getElementById('importHistoryBody');
+  if (!body) return;
+  try {
+    const data = await apiFetch('/api/data-import/history');
+    body.innerHTML = data.jobs?.length ? data.jobs.map(job => `
+      <tr><td>${escapeHtml(job.sourceName || job.sourceType)}</td><td>${escapeHtml(job.profileName || 'Otomatik')}</td>
+      <td><span class="status-badge in-stock">Tamamlandı</span></td><td>${job.insertedRows}</td><td>${job.updatedRows}</td><td>${new Date(String(job.completedAt || job.createdAt).replace(' ', 'T') + 'Z').toLocaleString('tr-TR')}</td></tr>
+    `).join('') : '<tr><td colspan="6" class="empty-cell">Henüz içe aktarma yapılmadı.</td></tr>';
+  } catch { body.innerHTML = '<tr><td colspan="6" class="empty-cell">Geçmiş yüklenemedi.</td></tr>'; }
+}
+
+function initializeDataSourcesPage() {
+  if (!document.getElementById('dataSourcesPage')) return;
+  document.querySelectorAll('[data-import-source]').forEach(button => button.addEventListener('click', () => setDataSourceType(button.dataset.importSource)));
+  document.getElementById('importFile')?.addEventListener('change', event => handleImportFile(event.target));
+  document.getElementById('btnAnalyzeImport')?.addEventListener('click', () => analyzeDataSource(false));
+  document.getElementById('btnReanalyzeMapping')?.addEventListener('click', () => analyzeDataSource(true));
+  document.getElementById('btnCommitImport')?.addEventListener('click', commitDataImport);
+  setDataSourceType('file');
+  loadImportProfiles();
+  loadImportHistory();
+}
+
+// ESKİ GOOGLE SHEET DIŞA AKTARMA DESTEĞİ
 async function importFromCustomGoogleSheet() {
   const inputElem = document.getElementById('customSheetImportUrl') || document.getElementById('sysGoogleSheetId');
   if (!inputElem) return;
