@@ -420,6 +420,8 @@ async function runTestSuite() {
   const variantCtx = AIService.getSessionContext('variant-test', 'store-alpha', 100, 'TEST');
   variantCtx.productCode = 'HBL';
   variantCtx.variantVerified = false;
+  const informationalPriceReply = (AIService as any).getProductPriceReply(100, variantCtx, 'Bu ürünün fiyatı ne kadar?');
+  assert(informationalPriceReply.includes('250 TL') && !informationalPriceReply.includes('Hangi bedeni'), 'A customer asking only for a known Instagram product price receives the database price without entering the size/order flow');
   const noSizeReply = (AIService as any).getShortCodeOrderReply(100, variantCtx, 'HBL\n\nMüşteri bu ürünü sipariş etmek istiyor.');
   assert(noSizeReply.includes('Hangi bedeni istersiniz?') && variantCtx.productCode === 'HBL', 'Product short code waits for an explicit size instead of reading M from Müşteri');
   const explicitSizeReply = (AIService as any).getShortCodeOrderReply(100, variantCtx, 'M beden istiyorum');

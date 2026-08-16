@@ -320,6 +320,50 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     return `${shortCode} kodlu ürünün ${ctx.size} bedeni stokta mevcut. Fiyatı ${price.toLocaleString('tr-TR')} TL. Kaç adet istersiniz?`;
   }
 
+  /** Answers informational price questions directly without forcing the customer into the order/size flow. */
+  private static getProductPriceReply(storeId: number, ctx: SessionContext, userText: string): string | null {
+    const text = String(userText || '');
+    if (!/(?:fiyat|ne\s*kadar|kaça|kaç\s*(?:tl|lira)|ücret|tutar)/iu.test(text)) return null;
+    const code = String(ctx.productCode || '').trim().toUpperCase();
+    if (!code) return null;
+
+    const rows = db.prepare(`
+      SELECT product_code, short_code, name, size, price, stock
+      FROM products
+      WHERE store_id = ? AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)
+      ORDER BY size ASC
+    `).all(storeId, code, code) as any[];
+    if (!rows.length) return null;
+
+    const formatPrice = (value: number) => `${value.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} TL`;
+    const validRows = rows.filter(row => Number.isFinite(Number(row.price)) && Number(row.price) >= 0);
+    if (!validRows.length) return `${code} kodlu ürün için fiyat henüz tanımlı değil. Lütfen mağaza ile iletişime geçin.`;
+
+    const exactVariant = validRows.find(row => String(row.product_code || '').trim().toUpperCase() === code);
+    if (exactVariant) {
+      return `${exactVariant.name} (${exactVariant.product_code}) ürününün fiyatı ${formatPrice(Number(exactVariant.price))}.`;
+    }
+
+    const normalizedText = text.toUpperCase();
+    const selectedBySize = validRows.find(row => {
+      const size = String(row.size || '').trim().toUpperCase();
+      if (!size) return false;
+      const escaped = size.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      return new RegExp(`(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`, 'iu').test(normalizedText);
+    });
+    if (selectedBySize) {
+      return `${selectedBySize.name} ürününün ${selectedBySize.size} beden fiyatı ${formatPrice(Number(selectedBySize.price))}.`;
+    }
+
+    const uniquePrices = [...new Set(validRows.map(row => Number(row.price)))];
+    if (uniquePrices.length === 1) {
+      return `${validRows[0].name} (${code}) ürününün fiyatı ${formatPrice(uniquePrices[0])}.`;
+    }
+
+    const variantPrices = validRows.map(row => `${String(row.size || row.product_code).toUpperCase()}: ${formatPrice(Number(row.price))}`);
+    return `${validRows[0].name} (${code}) için bedenlere göre fiyatlar: ${variantPrices.join(', ')}.`;
+  }
+
   /**
    * Alt Düğüm Araçlarını Tanımlar (Strict Store Isolation)
    */
@@ -805,6 +849,18 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       await this.extractSessionDataWithAI(senderId, userMessage, apiKey, storeSlug, storeId, channel);
       const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
       this.hydrateProductCodeFromMessage(userMessage, storeId, ctx);
+
+      const deterministicPriceReply = this.getProductPriceReply(storeId, ctx, userMessage);
+      if (deterministicPriceReply) {
+        ctx.history.push(new HumanMessage(userMessage), new AIMessage(deterministicPriceReply));
+        if (ctx.history.length > 16) ctx.history.splice(0, ctx.history.length - 16);
+        return {
+          reply: deterministicPriceReply,
+          tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
+          toolTraces: [],
+          cart: ctx.cart
+        };
+      }
 
       const deterministicOrderReply = this.getShortCodeOrderReply(storeId, ctx, userMessage);
       if (deterministicOrderReply) {
