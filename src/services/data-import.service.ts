@@ -146,7 +146,7 @@ function parseNumber(value: unknown): number | null {
     const thousands = decimal === ',' ? /\./g : /,/g;
     text = text.replace(thousands, '').replace(decimal, '.');
   } else if (comma >= 0) text = text.replace(/\./g, '').replace(',', '.');
-  else if ((text.match(/\./g) || []).length > 1) text = text.replace(/\./g, '');
+  else if ((text.match(/\./g) || []).length > 1 || /^-?\d{1,3}\.\d{3}$/.test(text)) text = text.replace(/\./g, '');
   const number = Number(text);
   return Number.isFinite(number) ? number : null;
 }

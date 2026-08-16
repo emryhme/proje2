@@ -127,10 +127,15 @@ async function runTestSuite() {
     FROM orders WHERE store_id = ? ORDER BY id DESC LIMIT 5
   `).all(100);
   assert(Array.isArray(merchantRecentOrders), 'Master Admin merchant detail uses valid order customer columns');
-  const flexibleRows = parseImportContent('json', JSON.stringify({ payload: { items: [{ SKU: 'MAP-M', Description: 'Mapped Product', Option1: 'Medium', 'Sale Price': '₺1.299,90', Inventory: '12' }] } }));
+  const flexibleRows = parseImportContent('json', JSON.stringify({ payload: { items: [
+    { SKU: 'MAP-M', Description: 'Mapped Product', Option1: 'Medium', 'Sale Price': '₺1.299,90', Inventory: '12' },
+    { SKU: 'THOUSAND-M', Description: 'Turkish Thousands Product', Option1: 'Medium', 'Sale Price': '1.150', Inventory: '4' },
+    { SKU: 'DECIMAL-M', Description: 'Dot Decimal Product', Option1: 'Medium', 'Sale Price': '799.90', Inventory: '3' }
+  ] } }));
   const flexibleMapping = suggestMapping(collectHeaders(flexibleRows));
   const flexibleNormalized = normalizeRecords(flexibleRows, flexibleMapping);
   assert(flexibleNormalized.validRows[0]?.productCode === 'MAP-M' && flexibleNormalized.validRows[0]?.size === 'M' && flexibleNormalized.validRows[0]?.price === 1299.9, 'Flexible nested JSON fields are automatically mapped and normalized');
+  assert(flexibleNormalized.validRows[1]?.price === 1150 && flexibleNormalized.validRows[2]?.price === 799.9, 'Turkish thousands dots and decimal dots are distinguished while importing prices');
   const shuffledCsvRows = parseImportContent('csv', [
     'Tedarikçi Notu;Görsel Adresi;Depodaki Miktar;Referans No;KDV Oranı;Varyasyon;Ürün Başlığı;Satış Tutarı;Renk Bilgisi;Ürün Sayfası',
     'Yeni sezon ürünü;https://example.com/hbl-m.jpg;24;HBL-M;%20;Medium;Oversize HBL Gömlek;₺799,90;Ekru;https://example.com/hbl-m'
