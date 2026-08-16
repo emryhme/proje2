@@ -1,0 +1,13 @@
+Tedarikçi Notu;Görsel Adresi;Depodaki Miktar;Referans No;KDV Oranı;Varyasyon;Ürün Başlığı;Satış Tutarı;Sezon;Renk Bilgisi;Ürün Grubu;Ürün Sayfası
+Yeni sezon ürünü;https://example.com/images/hbl-m.jpg;24;HBL-M;%20;Medium;Oversize HBL Gömlek;₺799,90;2026 Yaz;Ekru;Gömlek;https://example.com/hbl-m
+Hızlı satıyor;https://example.com/images/hbl-s.jpg;18;HBL-S;%20;Small;Oversize HBL Gömlek;799.90;2026 Yaz;Ekru;Gömlek;https://example.com/hbl-s
+Son stoklar;https://example.com/images/hbl-l.jpg;7;HBL-L;%20;Large;Oversize HBL Gömlek;1.099,00;2026 Yaz;Ekru;Gömlek;https://example.com/hbl-l
+Standart koleksiyon;https://example.com/images/gma-38.jpg;13;GMA-38;%10;38;Grand Paça Pantolon;1.299,95;2026 İlkbahar;Siyah;Pantolon;https://example.com/gma-38
+Stok bekleniyor;https://example.com/images/gma-40.jpg;0;GMA-40;%10;40;Grand Paça Pantolon;1299.95;2026 İlkbahar;Siyah;Pantolon;https://example.com/gma-40
+Çok satan;https://example.com/images/tsw-xl.jpg;100;TSW-XL;%20;Extra Large;Basic Tişört;499 TL;Dört Mevsim;Beyaz;Tişört;https://example.com/tsw-xl
+Depo A;https://example.com/images/tsw-m.jpg;46;TSW-M;%20;M;Basic Tişört;₺499;Dört Mevsim;Beyaz;Tişört;https://example.com/tsw-m
+Kutu hasarsız;https://example.com/images/ndl-42.jpg;8;NDL-42;%20;42;Sneaker Model NDL;2.499,90;2026 Sonbahar;Beyaz / Siyah;Ayakkabı;https://example.com/ndl-42
+Tek beden;https://example.com/images/ckt-st.jpg;4;CKT-ST;%10;;Unisex Deri Ceket;3.750,00;2026 Kış;Kahverengi;Ceket;https://example.com/ckt-st
+Fiyat daha girilmedi;;12;ERR-PRICE;%20;M;Fiyatı Eksik Test Ürünü;;Test;Kırmızı;Test;
+Sayım hatası;;-5;ERR-STOCK;%20;L;Negatif Stok Test Ürünü;650,00;Test;Mavi;Test;
+Kod çakışması;;3;HBL-M;%20;M;Mükerrer Kod Test Ürünü;899,00;Test;Yeşil;Test;

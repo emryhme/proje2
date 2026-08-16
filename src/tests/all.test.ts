@@ -131,6 +131,20 @@ async function runTestSuite() {
   const flexibleMapping = suggestMapping(collectHeaders(flexibleRows));
   const flexibleNormalized = normalizeRecords(flexibleRows, flexibleMapping);
   assert(flexibleNormalized.validRows[0]?.productCode === 'MAP-M' && flexibleNormalized.validRows[0]?.size === 'M' && flexibleNormalized.validRows[0]?.price === 1299.9, 'Flexible nested JSON fields are automatically mapped and normalized');
+  const shuffledCsvRows = parseImportContent('csv', [
+    'Tedarikçi Notu;Görsel Adresi;Depodaki Miktar;Referans No;KDV Oranı;Varyasyon;Ürün Başlığı;Satış Tutarı;Renk Bilgisi;Ürün Sayfası',
+    'Yeni sezon ürünü;https://example.com/hbl-m.jpg;24;HBL-M;%20;Medium;Oversize HBL Gömlek;₺799,90;Ekru;https://example.com/hbl-m'
+  ].join('\n'));
+  const shuffledMapping = suggestMapping(collectHeaders(shuffledCsvRows));
+  const shuffledNormalized = normalizeRecords(shuffledCsvRows, shuffledMapping);
+  assert(
+    shuffledMapping.productCode === 'Referans No'
+      && shuffledMapping.price === 'Satış Tutarı'
+      && shuffledMapping.stock === 'Depodaki Miktar'
+      && shuffledNormalized.validRows[0]?.productCode === 'HBL-M'
+      && shuffledNormalized.validRows[0]?.price === 799.9,
+    'Shuffled Turkish supplier columns are recognized without manual mapping'
+  );
 
   console.log('\n2️⃣ AUTH TEST 2: Valid JWT Token Generation & Verification');
   const jwtOwnerA = AuthMiddleware.generateToken({ userId: 10, storeId: 100, role: 'OWNER', email: 'owner_a@iscworks.com' });

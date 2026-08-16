@@ -21,16 +21,16 @@ export type NormalizedImportRow = {
 };
 
 const FIELD_ALIASES: Record<CanonicalImportField, string[]> = {
-  productCode: ['productcode', 'product_code', 'urunkodu', 'urun_kodu', 'stokkodu', 'stok_kodu', 'sku', 'varyantkodu', 'variantcode', 'barcode', 'barkod'],
+  productCode: ['productcode', 'product_code', 'urunkodu', 'urun_kodu', 'stokkodu', 'stok_kodu', 'sku', 'varyantkodu', 'variantcode', 'barcode', 'barkod', 'referansno', 'referans_no', 'referans', 'refno', 'urunreferansi'],
   shortCode: ['shortcode', 'short_code', 'kisakod', 'kisa_kod', 'modelkodu', 'model_kodu', 'anastokkodu'],
   name: ['name', 'productname', 'product_name', 'urunadi', 'urun_adi', 'urunismi', 'urun_ismi', 'urunbasligi', 'urun_basligi', 'title', 'baslik', 'description', 'aciklama'],
-  size: ['size', 'beden', 'numara', 'varyant', 'variant', 'option1', 'olcu'],
-  color: ['color', 'colour', 'renk', 'option2'],
-  price: ['price', 'satisfiyati', 'satis_fiyati', 'fiyat', 'birimfiyat', 'saleprice', 'sale_price', 'listefiyati'],
-  stock: ['stock', 'stok', 'inventory', 'quantity', 'qty', 'adet', 'mevcutadet', 'mevcut_adet', 'stokadedi'],
+  size: ['size', 'beden', 'numara', 'varyant', 'varyasyon', 'variant', 'option1', 'olcu'],
+  color: ['color', 'colour', 'renk', 'renkbilgisi', 'renk_bilgisi', 'option2'],
+  price: ['price', 'satisfiyati', 'satis_fiyati', 'satistutari', 'satis_tutari', 'fiyat', 'tutar', 'birimfiyat', 'saleprice', 'sale_price', 'listefiyati'],
+  stock: ['stock', 'stok', 'inventory', 'quantity', 'qty', 'adet', 'miktar', 'depodakimiktar', 'depodaki_miktar', 'mevcutadet', 'mevcut_adet', 'stokadedi'],
   category: ['category', 'kategori', 'productcategory', 'urungrubu', 'urun_grubu', 'collection', 'koleksiyon'],
-  wpLink: ['wplink', 'wp_link', 'whatsapp', 'producturl', 'product_url', 'urunlinki', 'urun_linki', 'link'],
-  mediaLink: ['medialink', 'media_link', 'image', 'imageurl', 'image_url', 'gorsel', 'gorselurl', 'fotograf']
+  wpLink: ['wplink', 'wp_link', 'whatsapp', 'producturl', 'product_url', 'urunlinki', 'urun_linki', 'urunsayfasi', 'urun_sayfasi', 'link'],
+  mediaLink: ['medialink', 'media_link', 'image', 'imageurl', 'image_url', 'gorsel', 'gorselurl', 'gorseladresi', 'gorsel_adresi', 'fotograf']
 };
 
 function normalizedHeader(value: string): string {
