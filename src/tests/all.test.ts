@@ -446,6 +446,36 @@ async function runTestSuite() {
     String(bufferedCheckoutResult).includes('"orderCreated":true') && Boolean(bufferedCheckoutOrder?.order_id),
     'Buffered approval plus contact details creates and persists the order instead of deleting same-turn customer fields'
   );
+  const multiTurnCtx = AIService.getSessionContext('multi-turn-checkout', 'store-alpha', 100, 'TEST');
+  multiTurnCtx.cart = [{ productCode: 'HBL-S', productName: 'HBL Test', size: 'S', quantity: 1, unitPrice: 250 }];
+  multiTurnCtx.checkoutConfirmed = false;
+  multiTurnCtx.currentTurnContactFields = [];
+  const multiTurnTools = (AIService as any).createLeafTools('multi-turn-checkout', 'store-alpha', 100, 'TEST');
+  const multiTurnAgent = (AIService as any).createSiparisSubAgent(
+    null,
+    multiTurnTools.stokTool,
+    multiTurnTools.sepeteEkleTool,
+    multiTurnTools.sepetGoruntuleTool,
+    multiTurnTools.sepetOnaylaTool,
+    multiTurnTools.kayitTool,
+    { invoke: async () => '' }
+  );
+  await multiTurnAgent.invoke(JSON.stringify({ action: 'sepet_onayla' }));
+  multiTurnCtx.customerName = 'Parçalı Müşteri';
+  multiTurnCtx.currentTurnContactFields = ['customerName'];
+  const nameStep = JSON.parse(String(await multiTurnAgent.invoke(JSON.stringify({ action: 'sepet_onayla' }))));
+  multiTurnCtx.customerPhone = '05551234777';
+  multiTurnCtx.currentTurnContactFields = ['customerPhone'];
+  const phoneStep = JSON.parse(String(await multiTurnAgent.invoke(JSON.stringify({ action: 'sepet_onayla' }))));
+  multiTurnCtx.address = 'Parçalı Mahallesi Test Sokak No 7';
+  multiTurnCtx.currentTurnContactFields = ['address'];
+  const multiTurnResult = JSON.parse(String(await multiTurnAgent.invoke(JSON.stringify({ action: 'sepet_onayla' }))));
+  const multiTurnOrder = db.prepare("SELECT order_id FROM orders WHERE store_id = 100 AND sender_id = 'multi-turn-checkout'").get() as any;
+  assert(
+    nameStep.missingFields?.includes('telefon numarası') && !phoneStep.missingFields?.includes('ad soyad') &&
+    multiTurnResult.orderCreated === true && Boolean(multiTurnOrder?.order_id),
+    'Checkout keeps name, phone and address collected across separate messages without entering a confirmation loop'
+  );
   db.prepare(`
     INSERT OR REPLACE INTO instagram_media_catalog (store_id, media_id, media_url, permalink, caption)
     VALUES (100, 'media_hbl_1', 'https://cdn.example.com/hbl.jpg?token=old', 'https://www.instagram.com/p/HBLPOST/', 'HBL ürünü')

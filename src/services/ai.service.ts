@@ -588,33 +588,37 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         if (!ctx.cart || ctx.cart.length === 0) {
           return JSON.stringify({ success: false, message: 'Onaylanacak sepet bulunmuyor. Önce ürün kodu, beden ve adet ile ürün ekleyin.' });
         }
+        const wasAlreadyConfirmed = ctx.checkoutConfirmed;
         ctx.checkoutConfirmed = true;
-        // Buffer may deliver approval and contact details in the same AI turn. Remove only
-        // stale fields from older turns and preserve fields explicitly supplied now.
-        const suppliedNow = new Set(ctx.currentTurnContactFields || []);
-        const currentValues = {
-          customerName: ctx.customerName,
-          customerPhone: ctx.customerPhone,
-          address: ctx.address
-        };
-        delete ctx.customerName;
-        delete ctx.customerPhone;
-        delete ctx.address;
-        if (suppliedNow.has('customerName')) ctx.customerName = currentValues.customerName;
-        if (suppliedNow.has('customerPhone')) ctx.customerPhone = currentValues.customerPhone;
-        if (suppliedNow.has('address')) ctx.address = currentValues.address;
-        const readyToCreateOrder = Boolean(
-          ctx.customerName && ctx.customerName.trim().length > 1 &&
-          ctx.customerPhone && ctx.customerPhone.replace(/\D/g, '').length >= 10 &&
-          ctx.address && ctx.address.trim().length >= 10
-        );
+        // On the first confirmation, discard personal data sent in older, unconfirmed turns.
+        // Later confirmation calls must retain fields collected across separate messages.
+        if (!wasAlreadyConfirmed) {
+          const suppliedNow = new Set(ctx.currentTurnContactFields || []);
+          const currentValues = {
+            customerName: ctx.customerName,
+            customerPhone: ctx.customerPhone,
+            address: ctx.address
+          };
+          delete ctx.customerName;
+          delete ctx.customerPhone;
+          delete ctx.address;
+          if (suppliedNow.has('customerName')) ctx.customerName = currentValues.customerName;
+          if (suppliedNow.has('customerPhone')) ctx.customerPhone = currentValues.customerPhone;
+          if (suppliedNow.has('address')) ctx.address = currentValues.address;
+        }
+        const missingFields: string[] = [];
+        if (!ctx.customerName || ctx.customerName.trim().length <= 1) missingFields.push('ad soyad');
+        if (!ctx.customerPhone || ctx.customerPhone.replace(/\D/g, '').length < 10) missingFields.push('telefon numarası');
+        if (!ctx.address || ctx.address.trim().length < 10) missingFields.push('açık teslimat adresi');
+        const readyToCreateOrder = missingFields.length === 0;
         return JSON.stringify({
           success: true,
           checkoutConfirmed: true,
           readyToCreateOrder,
+          missingFields,
           message: readyToCreateOrder
-            ? 'Sepet onaylandı ve müşteri bilgileri bu mesajda eksiksiz verildi. Siparişi şimdi kaydedin.'
-            : 'Sepet onaylandı. Siparişi tamamlamak için müşteriden eksik olan ad soyad, telefon numarası ve açık teslimat adresini isteyin.'
+            ? 'Sepet onaylandı ve müşteri bilgileri eksiksiz. Siparişi şimdi kaydedin.'
+            : `Sepet onaylandı. Yalnızca eksik bilgileri isteyin: ${missingFields.join(', ')}.`
         });
       }
     });
