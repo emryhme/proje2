@@ -29,7 +29,7 @@ const envSchema = z.object({
   MASTER_ADMIN_NAME: z.string().trim().min(1).default('Platform Administrator'),
   MASTER_ADMIN_EMAIL: z.string().trim().email().optional(),
   MASTER_ADMIN_PASSWORD: z.string().min(12).optional(),
-  MASTER_ADMIN_PANEL_PATH: z.string().trim().regex(/^[a-z0-9]{8}$/, 'MASTER_ADMIN_PANEL_PATH must be exactly 8 lowercase letters or numbers.').default('mstrtest'),
+  MASTER_ADMIN_PANEL_PATH: z.string().trim().regex(/^[a-z0-9]{8,32}$/, 'MASTER_ADMIN_PANEL_PATH must be 8-32 lowercase letters or numbers.').default('mstrtest'),
   CORS_ORIGINS: z.string().default('http://localhost:3000')
 });
 
