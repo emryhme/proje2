@@ -257,10 +257,61 @@ function formatPlanDate(value) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' });
 }
 
+let planInfoRequest = null;
+
+function getPlanInfo() {
+  if (!planInfoRequest) {
+    planInfoRequest = apiFetch('/api/plan').catch(error => {
+      planInfoRequest = null;
+      throw error;
+    });
+  }
+  return planInfoRequest;
+}
+
+function isPlanExpired(subscription) {
+  if (!subscription?.ends_at) return false;
+  if (Number.isFinite(Number(subscription.remaining_days))) return Number(subscription.remaining_days) < 0;
+  return String(subscription.ends_at).slice(0, 10) < new Date().toISOString().slice(0, 10);
+}
+
+function renderPlanExpiryBanner(subscription) {
+  document.getElementById('planExpiryBanner')?.remove();
+  if (!isPlanExpired(subscription)) return;
+  const main = document.querySelector('main.main');
+  const topbar = main?.querySelector(':scope > .topbar');
+  if (!main || !topbar) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'planExpiryBanner';
+  banner.className = 'plan-expiry-banner';
+  banner.setAttribute('role', 'alert');
+  banner.innerHTML = `
+    <div class="plan-expiry-message">
+      <i data-lucide="triangle-alert" aria-hidden="true"></i>
+      <div><strong>Planınız sona erdi.</strong><span>Kesintiye uğramamak için yenileme yapınız.</span></div>
+    </div>
+    <a class="plan-expiry-action" href="plan.html">Planı Yenile</a>
+  `;
+  topbar.insertAdjacentElement('afterend', banner);
+  if (window.lucide) lucide.createIcons();
+}
+
+async function loadPlanExpiryBanner() {
+  try {
+    const data = await getPlanInfo();
+    renderPlanExpiryBanner(data.subscription);
+  } catch (error) {
+    if (!['UNAUTHORIZED', 'FORBIDDEN'].includes(error.message)) {
+      console.warn('[Plan Notice]:', error.message);
+    }
+  }
+}
+
 async function loadPlanManagement() {
   if (!document.getElementById('planName')) return;
   try {
-    const data = await apiFetch('/api/plan');
+    const data = await getPlanInfo();
     const plan = data.subscription;
     const select = document.getElementById('requestedPlan');
     if (select) {
@@ -395,6 +446,7 @@ function initApp() {
   ensurePlanNavigation();
   ensureDataSourcesNavigation();
   ensureInstagramMediaNavigation();
+  loadPlanExpiryBanner();
   setupThemeToggle();
   applyDynamicStoreBranding();
   applyCurrentUserProfile();

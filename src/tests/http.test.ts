@@ -80,6 +80,22 @@ async function run(): Promise<void> {
     const cookie = String(login.headers.get('set-cookie') || '').split(';')[0];
     assert(login.ok && loginBody.token && cookie.startsWith('iscworks_session='), 'Login issues an HttpOnly browser session cookie');
 
+    const adminAppScript = await fetch(`${origin}/admin/app.js`);
+    const adminAppSource = await adminAppScript.text();
+    assert(
+      adminAppScript.ok
+        && adminAppSource.includes('loadPlanExpiryBanner()')
+        && adminAppSource.includes('Planınız sona erdi.')
+        && adminAppSource.includes('Kesintiye uğramamak için yenileme yapınız.'),
+      'Every merchant page can render the shared expired-plan renewal warning'
+    );
+
+    db.prepare("UPDATE store_subscriptions SET ends_at = date('now', '-1 day') WHERE store_id = ?").run(storeId);
+    const expiredPlan = await fetch(`${origin}/api/plan`, { headers: { Cookie: cookie } });
+    const expiredPlanBody = await expiredPlan.json() as any;
+    assert(expiredPlan.ok && Number(expiredPlanBody.subscription?.remaining_days) < 0, 'Expired subscription status remains readable for the global renewal warning');
+    db.prepare("UPDATE store_subscriptions SET ends_at = date('now', '+12 months') WHERE store_id = ?").run(storeId);
+
     const settings = await fetch(`${origin}/api/settings`, { headers: { Cookie: cookie } });
     const settingsBody = await settings.json() as any;
     assert(settings.ok && settingsBody.settings.shipping_fee === '49' && !JSON.stringify(settingsBody).includes('must-never-leak'), 'Settings API never exposes integration secrets');
