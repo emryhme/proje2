@@ -423,6 +423,29 @@ async function runTestSuite() {
   console.log('\n2️⃣7️⃣-A AI VARIANT TEST: "Müşteri" kelimesi M beden sayılmamalı');
   await StockService.addProduct({ storeId: 100, shortCode: 'HBL', productCode: 'HBL-S', name: 'HBL Test', size: 'S', stock: 10, price: 250, instagramMediaId: 'media_hbl_1' });
   await StockService.addProduct({ storeId: 100, shortCode: 'HBL', productCode: 'HBL-M', name: 'HBL Test', size: 'M', stock: 10, price: 250, instagramMediaId: 'media_hbl_1' });
+  const bufferedCheckoutCtx = AIService.getSessionContext('buffered-checkout', 'store-alpha', 100, 'TEST');
+  bufferedCheckoutCtx.cart = [{ productCode: 'HBL-S', productName: 'HBL Test', size: 'S', quantity: 1, unitPrice: 250 }];
+  bufferedCheckoutCtx.checkoutConfirmed = false;
+  bufferedCheckoutCtx.customerName = 'Buffer Müşteri';
+  bufferedCheckoutCtx.customerPhone = '05551234567';
+  bufferedCheckoutCtx.address = 'Buffer Mahallesi Test Sokak No 10';
+  bufferedCheckoutCtx.currentTurnContactFields = ['customerName', 'customerPhone', 'address'];
+  const bufferedCheckoutTools = (AIService as any).createLeafTools('buffered-checkout', 'store-alpha', 100, 'TEST');
+  const bufferedCheckoutAgent = (AIService as any).createSiparisSubAgent(
+    null,
+    bufferedCheckoutTools.stokTool,
+    bufferedCheckoutTools.sepeteEkleTool,
+    bufferedCheckoutTools.sepetGoruntuleTool,
+    bufferedCheckoutTools.sepetOnaylaTool,
+    bufferedCheckoutTools.kayitTool,
+    { invoke: async () => '' }
+  );
+  const bufferedCheckoutResult = await bufferedCheckoutAgent.invoke(JSON.stringify({ action: 'sepet_onayla' }));
+  const bufferedCheckoutOrder = db.prepare("SELECT order_id FROM orders WHERE store_id = 100 AND sender_id = 'buffered-checkout'").get() as any;
+  assert(
+    String(bufferedCheckoutResult).includes('"orderCreated":true') && Boolean(bufferedCheckoutOrder?.order_id),
+    'Buffered approval plus contact details creates and persists the order instead of deleting same-turn customer fields'
+  );
   db.prepare(`
     INSERT OR REPLACE INTO instagram_media_catalog (store_id, media_id, media_url, permalink, caption)
     VALUES (100, 'media_hbl_1', 'https://cdn.example.com/hbl.jpg?token=old', 'https://www.instagram.com/p/HBLPOST/', 'HBL ürünü')

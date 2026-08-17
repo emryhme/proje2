@@ -38,6 +38,7 @@ interface SessionContext {
   cart: CartItem[];
   checkoutConfirmed: boolean;
   variantVerified: boolean;
+  currentTurnContactFields?: Array<'customerName' | 'customerPhone' | 'address'>;
 }
 
 /**
@@ -213,12 +214,15 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         const data = JSON.parse(jsonMatch[0]);
         if (data.customerName && data.customerName !== 'null' && data.customerName.trim().length > 1) {
           ctx.customerName = data.customerName.trim();
+          if (!ctx.currentTurnContactFields?.includes('customerName')) ctx.currentTurnContactFields?.push('customerName');
         }
         if (data.customerPhone && data.customerPhone !== 'null') {
           ctx.customerPhone = data.customerPhone.trim();
+          if (!ctx.currentTurnContactFields?.includes('customerPhone')) ctx.currentTurnContactFields?.push('customerPhone');
         }
         if (data.address && data.address !== 'null' && data.address.trim().length > 3) {
           ctx.address = data.address.trim();
+          if (!ctx.currentTurnContactFields?.includes('address')) ctx.currentTurnContactFields?.push('address');
         }
         if (data.productCode && data.productCode !== 'null') {
           ctx.productCode = data.productCode.trim().toUpperCase();
@@ -528,14 +532,32 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
           return JSON.stringify({ success: false, message: 'Onaylanacak sepet bulunmuyor. Önce ürün kodu, beden ve adet ile ürün ekleyin.' });
         }
         ctx.checkoutConfirmed = true;
-        // Contact details must be collected only after the cart is approved.
+        // Buffer may deliver approval and contact details in the same AI turn. Remove only
+        // stale fields from older turns and preserve fields explicitly supplied now.
+        const suppliedNow = new Set(ctx.currentTurnContactFields || []);
+        const currentValues = {
+          customerName: ctx.customerName,
+          customerPhone: ctx.customerPhone,
+          address: ctx.address
+        };
         delete ctx.customerName;
         delete ctx.customerPhone;
         delete ctx.address;
+        if (suppliedNow.has('customerName')) ctx.customerName = currentValues.customerName;
+        if (suppliedNow.has('customerPhone')) ctx.customerPhone = currentValues.customerPhone;
+        if (suppliedNow.has('address')) ctx.address = currentValues.address;
+        const readyToCreateOrder = Boolean(
+          ctx.customerName && ctx.customerName.trim().length > 1 &&
+          ctx.customerPhone && ctx.customerPhone.replace(/\D/g, '').length >= 10 &&
+          ctx.address && ctx.address.trim().length >= 10
+        );
         return JSON.stringify({
           success: true,
           checkoutConfirmed: true,
-          message: 'Sepet onaylandı. Siparişi tamamlamak için müşteriden ad soyad, telefon numarası ve açık teslimat adresini isteyin.'
+          readyToCreateOrder,
+          message: readyToCreateOrder
+            ? 'Sepet onaylandı ve müşteri bilgileri bu mesajda eksiksiz verildi. Siparişi şimdi kaydedin.'
+            : 'Sepet onaylandı. Siparişi tamamlamak için müşteriden eksik olan ad soyad, telefon numarası ve açık teslimat adresini isteyin.'
         });
       }
     });
@@ -777,7 +799,15 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
           } else if (action === 'sepet_goruntule') {
             return await sepetGoruntuleTool.invoke('');
           } else if (action === 'sepet_onayla') {
-            return await sepetOnaylaTool.invoke('');
+            const confirmation = await sepetOnaylaTool.invoke('');
+            if (confirmation.includes('"readyToCreateOrder":true')) {
+              const savedOrder = await kayitTool.invoke(JSON.stringify(data));
+              if (savedOrder.includes('"orderCreated":true')) {
+                await bilgilendirmeTool.invoke(JSON.stringify(data));
+              }
+              return savedOrder;
+            }
+            return confirmation;
           } else if (action === 'kayit') {
             const res = await kayitTool.invoke(JSON.stringify(data));
             if (res.includes('"orderCreated":true')) {
@@ -846,6 +876,8 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     };
 
     try {
+      const turnContext = this.getSessionContext(senderId, storeSlug, storeId, channel);
+      turnContext.currentTurnContactFields = [];
       await this.extractSessionDataWithAI(senderId, userMessage, apiKey, storeSlug, storeId, channel);
       const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
       this.hydrateProductCodeFromMessage(userMessage, storeId, ctx);

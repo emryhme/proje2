@@ -471,7 +471,9 @@ export class WebhookController {
       AIService.persistMessage(conversationId, 'assistant', reply);
 
       for (const trace of toolTraces) {
-        console.log(`[AI Tool] Store=${storeId} Tool=${trace.toolName} Status=${trace.status}`);
+        const argsText = JSON.stringify(trace.args || {}).slice(0, 600);
+        const resultText = String(trace.result || '').slice(0, 1_200);
+        console.log(`[AI Tool] Store=${storeId} Sender=${senderId} Tool=${trace.toolName} Status=${trace.status} Args=${argsText} Result=${resultText}`);
       }
       await FacebookService.sendMessage(senderId, reply, storeId);
     } catch (error: any) {
