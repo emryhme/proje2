@@ -13,12 +13,14 @@ async function run(): Promise<void> {
     if (store) db.prepare('DELETE FROM stores WHERE id = ?').run(store.id);
     db.prepare('DELETE FROM users WHERE id = ?').run(existing.id);
   }
+  db.prepare('DELETE FROM merchant_applications WHERE email = ?').run(email);
 
   const userResult = db.prepare("INSERT INTO users (full_name, email, password_hash, status, email_verified_at) VALUES ('HTTP Test', ?, ?, 'active', CURRENT_TIMESTAMP)").run(email, hashPassword(password));
   const userId = Number(userResult.lastInsertRowid);
   const storeResult = db.prepare("INSERT INTO stores (owner_id, name, slug, status) VALUES (?, 'HTTP Security Store', ?, 'active')").run(userId, slug);
   const storeId = Number(storeResult.lastInsertRowid);
   db.prepare("INSERT INTO memberships (user_id, store_id, role, status) VALUES (?, ?, 'OWNER', 'active')").run(userId, storeId);
+  db.prepare("INSERT INTO merchant_applications (full_name, email, store_name, plan, status) VALUES ('HTTP Test', ?, 'HTTP Security Store', 'Pro Store', 'approved')").run(email);
   db.prepare("INSERT INTO store_subscriptions (store_id, plan_name, duration_months, starts_at, ends_at) VALUES (?, 'Pro Store', 12, date('now'), date('now', '+12 months'))").run(storeId);
   db.prepare("INSERT INTO settings (store_id, key, value) VALUES (?, 'shipping_fee', '49')").run(storeId);
   db.prepare("INSERT INTO settings (store_id, key, value) VALUES (?, 'facebook_page_access_token', 'must-never-leak')").run(storeId);
@@ -110,7 +112,23 @@ async function run(): Promise<void> {
       method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, 'X-Master-Panel-Key': 'mstrtest9' }, body: JSON.stringify({ email, password, storeId: 1 })
     });
     const keyedMasterBody = await masterLoginWithPanelKey.json() as any;
+    const masterCookie = String(masterLoginWithPanelKey.headers.get('set-cookie') || '').split(';')[0];
     assert(masterLoginWithoutPanelKey.status === 401 && masterLoginWithPanelKey.ok && keyedMasterBody.user?.storeId === 1, 'Master account login requires the private panel path key even when credentials are correct');
+
+    const merchantDetail = await fetch(`${origin}/api/master-admin/merchants/${storeId}`, { headers: { Cookie: masterCookie } });
+    const merchantDetailBody = await merchantDetail.json() as any;
+    const serializedMerchantDetail = JSON.stringify(merchantDetailBody);
+    assert(
+      merchantDetail.ok
+        && merchantDetailBody.detail?.owner?.id === userId
+        && merchantDetailBody.detail?.owner?.email_verified_at
+        && merchantDetailBody.detail?.membership?.role === 'OWNER'
+        && merchantDetailBody.detail?.subscription?.plan_name === 'Pro Store'
+        && !serializedMerchantDetail.includes('password_hash')
+        && !serializedMerchantDetail.includes('webhook_verify_token')
+        && !serializedMerchantDetail.includes('must-never-leak'),
+      'Merchant detail exposes safe account and plan fields without credentials or integration secrets'
+    );
     db.prepare('DELETE FROM memberships WHERE user_id = ? AND store_id = 1').run(userId);
 
     const adminAppScript = await fetch(`${origin}/admin/app.js`);
@@ -215,6 +233,7 @@ async function run(): Promise<void> {
     await new Promise<void>(resolve => server.close(() => resolve()));
     db.prepare('DELETE FROM memberships WHERE user_id = ? AND store_id = 1').run(userId);
     db.prepare('DELETE FROM stores WHERE id = ?').run(storeId);
+    db.prepare('DELETE FROM merchant_applications WHERE email = ?').run(email);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
   }
 }

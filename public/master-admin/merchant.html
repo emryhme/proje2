@@ -6,7 +6,7 @@
   <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
   <title>ISCWORKS — Tüccar Detayı</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20260817-merchant-details">
 </head>
 <body>
 
@@ -64,31 +64,80 @@
 
     <!-- Merchant Info Overview Card -->
     <div class="data-card">
+      <div class="card-title"><span><i class="fa-solid fa-user-shield text-indigo"></i> Kullanıcı ve Mağaza Bilgileri</span></div>
       <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap:20px;">
         <div>
-          <span style="font-size:11px; color:var(--text-muted); font-weight:700;">MAĞAZA SAHİBİ</span>
-          <strong style="display:block; font-size:15px; color:white; margin-top:2px;" id="detailOwnerName">-</strong>
+          <span class="detail-label">KULLANICI ID</span>
+          <strong class="detail-value" id="detailOwnerId">-</strong>
+        </div>
+        <div>
+          <span class="detail-label">MAĞAZA SAHİBİ</span>
+          <strong class="detail-value" id="detailOwnerName">-</strong>
         </div>
 
         <div>
-          <span style="font-size:11px; color:var(--text-muted); font-weight:700;">E-POSTA</span>
-          <strong style="display:block; font-size:14px; color:white; margin-top:2px;" id="detailOwnerEmail">-</strong>
+          <span class="detail-label">E-POSTA</span>
+          <strong class="detail-value" id="detailOwnerEmail">-</strong>
         </div>
 
         <div>
-          <span style="font-size:11px; color:var(--text-muted); font-weight:700;">TELEFON</span>
-          <strong style="display:block; font-size:14px; color:white; margin-top:2px;" id="detailOwnerPhone">-</strong>
-        </div>
-
-
-        <div>
-          <span style="font-size:11px; color:var(--text-muted); font-weight:700;">PAKET</span>
-          <strong style="display:block; font-size:14px; color:#a5b4fc; margin-top:2px;" id="detailPlan">Pro Store</strong>
+          <span class="detail-label">TELEFON</span>
+          <strong class="detail-value" id="detailOwnerPhone">-</strong>
         </div>
 
         <div>
-          <span style="font-size:11px; color:var(--text-muted); font-weight:700;">DURUM</span>
-          <div style="margin-top:2px;"><span class="badge active" id="detailStatusBadge">active</span></div>
+          <span class="detail-label">E-POSTA DOĞRULAMA</span>
+          <div class="detail-value"><span class="badge pending" id="detailEmailVerified">-</span></div>
+        </div>
+
+        <div>
+          <span class="detail-label">HESAP DURUMU</span>
+          <div class="detail-value"><span class="badge active" id="detailUserStatus">-</span></div>
+        </div>
+
+        <div>
+          <span class="detail-label">MAĞAZA ROLÜ</span>
+          <strong class="detail-value" id="detailOwnerRole">-</strong>
+        </div>
+
+        <div>
+          <span class="detail-label">ÜYELİK DURUMU</span>
+          <div class="detail-value"><span class="badge active" id="detailMembershipStatus">-</span></div>
+        </div>
+
+        <div>
+          <span class="detail-label">BAŞVURU DURUMU</span>
+          <div class="detail-value"><span class="badge active" id="detailApplicationStatus">-</span></div>
+        </div>
+
+        <div>
+          <span class="detail-label">PAKET</span>
+          <strong class="detail-value detail-plan" id="detailPlan">Pro Store</strong>
+        </div>
+
+        <div>
+          <span class="detail-label">PLAN BAŞLANGICI</span>
+          <strong class="detail-value" id="detailPlanStartsAt">-</strong>
+        </div>
+
+        <div>
+          <span class="detail-label">PLAN BİTİŞİ</span>
+          <strong class="detail-value" id="detailPlanEndsAt">-</strong>
+        </div>
+
+        <div>
+          <span class="detail-label">KULLANICI KAYIT TARİHİ</span>
+          <strong class="detail-value" id="detailUserCreatedAt">-</strong>
+        </div>
+
+        <div>
+          <span class="detail-label">MAĞAZA KAYIT TARİHİ</span>
+          <strong class="detail-value" id="detailStoreCreatedAt">-</strong>
+        </div>
+
+        <div>
+          <span class="detail-label">MAĞAZA DURUMU</span>
+          <div class="detail-value"><span class="badge active" id="detailStatusBadge">active</span></div>
         </div>
       </div>
     </div>
@@ -171,6 +220,6 @@
   </main>
 </div>
 
-<script src="app.js?v=20260814-home-logout"></script>
+<script src="app.js?v=20260817-merchant-details"></script>
 </body>
 </html>

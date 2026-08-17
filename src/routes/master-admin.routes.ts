@@ -99,12 +99,16 @@ router.get('/api/master-admin/merchants', AuthMiddleware.authenticate, AuthMiddl
     let query = `
       SELECT s.id as store_id, s.name as store_name, s.slug as store_slug, s.status as store_status, s.created_at as store_created_at,
              u.id as owner_id, u.full_name as owner_name, u.email as owner_email, u.phone as owner_phone, u.status as user_status,
+             u.email_verified_at, u.created_at as user_created_at,
              m.role as owner_role, m.status as membership_status,
-             ma.plan as plan
+             ma.status as application_status,
+             COALESCE(ss.plan_name, ma.plan) as plan,
+             ss.starts_at as plan_starts_at, ss.ends_at as plan_ends_at
       FROM stores s
       LEFT JOIN users u ON u.id = s.owner_id
       LEFT JOIN memberships m ON m.user_id = u.id AND m.store_id = s.id
       LEFT JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
+      LEFT JOIN store_subscriptions ss ON ss.store_id = s.id
       WHERE s.id != 1
         AND u.email_verified_at IS NOT NULL
         AND ma.status IN ('approved', 'active')
@@ -141,7 +145,8 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
     }
 
     const store = db.prepare(`
-      SELECT s.* FROM stores s
+      SELECT s.id, s.owner_id, s.name, s.slug, s.status, s.created_at, s.updated_at
+      FROM stores s
       JOIN users u ON u.id = s.owner_id
       JOIN merchant_applications ma ON LOWER(ma.email) = LOWER(u.email)
       WHERE s.id = ? AND u.email_verified_at IS NOT NULL AND ma.status IN ('approved', 'active')
@@ -150,9 +155,23 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
       return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
     }
 
-    const owner = db.prepare("SELECT id, full_name, email, phone, status, created_at FROM users WHERE id = ?").get(store.owner_id) as any;
-    const membership = db.prepare("SELECT * FROM memberships WHERE user_id = ? AND store_id = ?").get(store.owner_id, targetStoreId) as any;
-    const application = db.prepare("SELECT * FROM merchant_applications WHERE LOWER(email) = LOWER(?)").get(owner?.email || '') as any;
+    const owner = db.prepare(`
+      SELECT id, full_name, email, phone, status, email_verified_at, created_at
+      FROM users WHERE id = ?
+    `).get(store.owner_id) as any;
+    const membership = db.prepare(`
+      SELECT id, role, status, created_at
+      FROM memberships WHERE user_id = ? AND store_id = ?
+    `).get(store.owner_id, targetStoreId) as any;
+    const application = db.prepare(`
+      SELECT id, store_name, plan, status, created_at, updated_at
+      FROM merchant_applications WHERE LOWER(email) = LOWER(?)
+    `).get(owner?.email || '') as any;
+    const subscription = db.prepare(`
+      SELECT plan_name, duration_months, starts_at, ends_at, created_at, updated_at,
+             CAST(julianday(ends_at) - julianday(date('now')) AS INTEGER) AS remaining_days
+      FROM store_subscriptions WHERE store_id = ?
+    `).get(targetStoreId) as any;
 
     const productsCount = (db.prepare("SELECT COUNT(*) as count FROM products WHERE store_id = ?").get(targetStoreId) as any).count;
     const ordersCount = (db.prepare("SELECT COUNT(*) as count FROM orders WHERE store_id = ?").get(targetStoreId) as any).count;
@@ -183,6 +202,7 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
         owner,
         membership,
         application,
+        subscription,
         metrics: {
           productsCount,
           ordersCount,

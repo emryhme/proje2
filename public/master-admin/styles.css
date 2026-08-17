@@ -320,6 +320,11 @@ table.admin-table tr:hover td {
 .badge.pending { background: rgba(245, 158, 11, 0.15); color: #fbbf24; }
 .badge.suspended { background: rgba(239, 68, 68, 0.15); color: #fca5a5; }
 .badge.rejected { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+.badge.approved { background: rgba(16, 185, 129, 0.15); color: #34d399; }
+
+.detail-label { display:block; font-size:11px; color:var(--text-muted); font-weight:700; letter-spacing:.035em; }
+.detail-value { display:block; font-size:14px; color:var(--text-main); margin-top:5px; overflow-wrap:anywhere; }
+.detail-plan { color:#a5b4fc; }
 
 /* Buttons */
 .btn {

@@ -127,6 +127,24 @@ async function checkMasterAuth() {
   }
 }
 
+function setDetailBadge(id, text, status) {
+  const element = document.getElementById(id);
+  if (!element) return;
+  const normalizedStatus = String(status || '').toLowerCase();
+  const safeStatus = ['active', 'approved', 'pending', 'suspended', 'rejected'].includes(normalizedStatus)
+    ? normalizedStatus
+    : 'pending';
+  element.className = `badge ${safeStatus}`;
+  element.textContent = text;
+}
+
+function formatMerchantRole(role) {
+  const normalizedRole = String(role || '').toUpperCase();
+  if (normalizedRole === 'OWNER') return 'Mağaza Sahibi';
+  if (normalizedRole === 'STAFF') return 'Personel';
+  return role || '-';
+}
+
 function toggleMasterSidebar() {
   document.querySelector('.sidebar')?.classList.toggle('open');
 }
@@ -364,7 +382,7 @@ async function loadMerchantsList() {
         <tr>
           <td>#${m.store_id}</td>
           <td><strong>${escapeHtml(m.store_name)}</strong><br><small style="color:#64748b;">${escapeHtml(m.store_slug)}</small></td>
-          <td>${escapeHtml(m.owner_name || 'Bilinmiyor')}</td>
+          <td><strong>${escapeHtml(m.owner_name || 'Bilinmiyor')}</strong><br><small style="color:#64748b;">Kullanıcı #${escapeHtml(m.owner_id || '-')} · ${escapeHtml(formatMerchantRole(m.owner_role))}</small><br><span class="badge ${escapeHtml(m.user_status || 'pending')}" style="margin-top:5px;">${escapeHtml(m.user_status || 'pending')}</span></td>
           <td>${escapeHtml(m.owner_email || '-')}<br><small style="color:#64748b;">${escapeHtml(m.owner_phone || '')}</small></td>
           <td><span class="code-tag">${escapeHtml(m.plan || 'Pro Store')}</span></td>
           <td><span class="badge ${m.store_status}">${escapeHtml(m.store_status)}</span></td>
@@ -401,14 +419,27 @@ async function loadMerchantDetailData() {
       const d = data.detail;
       const s = d.store || {};
       const o = d.owner || {};
+      const membership = d.membership || {};
+      const application = d.application || {};
+      const subscription = d.subscription || {};
       const m = d.metrics || {};
 
       document.getElementById('detailStoreName').textContent = s.name || 'Mağaza Detayı';
       document.getElementById('detailStoreSlug').textContent = `Slug: ${s.slug || ''}`;
+      document.getElementById('detailOwnerId').textContent = o.id ? `#${o.id}` : '-';
       document.getElementById('detailOwnerName').textContent = o.full_name || 'Bilinmiyor';
       document.getElementById('detailOwnerEmail').textContent = o.email || '-';
       document.getElementById('detailOwnerPhone').textContent = o.phone || '-';
-      document.getElementById('detailPlan').textContent = d.application?.plan || 'Pro Store';
+      document.getElementById('detailPlan').textContent = subscription.plan_name || application.plan || 'Pro Store';
+      document.getElementById('detailPlanStartsAt').textContent = subscription.starts_at || '-';
+      document.getElementById('detailPlanEndsAt').textContent = subscription.ends_at || '-';
+      document.getElementById('detailUserCreatedAt').textContent = o.created_at || '-';
+      document.getElementById('detailStoreCreatedAt').textContent = s.created_at || '-';
+      document.getElementById('detailOwnerRole').textContent = formatMerchantRole(membership.role);
+      setDetailBadge('detailEmailVerified', o.email_verified_at ? 'Doğrulandı' : 'Doğrulanmadı', o.email_verified_at ? 'active' : 'pending');
+      setDetailBadge('detailUserStatus', o.status || '-', o.status || 'pending');
+      setDetailBadge('detailMembershipStatus', membership.status || '-', membership.status || 'pending');
+      setDetailBadge('detailApplicationStatus', application.status || '-', application.status || 'pending');
       document.getElementById('detailStatusBadge').className = `badge ${s.status}`;
       document.getElementById('detailStatusBadge').textContent = s.status;
 
