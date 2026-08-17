@@ -29,7 +29,7 @@ const envSchema = z.object({
   MASTER_ADMIN_NAME: z.string().trim().min(1).default('Platform Administrator'),
   MASTER_ADMIN_EMAIL: z.string().trim().email().optional(),
   MASTER_ADMIN_PASSWORD: z.string().min(12).optional(),
-  MASTER_ADMIN_PANEL_PATH: z.string().trim().regex(/^[a-z0-9][a-z0-9-]{7,79}$/, 'MASTER_ADMIN_PANEL_PATH must contain only lowercase letters, numbers, and hyphens.').default('master-admin'),
+  MASTER_ADMIN_PANEL_PATH: z.string().trim().regex(/^[a-z0-9]{8}$/, 'MASTER_ADMIN_PANEL_PATH must be exactly 8 lowercase letters or numbers.').default('mstrtest'),
   CORS_ORIGINS: z.string().default('http://localhost:3000')
 });
 
@@ -53,8 +53,8 @@ if (envValues.NODE_ENV === 'production' && envValues.CORS_ORIGINS.trim() === '*'
   throw new Error('CORS_ORIGINS cannot be * in production. Configure the public site origin explicitly.');
 }
 
-if (envValues.NODE_ENV === 'production' && (envValues.MASTER_ADMIN_PANEL_PATH === 'master-admin' || envValues.MASTER_ADMIN_PANEL_PATH.length < 16)) {
-  throw new Error('MASTER_ADMIN_PANEL_PATH must be a private, hard-to-guess value of at least 16 characters in production.');
+if (envValues.NODE_ENV === 'production' && envValues.MASTER_ADMIN_PANEL_PATH === 'mstrtest') {
+  throw new Error('MASTER_ADMIN_PANEL_PATH must be changed from the test default in production.');
 }
 
 export const env = {

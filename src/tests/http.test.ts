@@ -40,7 +40,7 @@ async function run(): Promise<void> {
 
     const [oldMasterLogin, privateMasterLogin, publicHomepage] = await Promise.all([
       fetch(`${origin}/master-admin/login`),
-      fetch(`${origin}/platform-test-console/login`),
+      fetch(`${origin}/mstrtest/login`),
       fetch(`${origin}/`)
     ]);
     const oldMasterHtml = await oldMasterLogin.text();
@@ -107,7 +107,7 @@ async function run(): Promise<void> {
       method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ email, password, storeId: 1 })
     });
     const masterLoginWithPanelKey = await fetch(`${origin}/api/auth/login`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, 'X-Master-Panel-Key': 'platform-test-console' }, body: JSON.stringify({ email, password, storeId: 1 })
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, 'X-Master-Panel-Key': 'mstrtest' }, body: JSON.stringify({ email, password, storeId: 1 })
     });
     const keyedMasterBody = await masterLoginWithPanelKey.json() as any;
     assert(masterLoginWithoutPanelKey.status === 401 && masterLoginWithPanelKey.ok && keyedMasterBody.user?.storeId === 1, 'Master account login requires the private panel path key even when credentials are correct');
