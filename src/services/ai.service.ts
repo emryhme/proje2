@@ -354,8 +354,10 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     };
     const selectedVariant = variants.find(row => containsExactValue(String(row.size || '').trim().toUpperCase()));
     if (!selectedVariant) {
-      const sizes = [...new Set(variants.map(row => String(row.size).trim().toUpperCase()).filter(Boolean))];
-      return `${shortCode} kodlu ürün için mevcut bedenler: ${sizes.join(', ')}. Hangi bedeni istersiniz?`;
+      const availableSizes = [...new Set(variants.filter(row => Number(row.stock) > 0).map(row => String(row.size).trim().toUpperCase()).filter(Boolean))];
+      const unavailableSizes = [...new Set(variants.filter(row => Number(row.stock) <= 0).map(row => String(row.size).trim().toUpperCase()).filter(Boolean))];
+      if (!availableSizes.length) return `${shortCode} kodlu ürünün tüm bedenleri şu an tükenmiş görünüyor.`;
+      return `${shortCode} kodlu ürün için stokta bulunan bedenler: ${availableSizes.join(', ')}${unavailableSizes.length ? `. Tükenen bedenler: ${unavailableSizes.join(', ')}` : ''}. Hangi bedeni istersiniz?`;
     }
 
     const variant = selectedVariant;
@@ -372,7 +374,47 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       return `${variant.product_code} (${ctx.size}) şu an stokta yok. Başka bir beden tercih eder misiniz?`;
     }
 
-    return `${shortCode} kodlu ürünün ${ctx.size} bedeni stokta mevcut. Fiyatı ${price.toLocaleString('tr-TR')} TL. Kaç adet istersiniz?`;
+    return `${shortCode} kodlu ürünün ${ctx.size} bedeninde ${Number(variant.stock)} adet stok var. Fiyatı ${price.toLocaleString('tr-TR')} TL. Kaç adet istersiniz?`;
+  }
+
+  /** Returns authoritative stock counts without leaving inventory interpretation to the language model. */
+  private static async getProductStockReply(storeId: number, ctx: SessionContext, userText: string): Promise<string | null> {
+    const text = String(userText || '');
+    if (!/(?:stok|mevcut|kaldı|tükendi|var\s*m[ıi]|bulunuyor)/iu.test(text)) return null;
+    const code = String(ctx.productCode || '').trim();
+    if (!code) return null;
+
+    const directVariant = StockService.findProductVariant(storeId, code, ctx.size);
+    const isExactVariant = directVariant && (
+      Boolean(ctx.size) ||
+      StockService.normalizeLookupValue(directVariant.productCode) === StockService.normalizeLookupValue(code)
+    );
+    if (directVariant && isExactVariant) {
+      const stock = Number(directVariant.stock) || 0;
+      const quantity = Number(ctx.quantity) || 0;
+      ctx.productCode = directVariant.productCode;
+      ctx.size = directVariant.size;
+      ctx.variantVerified = true;
+      if (stock <= 0) return `${directVariant.name} (${directVariant.productCode}, ${directVariant.size}) şu an stokta yok.`;
+      if (quantity > stock) return `${directVariant.name} (${directVariant.productCode}, ${directVariant.size}) için stokta ${stock} adet var; istediğiniz ${quantity} adet karşılanamıyor.`;
+      return `${directVariant.name} (${directVariant.productCode}, ${directVariant.size}) stokta ${stock} adet mevcut. Fiyatı ${Number(directVariant.price).toLocaleString('tr-TR')} TL.`;
+    }
+
+    const result = await StockService.checkStock(storeId, code);
+    if (!result.exists) return `${code.toLocaleUpperCase('tr-TR')} kodlu ürün mağaza stoklarında bulunamadı.`;
+    const variants = Array.isArray(result.product?.variants) ? result.product.variants : [];
+    if (variants.length) {
+      const details = variants.map((variant: any) => {
+        const stock = Number(variant.stock) || 0;
+        const label = variant.size || variant.productCode;
+        return `${label}: ${stock > 0 ? `${stock} adet` : 'tükendi'}`;
+      });
+      return `${result.product.name} (${result.product.productCode}) stok durumu: ${details.join(', ')}. Toplam ${Number(result.product.stock) || 0} adet.`;
+    }
+    const stock = Number(result.product?.stock) || 0;
+    return stock > 0
+      ? `${result.product?.name || code} stokta ${stock} adet mevcut.`
+      : `${result.product?.name || code} şu an stokta yok.`;
   }
 
   /** Answers informational price questions directly without forcing the customer into the order/size flow. */
@@ -485,7 +527,10 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             productName: result.product?.name,
             productCode: result.product?.productCode || ctx.productCode,
             size: result.product?.size || ctx.size,
+            stock: Number(result.product?.stock) || 0,
+            price: result.product?.price,
             availableSizes: result.product?.availableSizes,
+            variants: result.product?.variants,
             message: result.inStock ? 'Stokta mevcuttur.' : 'Stokta kalmamıştır.'
           });
         } catch (e: any) {
@@ -947,6 +992,18 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       await this.extractSessionDataWithAI(senderId, userMessage, apiKey, storeSlug, storeId, channel);
       const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
       this.hydrateProductCodeFromMessage(userMessage, storeId, ctx);
+
+      const deterministicStockReply = await this.getProductStockReply(storeId, ctx, userMessage);
+      if (deterministicStockReply) {
+        ctx.history.push(new HumanMessage(userMessage), new AIMessage(deterministicStockReply));
+        if (ctx.history.length > 16) ctx.history.splice(0, ctx.history.length - 16);
+        return {
+          reply: deterministicStockReply,
+          tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
+          toolTraces: [],
+          cart: ctx.cart
+        };
+      }
 
       const deterministicPriceReply = this.getProductPriceReply(storeId, ctx, userMessage);
       if (deterministicPriceReply) {

@@ -423,6 +423,20 @@ async function runTestSuite() {
   console.log('\n2️⃣7️⃣-A AI VARIANT TEST: "Müşteri" kelimesi M beden sayılmamalı');
   await StockService.addProduct({ storeId: 100, shortCode: 'HBL', productCode: 'HBL-S', name: 'HBL Test', size: 'S', stock: 10, price: 250, instagramMediaId: 'media_hbl_1' });
   await StockService.addProduct({ storeId: 100, shortCode: 'HBL', productCode: 'HBL-M', name: 'HBL Test', size: 'M', stock: 10, price: 250, instagramMediaId: 'media_hbl_1' });
+  const familyStock = await StockService.checkStock(100, 'HBL stok durumu');
+  const familyStockCtx = AIService.getSessionContext('family-stock-test', 'store-alpha', 100, 'TEST');
+  familyStockCtx.productCode = 'HBL';
+  const familyStockReply = await (AIService as any).getProductStockReply(100, familyStockCtx, 'HBL stokta kaç adet var?');
+  const exactStockCtx = AIService.getSessionContext('exact-stock-test', 'store-alpha', 100, 'TEST');
+  exactStockCtx.productCode = 'HBL-M';
+  exactStockCtx.size = 'M';
+  const exactStockReply = await (AIService as any).getProductStockReply(100, exactStockCtx, 'HBL-M stokta var mı?');
+  assert(
+    familyStock.product?.productCode === 'HBL' && familyStock.product?.stock === 20 && familyStock.product?.variants?.length === 2 &&
+    familyStockReply.includes('M: 10 adet') && familyStockReply.includes('S: 10 adet') && familyStockReply.includes('Toplam 20 adet') &&
+    exactStockReply.includes('stokta 10 adet mevcut'),
+    'Short-code stock lookup returns every variant and exact product lookup returns the authoritative quantity'
+  );
   const bufferedCheckoutCtx = AIService.getSessionContext('buffered-checkout', 'store-alpha', 100, 'TEST');
   bufferedCheckoutCtx.cart = [{ productCode: 'HBL-S', productName: 'HBL Test', size: 'S', quantity: 1, unitPrice: 250 }];
   bufferedCheckoutCtx.checkoutConfirmed = false;
@@ -505,7 +519,7 @@ async function runTestSuite() {
   const noSizeReply = (AIService as any).getShortCodeOrderReply(100, variantCtx, 'HBL\n\nMüşteri bu ürünü sipariş etmek istiyor.');
   assert(noSizeReply.includes('Hangi bedeni istersiniz?') && variantCtx.productCode === 'HBL', 'Product short code waits for an explicit size instead of reading M from Müşteri');
   const explicitSizeReply = (AIService as any).getShortCodeOrderReply(100, variantCtx, 'M beden istiyorum');
-  assert(explicitSizeReply.includes('M bedeni stokta mevcut') && variantCtx.productCode === 'HBL-M', 'Explicit M size resolves HBL-M variant');
+  assert(explicitSizeReply.includes('M bedeninde') && explicitSizeReply.includes('adet stok var') && variantCtx.productCode === 'HBL-M', 'Explicit M size resolves HBL-M variant with its real quantity');
 
   await StockService.addProduct({ storeId: 100, shortCode: 'İNCİ', productCode: 'İNCİ-M', name: 'İnci Elbise', size: 'M', stock: 7, price: 600 });
   const turkishCodeStock = await StockService.checkStock(100, 'inci m stokta var mı?');

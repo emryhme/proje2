@@ -108,8 +108,31 @@ export class StockService {
       return { exists: false, inStock: false };
     }
 
+    const summarizeVariants = (variantRows: ProductStockRow[], familyCode: string) => {
+      const variants = variantRows.map(row => ({
+        productCode: row.productCode,
+        size: row.size,
+        color: row.color,
+        stock: Number(row.stock) || 0,
+        price: Number(row.price)
+      }));
+      const totalStock = variants.reduce((sum, variant) => sum + variant.stock, 0);
+      const availableSizes = [...new Set(variants.filter(variant => variant.stock > 0).map(variant => variant.size).filter(Boolean))];
+      return {
+        exists: true,
+        inStock: totalStock > 0,
+        product: {
+          productCode: familyCode,
+          name: variantRows[0]?.name || familyCode,
+          stock: totalStock,
+          availableSizes,
+          variants
+        }
+      };
+    };
+
     // 1. Doğrudan ÜRÜN KODU Eşleşmesi
-    let match = this.findProductVariant(storeId, rawQuery) || rows
+    let match = rows
       .slice()
       .sort((a, b) => String(b.productCode || '').length - String(a.productCode || '').length)
       .find(r => this.containsLookupValue(rawQuery, r.productCode));
@@ -127,27 +150,20 @@ export class StockService {
       if (shortMatch) {
         const shortCode = this.normalizeLookupValue(shortMatch.shortCode);
         const shortMatches = rows.filter(r => this.compactLookupValue(r.shortCode) === this.compactLookupValue(shortCode));
-        const hasStock = shortMatches.some(r => r.stock > 0);
-        const availableSizes = shortMatches.filter(r => r.stock > 0).map(r => r.size);
-        return {
-          exists: true,
-          inStock: hasStock,
-          product: {
-            productCode: shortCode,
-            name: shortMatch.name,
-            availableSizes,
-            stock: hasStock ? 1 : 0
-          }
-        };
+        return summarizeVariants(shortMatches, shortCode);
       }
     }
 
     // 4. İsim İle Arama
     if (!match) {
-      match = rows.find(r => {
+      const nameMatches = rows.filter(r => {
         const name = this.normalizeLookupValue(r.name);
         return name.includes(rawQuery) || rawQuery.includes(name);
       });
+      if (nameMatches.length > 1) {
+        return summarizeVariants(nameMatches, this.normalizeLookupValue(nameMatches[0].shortCode || nameMatches[0].name));
+      }
+      match = nameMatches[0];
     }
 
     if (!match) {
