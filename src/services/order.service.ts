@@ -130,7 +130,7 @@ export class OrderService {
 
       const availableStock = prodObj ? Number(prodObj.stock) || 0 : 0;
       if (availableStock < quantity) {
-        throw new Error(`INSUFFICIENT_STOCK: İstenen ürün (${canonicalProductCode}) stokta yetersiz! Mevcut Stok: ${availableStock}, İstenen: ${quantity}`);
+        throw new Error(`INSUFFICIENT_STOCK: İstenen ürün (${canonicalProductCode}) için yeterli stok bulunmuyor.`);
       }
 
       shippingFee = data.shippingFee !== undefined ? data.shippingFee : (unitPrice * quantity >= 1500 ? 0 : 49);

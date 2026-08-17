@@ -433,9 +433,18 @@ async function runTestSuite() {
   const exactStockReply = await (AIService as any).getProductStockReply(100, exactStockCtx, 'HBL-M stokta var mı?');
   assert(
     familyStock.product?.productCode === 'HBL' && familyStock.product?.stock === 20 && familyStock.product?.variants?.length === 2 &&
-    familyStockReply.includes('M: 10 adet') && familyStockReply.includes('S: 10 adet') && familyStockReply.includes('Toplam 20 adet') &&
-    exactStockReply.includes('stokta 10 adet mevcut'),
-    'Short-code stock lookup returns every variant and exact product lookup returns the authoritative quantity'
+    familyStockReply.includes('Stokta bulunan bedenler:') && familyStockReply.includes('M') && familyStockReply.includes('S') &&
+    !/\d+\s*adet/i.test(familyStockReply) && exactStockReply.includes('stokta mevcut') && !/\d+\s*adet/i.test(exactStockReply),
+    'Customer-facing stock replies expose availability and sizes without revealing inventory quantities'
+  );
+  const stockPrivacyTools = (AIService as any).createLeafTools('stock-privacy', 'store-alpha', 100, 'TEST');
+  const exactStockToolResult = JSON.parse(String(await stockPrivacyTools.stokTool.invoke(JSON.stringify({ productCode: 'HBL-M', size: 'M' }))));
+  const familyStockToolResult = JSON.parse(String(await stockPrivacyTools.stokTool.invoke(JSON.stringify({ productCode: 'HBL' }))));
+  assert(
+    !Object.prototype.hasOwnProperty.call(exactStockToolResult, 'stock') &&
+    !Object.prototype.hasOwnProperty.call(familyStockToolResult, 'stock') &&
+    !Object.prototype.hasOwnProperty.call(familyStockToolResult, 'variants'),
+    'AI stock tool results expose availability but never inventory quantities'
   );
   const bufferedCheckoutCtx = AIService.getSessionContext('buffered-checkout', 'store-alpha', 100, 'TEST');
   bufferedCheckoutCtx.cart = [{ productCode: 'HBL-S', productName: 'HBL Test', size: 'S', quantity: 1, unitPrice: 250 }];
@@ -519,7 +528,7 @@ async function runTestSuite() {
   const noSizeReply = (AIService as any).getShortCodeOrderReply(100, variantCtx, 'HBL\n\nMüşteri bu ürünü sipariş etmek istiyor.');
   assert(noSizeReply.includes('Hangi bedeni istersiniz?') && variantCtx.productCode === 'HBL', 'Product short code waits for an explicit size instead of reading M from Müşteri');
   const explicitSizeReply = (AIService as any).getShortCodeOrderReply(100, variantCtx, 'M beden istiyorum');
-  assert(explicitSizeReply.includes('M bedeninde') && explicitSizeReply.includes('adet stok var') && variantCtx.productCode === 'HBL-M', 'Explicit M size resolves HBL-M variant with its real quantity');
+  assert(explicitSizeReply.includes('M bedeni stokta mevcut') && !/\d+\s*adet/i.test(explicitSizeReply) && variantCtx.productCode === 'HBL-M', 'Explicit M size resolves HBL-M without exposing its inventory quantity');
 
   await StockService.addProduct({ storeId: 100, shortCode: 'İNCİ', productCode: 'İNCİ-M', name: 'İnci Elbise', size: 'M', stock: 7, price: 600 });
   const turkishCodeStock = await StockService.checkStock(100, 'inci m stokta var mı?');
@@ -601,8 +610,10 @@ async function runTestSuite() {
   const failedVipResult = JSON.parse(String(await failedVipTools.kayitTool.invoke('{}')));
   const untouchedVip = db.prepare("SELECT is_used FROM user_rewards WHERE store_id = 100 AND sender_id = 'vip-failed-order'").get() as any;
   assert(
-    failedVipResult.orderCreated !== true && untouchedVip?.is_used === 0,
-    'VIP reward remains available when order creation fails because stock is insufficient'
+    failedVipResult.orderCreated !== true && untouchedVip?.is_used === 0 &&
+    String(failedVipResult.message || '').includes('yeterli stok') &&
+    !String(failedVipResult.message || '').includes('Mevcut Stok') && !/\d+\s*adet/i.test(String(failedVipResult.message || '')),
+    'VIP reward remains available and the customer-facing error hides inventory quantity when stock is insufficient'
   );
 
   console.log('\n2️⃣7️⃣-C AI TOOL INPUT TEST: DynamicTool input komutu doğru action olarak ayrıştırılmalı');

@@ -374,10 +374,10 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       return `${variant.product_code} (${ctx.size}) şu an stokta yok. Başka bir beden tercih eder misiniz?`;
     }
 
-    return `${shortCode} kodlu ürünün ${ctx.size} bedeninde ${Number(variant.stock)} adet stok var. Fiyatı ${price.toLocaleString('tr-TR')} TL. Kaç adet istersiniz?`;
+    return `${shortCode} kodlu ürünün ${ctx.size} bedeni stokta mevcut. Fiyatı ${price.toLocaleString('tr-TR')} TL. Kaç adet istersiniz?`;
   }
 
-  /** Returns authoritative stock counts without leaving inventory interpretation to the language model. */
+  /** Returns stock availability without exposing inventory quantities to the customer. */
   private static async getProductStockReply(storeId: number, ctx: SessionContext, userText: string): Promise<string | null> {
     const text = String(userText || '');
     if (!/(?:stok|mevcut|kaldı|tükendi|var\s*m[ıi]|bulunuyor)/iu.test(text)) return null;
@@ -396,24 +396,28 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       ctx.size = directVariant.size;
       ctx.variantVerified = true;
       if (stock <= 0) return `${directVariant.name} (${directVariant.productCode}, ${directVariant.size}) şu an stokta yok.`;
-      if (quantity > stock) return `${directVariant.name} (${directVariant.productCode}, ${directVariant.size}) için stokta ${stock} adet var; istediğiniz ${quantity} adet karşılanamıyor.`;
-      return `${directVariant.name} (${directVariant.productCode}, ${directVariant.size}) stokta ${stock} adet mevcut. Fiyatı ${Number(directVariant.price).toLocaleString('tr-TR')} TL.`;
+      if (quantity > stock) return `${directVariant.name} (${directVariant.productCode}, ${directVariant.size}) için istediğiniz adet kadar yeterli stok bulunmuyor.`;
+      return `${directVariant.name} (${directVariant.productCode}, ${directVariant.size}) stokta mevcut. Fiyatı ${Number(directVariant.price).toLocaleString('tr-TR')} TL.`;
     }
 
     const result = await StockService.checkStock(storeId, code);
     if (!result.exists) return `${code.toLocaleUpperCase('tr-TR')} kodlu ürün mağaza stoklarında bulunamadı.`;
     const variants = Array.isArray(result.product?.variants) ? result.product.variants : [];
     if (variants.length) {
-      const details = variants.map((variant: any) => {
-        const stock = Number(variant.stock) || 0;
-        const label = variant.size || variant.productCode;
-        return `${label}: ${stock > 0 ? `${stock} adet` : 'tükendi'}`;
-      });
-      return `${result.product.name} (${result.product.productCode}) stok durumu: ${details.join(', ')}. Toplam ${Number(result.product.stock) || 0} adet.`;
+      const availableSizes = variants
+        .filter((variant: any) => Number(variant.stock) > 0)
+        .map((variant: any) => String(variant.size || variant.productCode).toLocaleUpperCase('tr-TR'));
+      const unavailableSizes = variants
+        .filter((variant: any) => Number(variant.stock) <= 0)
+        .map((variant: any) => String(variant.size || variant.productCode).toLocaleUpperCase('tr-TR'));
+      const details: string[] = [];
+      if (availableSizes.length > 0) details.push(`Stokta bulunan bedenler: ${availableSizes.join(', ')}`);
+      if (unavailableSizes.length > 0) details.push(`Stokta olmayan bedenler: ${unavailableSizes.join(', ')}`);
+      return `${result.product.name} (${result.product.productCode}) için ${details.join('. ')}.`;
     }
     const stock = Number(result.product?.stock) || 0;
     return stock > 0
-      ? `${result.product?.name || code} stokta ${stock} adet mevcut.`
+      ? `${result.product?.name || code} stokta mevcut.`
       : `${result.product?.name || code} şu an stokta yok.`;
   }
 
@@ -471,7 +475,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     // STOK Tool
     const stokTool = new DynamicTool({
       name: 'STOK',
-      description: 'Ürün kodu ve BEDEN bilgisi mevcutsa doğru varyantın stok ve fiyatını kontrol eder.',
+      description: 'Ürün kodu ve BEDEN bilgisi mevcutsa doğru varyantın stokta olup olmadığını ve fiyatını kontrol eder. Stok adedi müşteriye açıklanmaz.',
       func: async (input: string) => {
         try {
           let request: any = {};
@@ -509,7 +513,6 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
               productCode: product.product_code,
               size: product.size,
               price,
-              stock: Number(product.stock),
               message: Number(product.stock) > 0 ? 'Stokta mevcuttur.' : 'Stokta kalmamıştır.'
             });
           }
@@ -527,10 +530,8 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             productName: result.product?.name,
             productCode: result.product?.productCode || ctx.productCode,
             size: result.product?.size || ctx.size,
-            stock: Number(result.product?.stock) || 0,
             price: result.product?.price,
             availableSizes: result.product?.availableSizes,
-            variants: result.product?.variants,
             message: result.inStock ? 'Stokta mevcuttur.' : 'Stokta kalmamıştır.'
           });
         } catch (e: any) {
@@ -575,7 +576,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
           }
 
           if (Number(prod.stock) < pQty) {
-            return JSON.stringify({ success: false, message: `${productName} (${pSize}) stokta tükendiği için sepete eklenemedi.` });
+            return JSON.stringify({ success: false, message: `${productName} (${pSize}) için istenen adet kadar yeterli stok bulunmadığından sepete eklenemedi.` });
           }
 
           const canonicalProductCode = String(prod.product_code).toUpperCase();
@@ -836,7 +837,15 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
               : ''
           });
         } catch (e: any) {
-          return JSON.stringify({ error: e.message });
+          const message = String(e?.message || '');
+          if (message.includes('INSUFFICIENT_STOCK')) {
+            return JSON.stringify({
+              success: false,
+              orderCreated: false,
+              message: 'Sipariş oluşturulamadı: İstenen adet için yeterli stok bulunmuyor. Lütfen daha düşük bir adet seçin.'
+            });
+          }
+          return JSON.stringify({ error: message });
         }
       }
     });
@@ -1130,6 +1139,7 @@ ${rewardText}
 
 3. 🔒 **STOK SORGULAMA KURALI:**
    - Müşteri HANGİ BEDEN ve KAÇ ADET ilgilendiğini söylemeden STOK SORGULAMASI YAPMA!
+   - Gerçek stok adedini veya kalan ürün sayısını ASLA müşteriye söyleme. Yalnızca "stokta mevcut", "stokta yok" ya da "istenen adet için yeterli stok yok" şeklinde yanıt ver.
 
 4. 🔒 **TOPLU SİPARİŞ VE BİLGİ İSTEME KURALI:**
    👉 **SEPETTEKİ ÜRÜNLERİ, KARGO DURUMUNU VE TOPLAM SİPARİŞ TUTARINI (TL) MUTLAKA AÇIKÇA BELİRT!**
