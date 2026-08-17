@@ -45,10 +45,14 @@ async function run(): Promise<void> {
     ]);
     const dashboardHtml = await dashboardPage.text();
     const stockHtml = await stockPage.text();
+    const instagramMediaHtml = await instagramMediaPage.text();
     assert(
       dashboardPage.ok
         && stockPage.ok
         && instagramMediaPage.ok
+        && dashboardHtml.includes('app.js?v=20260817-plan-expiry-v2')
+        && stockHtml.includes('app.js?v=20260817-plan-expiry-v2')
+        && instagramMediaHtml.includes('app.js?v=20260817-plan-expiry-v2')
         && !dashboardHtml.includes('id="productsTableBody"')
         && stockHtml.includes('id="productsTableBody"')
         && stockHtml.includes('Stok Yönetimi')
