@@ -79,8 +79,8 @@ export class OrderService {
     const lastName = nameParts.slice(1).join(' ') || '';
 
     const quantity = Math.max(1, Number(data.quantity) || 1);
-    const pCode = (data.productCode || '').trim().toUpperCase();
-    const requestedSize = (data.size || '').trim().toUpperCase();
+    const pCode = StockService.normalizeLookupValue(data.productCode);
+    const requestedSize = StockService.normalizeLookupValue(data.size);
     if (!pCode || !requestedSize) {
       throw new Error('PRODUCT_VARIANT_REQUIRED: Ürün kodu ve beden zorunludur.');
     }
@@ -103,15 +103,18 @@ export class OrderService {
       }
 
       // 2. Mağazaya Özel Ürün Fiyatı ve Stok Kontrolü
-      const singleCode = pCode.split(/[,()/\s]/)[0].trim().toUpperCase();
-      const prodObj = db.prepare(`
-        SELECT id, product_code, name, size, price, stock FROM products
-        WHERE store_id = ?
-          AND (UPPER(product_code) = ? OR (UPPER(short_code) = ? AND UPPER(size) = ?))
-        LIMIT 1
-      `).get(storeId, singleCode, singleCode, requestedSize) as any;
+      const singleCode = pCode.split(/[,()]/)[0].trim();
+      const resolvedProduct = StockService.findProductVariant(storeId, singleCode, requestedSize);
+      const prodObj = resolvedProduct ? {
+        id: resolvedProduct.id,
+        product_code: resolvedProduct.productCode,
+        name: resolvedProduct.name,
+        size: resolvedProduct.size,
+        price: resolvedProduct.price,
+        stock: resolvedProduct.stock
+      } : null;
 
-      if (!prodObj || String(prodObj.size || '').trim().toUpperCase() !== requestedSize) {
+      if (!prodObj || StockService.normalizeLookupValue(prodObj.size) !== requestedSize) {
         throw new Error(`PRODUCT_VARIANT_NOT_FOUND: ${singleCode}-${requestedSize} ürünü bulunamadı.`);
       }
 
@@ -150,7 +153,7 @@ export class OrderService {
         db.prepare(`
           UPDATE inventory 
           SET stock = MAX(0, stock - ?), updated_at = CURRENT_TIMESTAMP 
-          WHERE store_id = ? AND UPPER(product_code) = ?
+          WHERE store_id = ? AND product_code = ?
         `).run(quantity, storeId, canonicalProductCode);
       } catch (e) {}
 

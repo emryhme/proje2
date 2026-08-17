@@ -13,6 +13,10 @@ export interface ProductStockRow {
   storeId?: number;
 }
 
+export interface ProductVariantRow extends ProductStockRow {
+  id: number;
+}
+
 /**
  * SQLite (barons.db) Destekli Ultra Hızlı Multi-Tenant Stok Yönetim Servisi
  */
@@ -21,6 +25,48 @@ export class StockService {
     if (typeof storeId !== 'number' || isNaN(storeId) || storeId <= 0) {
       throw new Error('Store ID zorunludur ve geçerli bir pozitif sayı olmalıdır.');
     }
+  }
+
+  public static normalizeLookupValue(value: unknown): string {
+    return String(value ?? '')
+      .normalize('NFKC')
+      .trim()
+      .toLocaleUpperCase('tr-TR')
+      .replace(/[‐‑‒–—−]/g, '-')
+      .replace(/[._/\\]+/g, '-')
+      .replace(/\s*-\s*/g, '-')
+      .replace(/\s+/g, ' ');
+  }
+
+  private static compactLookupValue(value: unknown): string {
+    return this.normalizeLookupValue(value).replace(/[\s-]+/g, '');
+  }
+
+  public static containsLookupValue(text: unknown, value: unknown): boolean {
+    const normalizedText = this.normalizeLookupValue(text);
+    const normalizedValue = this.normalizeLookupValue(value);
+    if (!normalizedText || !normalizedValue) return false;
+    const pieces = normalizedValue.split(/[\s-]+/).filter(Boolean).map(piece => piece.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (!pieces.length) return false;
+    const pattern = pieces.join('[\\s-]+');
+    return new RegExp(`(^|[^\\p{L}\\p{N}])${pattern}($|[^\\p{L}\\p{N}])`, 'iu').test(normalizedText);
+  }
+
+  /** Resolves a product variant in JavaScript so Turkish characters are not lost by SQLite UPPER(). */
+  public static findProductVariant(storeId: number, productCode: string, size?: string): ProductVariantRow | null {
+    this.validateStoreId(storeId);
+    const codeKey = this.compactLookupValue(productCode);
+    const sizeKey = this.compactLookupValue(size || '');
+    if (!codeKey) return null;
+    const rows = db.prepare(`
+      SELECT id, short_code as shortCode, product_code as productCode, name, color, size, price, stock, category,
+             instagram_media_id as instagramMediaId, store_id as storeId
+      FROM products WHERE store_id = ? ORDER BY id ASC
+    `).all(storeId) as ProductVariantRow[];
+    const sizeMatches = (row: ProductVariantRow) => !sizeKey || this.compactLookupValue(row.size) === sizeKey;
+    return rows.find(row => this.compactLookupValue(row.productCode) === codeKey && sizeMatches(row))
+      || rows.find(row => this.compactLookupValue(row.shortCode) === codeKey && sizeMatches(row))
+      || null;
   }
 
   /**
@@ -54,7 +100,7 @@ export class StockService {
    * Mağaza bazında akıllı stok sorgulama yapar.
    */
   public static async checkStock(storeId: number, queryInput: string): Promise<{ exists: boolean; inStock: boolean; product?: any }> {
-    const rawQuery = queryInput.trim().toUpperCase();
+    const rawQuery = this.normalizeLookupValue(queryInput);
     this.validateStoreId(storeId);
     const rows = await this.fetchAllSheetRows(storeId);
 
@@ -63,23 +109,24 @@ export class StockService {
     }
 
     // 1. Doğrudan ÜRÜN KODU Eşleşmesi
-    let match = rows.find(r => r.productCode.toUpperCase() === rawQuery || rawQuery.includes(r.productCode.toUpperCase()));
+    let match = this.findProductVariant(storeId, rawQuery) || rows
+      .slice()
+      .sort((a, b) => String(b.productCode || '').length - String(a.productCode || '').length)
+      .find(r => this.containsLookupValue(rawQuery, r.productCode));
 
     // 2. Kısa Kod + Beden ayrıştırma
     if (!match) {
       match = rows.find(r => {
-        const pattern1 = `${r.shortCode}-${r.size}`.toUpperCase();
-        const pattern2 = `${r.shortCode} ${r.size}`.toUpperCase();
-        return rawQuery.includes(pattern1) || rawQuery.includes(pattern2);
+        return this.containsLookupValue(rawQuery, `${r.shortCode}-${r.size}`);
       });
     }
 
     // 3. Kısa Kod Eşleşmesi
     if (!match) {
-      const shortMatch = rows.find(r => rawQuery.includes(r.shortCode.toUpperCase()));
+      const shortMatch = rows.find(r => this.containsLookupValue(rawQuery, r.shortCode));
       if (shortMatch) {
-        const shortCode = shortMatch.shortCode.toUpperCase();
-        const shortMatches = rows.filter(r => r.shortCode.toUpperCase() === shortCode);
+        const shortCode = this.normalizeLookupValue(shortMatch.shortCode);
+        const shortMatches = rows.filter(r => this.compactLookupValue(r.shortCode) === this.compactLookupValue(shortCode));
         const hasStock = shortMatches.some(r => r.stock > 0);
         const availableSizes = shortMatches.filter(r => r.stock > 0).map(r => r.size);
         return {
@@ -97,7 +144,10 @@ export class StockService {
 
     // 4. İsim İle Arama
     if (!match) {
-      match = rows.find(r => r.name.toUpperCase().includes(rawQuery) || rawQuery.includes(r.name.toUpperCase()));
+      match = rows.find(r => {
+        const name = this.normalizeLookupValue(r.name);
+        return name.includes(rawQuery) || rawQuery.includes(name);
+      });
     }
 
     if (!match) {

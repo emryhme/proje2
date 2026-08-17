@@ -477,6 +477,14 @@ async function runTestSuite() {
   const explicitSizeReply = (AIService as any).getShortCodeOrderReply(100, variantCtx, 'M beden istiyorum');
   assert(explicitSizeReply.includes('M bedeni stokta mevcut') && variantCtx.productCode === 'HBL-M', 'Explicit M size resolves HBL-M variant');
 
+  await StockService.addProduct({ storeId: 100, shortCode: 'İNCİ', productCode: 'İNCİ-M', name: 'İnci Elbise', size: 'M', stock: 7, price: 600 });
+  const turkishCodeStock = await StockService.checkStock(100, 'inci m stokta var mı?');
+  const turkishCodeVariant = StockService.findProductVariant(100, 'inci_m', 'm');
+  assert(
+    turkishCodeStock.exists && turkishCodeStock.product?.productCode === 'İNCİ-M' && turkishCodeVariant?.stock === 7,
+    'AI stock lookup reads Turkish product codes and common space, dash or underscore variants'
+  );
+
   console.log('\n2️⃣7️⃣-B ORDER VARIANT TEST: Kısa kod + beden siparişi panele kaydedilmeli');
   const savedVariantOrder = await OrderService.createOrder(100, {
     customerName: 'Test Müşteri',
@@ -490,6 +498,68 @@ async function runTestSuite() {
   });
   const listedVariantOrder = (await OrderService.getOrders(100)).find(order => order.orderId === savedVariantOrder.orderId);
   assert(Boolean(listedVariantOrder) && listedVariantOrder?.productCode === 'HBL-M' && listedVariantOrder?.size === 'M', 'Created HBL-M order is returned by the admin orders listing');
+
+  db.prepare(`
+    INSERT INTO campaigns (store_id, title, description, code, discount_percent, discount_amount, min_order_amount, start_date, end_date, active)
+    VALUES
+      (100, 'Aktif Yaz İndirimi', 'Uygun siparişe yüzde 15 indirim', 'YAZ15', 15, 0, 300, DATE('now', '-1 day'), DATE('now', '+1 day'), 1),
+      (100, 'Henüz Başlamadı', 'Gelecek kampanya', 'GELECEK90', 90, 0, 0, DATE('now', '+1 day'), DATE('now', '+2 day'), 1),
+      (100, 'Süresi Doldu', 'Eski kampanya', 'ESKI80', 80, 0, 0, DATE('now', '-2 day'), DATE('now', '-1 day'), 1)
+  `).run();
+  const campaignPromotion = (AIService as any).getOrderPromotion(100, 'campaign-test-user', 500);
+  const underMinimumPromotion = (AIService as any).getOrderPromotion(100, 'campaign-test-user', 250);
+  assert(
+    campaignPromotion.campaign?.code === 'YAZ15' && campaignPromotion.discount === 75 && underMinimumPromotion.discount === 0,
+    'Order pricing reads active campaign dates, minimum amount and configured discount instead of a hard-coded code'
+  );
+
+  db.prepare(`
+    INSERT INTO user_rewards (store_id, sender_id, reward_code, discount_percent, min_qualifying_amount, is_used)
+    VALUES (100, 'vip-under-minimum', 'VIP30', 30, 600, 0)
+  `).run();
+  const underMinimumVipPromotion = (AIService as any).getOrderPromotion(100, 'vip-under-minimum', 500);
+  const underMinimumVip = db.prepare("SELECT is_used FROM user_rewards WHERE store_id = 100 AND sender_id = 'vip-under-minimum'").get() as any;
+  assert(
+    underMinimumVipPromotion.vipReward === null && underMinimumVipPromotion.campaign?.code === 'YAZ15' && underMinimumVip?.is_used === 0,
+    'VIP reward waits for its minimum usage amount without blocking an eligible campaign or being consumed'
+  );
+
+  db.prepare(`
+    INSERT INTO user_rewards (store_id, sender_id, reward_code, discount_percent, min_qualifying_amount, is_used)
+    VALUES (100, 'vip-order-test', 'VIP25', 25, 300, 0)
+  `).run();
+  const vipCtx = AIService.getSessionContext('vip-order-test', 'store-alpha', 100, 'TEST');
+  vipCtx.cart = [{ productCode: 'HBL-M', productName: 'HBL Test', size: 'M', quantity: 2, unitPrice: 250 }];
+  vipCtx.checkoutConfirmed = true;
+  vipCtx.customerName = 'VIP Müşteri';
+  vipCtx.customerPhone = '05551234999';
+  vipCtx.address = 'VIP Mahallesi Test Sokak No 25';
+  const vipTools = (AIService as any).createLeafTools('vip-order-test', 'store-alpha', 100, 'TEST');
+  const vipOrderResult = JSON.parse(String(await vipTools.kayitTool.invoke('{}')));
+  const consumedVip = db.prepare("SELECT is_used FROM user_rewards WHERE store_id = 100 AND sender_id = 'vip-order-test'").get() as any;
+  const vipOrder = db.prepare('SELECT discount, total_price FROM orders WHERE store_id = 100 AND order_id = ?').get(vipOrderResult.orderId) as any;
+  assert(
+    vipOrderResult.orderCreated === true && vipOrderResult.appliedLoyaltyReward === true && vipOrderResult.discount === 125 && consumedVip?.is_used === 1 && vipOrder?.discount === 125,
+    'Eligible VIP reward overrides the campaign, is priced correctly and is consumed only by a successful order'
+  );
+
+  db.prepare(`
+    INSERT INTO user_rewards (store_id, sender_id, reward_code, discount_percent, min_qualifying_amount, is_used)
+    VALUES (100, 'vip-failed-order', 'SAFE20', 20, 0, 0)
+  `).run();
+  const failedVipCtx = AIService.getSessionContext('vip-failed-order', 'store-alpha', 100, 'TEST');
+  failedVipCtx.cart = [{ productCode: 'HBL-M', productName: 'HBL Test', size: 'M', quantity: 999, unitPrice: 250 }];
+  failedVipCtx.checkoutConfirmed = true;
+  failedVipCtx.customerName = 'Başarısız Müşteri';
+  failedVipCtx.customerPhone = '05551234888';
+  failedVipCtx.address = 'Test Mahallesi Başarısız Sipariş No 1';
+  const failedVipTools = (AIService as any).createLeafTools('vip-failed-order', 'store-alpha', 100, 'TEST');
+  const failedVipResult = JSON.parse(String(await failedVipTools.kayitTool.invoke('{}')));
+  const untouchedVip = db.prepare("SELECT is_used FROM user_rewards WHERE store_id = 100 AND sender_id = 'vip-failed-order'").get() as any;
+  assert(
+    failedVipResult.orderCreated !== true && untouchedVip?.is_used === 0,
+    'VIP reward remains available when order creation fails because stock is insufficient'
+  );
 
   console.log('\n2️⃣7️⃣-C AI TOOL INPUT TEST: DynamicTool input komutu doğru action olarak ayrıştırılmalı');
   const parsedAddToCart = (AIService as any).normalizeSiparisToolInput({ input: 'sepete_ekle productCode=GMA-S size=S quantity=1' });

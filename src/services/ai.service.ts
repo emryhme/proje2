@@ -47,6 +47,63 @@ interface SessionContext {
 export class AIService {
   private static sessions: Map<string, SessionContext> = new Map();
 
+  private static getActiveCampaigns(storeId: number, subtotal?: number): any[] {
+    const rows = db.prepare(`
+      SELECT id, title, description, code, discount_percent, discount_amount, min_order_amount, start_date, end_date
+      FROM campaigns
+      WHERE store_id = ? AND active = 1
+        AND (start_date IS NULL OR start_date = '' OR start_date <= DATE('now'))
+        AND (end_date IS NULL OR end_date = '' OR end_date >= DATE('now'))
+      ORDER BY id DESC
+    `).all(storeId) as any[];
+    if (subtotal === undefined) return rows;
+    return rows.filter(campaign => Number(campaign.min_order_amount || 0) <= subtotal);
+  }
+
+  private static getBestCampaignDiscount(storeId: number, subtotal: number): { campaign: any; discount: number } | null {
+    const choices = this.getActiveCampaigns(storeId, subtotal).map(campaign => {
+      const percent = Math.min(100, Math.max(0, Number(campaign.discount_percent) || 0));
+      const amount = Math.max(0, Number(campaign.discount_amount) || 0);
+      const discount = Math.min(subtotal, (subtotal * percent / 100) + amount);
+      return { campaign, discount };
+    }).filter(choice => choice.discount > 0);
+    return choices.sort((a, b) => b.discount - a.discount || Number(b.campaign.id) - Number(a.campaign.id))[0] || null;
+  }
+
+  private static getEligibleVipReward(storeId: number, senderId: string, subtotal: number): any | null {
+    const rewards = db.prepare(`
+      SELECT * FROM user_rewards
+      WHERE store_id = ? AND sender_id = ? AND is_used = 0
+      ORDER BY id DESC
+    `).all(storeId, senderId) as any[];
+    return rewards.find(reward => Number(reward.min_qualifying_amount || 0) <= subtotal) || null;
+  }
+
+  private static getOrderPromotion(storeId: number, senderId: string, subtotal: number): {
+    discount: number;
+    vipReward: any | null;
+    campaign: any | null;
+    label: string;
+  } {
+    const vipReward = this.getEligibleVipReward(storeId, senderId, subtotal);
+    if (vipReward) {
+      const percent = Math.min(100, Math.max(0, Number(vipReward.discount_percent) || 0));
+      return {
+        discount: Math.min(subtotal, subtotal * percent / 100),
+        vipReward,
+        campaign: null,
+        label: `%${percent} VIP indirimi`
+      };
+    }
+    const campaignChoice = this.getBestCampaignDiscount(storeId, subtotal);
+    return {
+      discount: campaignChoice?.discount || 0,
+      vipReward: null,
+      campaign: campaignChoice?.campaign || null,
+      label: campaignChoice ? String(campaignChoice.campaign.title || campaignChoice.campaign.code || 'Kampanya') : ''
+    };
+  }
+
   private static getStorePersona(storeId: number): { storeName: string; tone: string; toneInstruction: string; customPrompt: string } {
     const rows = db.prepare(`
       SELECT key, value FROM settings
@@ -252,11 +309,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       FROM products
       WHERE store_id = ?
     `).all(storeId) as any[];
-    const normalizedText = rawText.toUpperCase();
-    const containsExactCode = (value: string) => {
-      const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      return new RegExp(`(^|[^\\p{L}\\p{N}-])${escaped}($|[^\\p{L}\\p{N}-])`, 'iu').test(normalizedText);
-    };
+    const containsExactCode = (value: string) => StockService.containsLookupValue(rawText, value);
 
     // Tam kod yazıldıysa olduğu gibi koru. Aksi durumda yalnız kısa kodu sakla;
     // beden geldikten sonra ilgili tam varyant sorgulanır.
@@ -282,15 +335,13 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     const shortCode = String(ctx.productCode || '').trim().toUpperCase();
     if (!shortCode || ctx.variantVerified) return null;
 
-    const variants = db.prepare(`
+    const variants = (db.prepare(`
       SELECT product_code, short_code, name, size, price, stock
-      FROM products
-      WHERE store_id = ? AND UPPER(short_code) = ?
-      ORDER BY size ASC
-    `).all(storeId, shortCode) as any[];
+      FROM products WHERE store_id = ? ORDER BY size ASC
+    `).all(storeId) as any[]).filter(row => StockService.normalizeLookupValue(row.short_code) === StockService.normalizeLookupValue(shortCode));
 
     // Tam ürün koduyla başlayan normal akışa müdahale etme.
-    if (variants.length === 0 || !variants.some(row => String(row.product_code).toUpperCase() !== shortCode)) {
+    if (variants.length === 0 || !variants.some(row => StockService.normalizeLookupValue(row.product_code) !== StockService.normalizeLookupValue(shortCode))) {
       return null;
     }
 
@@ -331,19 +382,20 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     const code = String(ctx.productCode || '').trim().toUpperCase();
     if (!code) return null;
 
-    const rows = db.prepare(`
+    const rows = (db.prepare(`
       SELECT product_code, short_code, name, size, price, stock
-      FROM products
-      WHERE store_id = ? AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)
-      ORDER BY size ASC
-    `).all(storeId, code, code) as any[];
+      FROM products WHERE store_id = ? ORDER BY size ASC
+    `).all(storeId) as any[]).filter(row => {
+      const target = StockService.normalizeLookupValue(code);
+      return StockService.normalizeLookupValue(row.product_code) === target || StockService.normalizeLookupValue(row.short_code) === target;
+    });
     if (!rows.length) return null;
 
     const formatPrice = (value: number) => `${value.toLocaleString('tr-TR', { maximumFractionDigits: 2 })} TL`;
     const validRows = rows.filter(row => Number.isFinite(Number(row.price)) && Number(row.price) >= 0);
     if (!validRows.length) return `${code} kodlu ürün için fiyat henüz tanımlı değil. Lütfen mağaza ile iletişime geçin.`;
 
-    const exactVariant = validRows.find(row => String(row.product_code || '').trim().toUpperCase() === code);
+    const exactVariant = validRows.find(row => StockService.normalizeLookupValue(row.product_code) === StockService.normalizeLookupValue(code));
     if (exactVariant) {
       return `${exactVariant.name} (${exactVariant.product_code}) ürününün fiyatı ${formatPrice(Number(exactVariant.price))}.`;
     }
@@ -388,14 +440,15 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
           // Fiyat yalnızca ürünün tam varyantı (ürün kodu + beden) doğrulandığında verilir.
           // Böylece farklı beden/varyantın fiyatı müşteriye gösterilmez.
           if (query && requestedSize) {
-            const product = db.prepare(`
-              SELECT product_code, short_code, name, size, price, stock
-              FROM products
-              WHERE store_id = ?
-                AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)
-                AND UPPER(size) = ?
-              LIMIT 1
-            `).get(storeId, query.toUpperCase(), query.toUpperCase(), requestedSize) as any;
+            const resolvedProduct = StockService.findProductVariant(storeId, query, requestedSize);
+            const product = resolvedProduct ? {
+              product_code: resolvedProduct.productCode,
+              short_code: resolvedProduct.shortCode,
+              name: resolvedProduct.name,
+              size: resolvedProduct.size,
+              price: resolvedProduct.price,
+              stock: resolvedProduct.stock
+            } : null;
 
             if (!product) {
               return JSON.stringify({ exists: false, message: `${query} kodlu ${requestedSize} beden ürün bulunamadı.` });
@@ -450,21 +503,22 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
           let data: any = {};
           try { data = typeof input === 'object' ? input : JSON.parse(input); } catch { data = {}; }
 
-          const pCode = String(data.productCode || '').trim().toUpperCase();
-          const pSize = String(data.size || '').trim().toUpperCase();
+          const pCode = StockService.normalizeLookupValue(data.productCode);
+          const pSize = StockService.normalizeLookupValue(data.size);
           const pQty = Number(data.quantity);
           if (!pCode || !pSize || !Number.isInteger(pQty) || pQty <= 0) {
             return JSON.stringify({ success: false, message: 'Sepete eklemek için ürün kodu, beden ve adet zorunludur.' });
           }
 
-          const pCodeUpper = pCode.toUpperCase();
-          const prod = db.prepare(`
-            SELECT * FROM products 
-            WHERE store_id = ?
-              AND (UPPER(product_code) = ? OR UPPER(short_code) = ?)
-              AND UPPER(size) = ?
-            LIMIT 1
-          `).get(storeId, pCodeUpper, pCodeUpper, pSize) as any;
+          const resolvedProduct = StockService.findProductVariant(storeId, pCode, pSize);
+          const prod = resolvedProduct ? {
+            product_code: resolvedProduct.productCode,
+            short_code: resolvedProduct.shortCode,
+            name: resolvedProduct.name,
+            size: resolvedProduct.size,
+            price: resolvedProduct.price,
+            stock: resolvedProduct.stock
+          } : null;
           if (!prod) {
             return JSON.stringify({ success: false, message: `${pCode} kodlu ${pSize} beden ürünü bulunamadı.` });
           }
@@ -505,7 +559,8 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
           const shippingFeeEstimate = Number.isFinite(freeShippingThreshold) && cartSubtotal >= freeShippingThreshold
             ? 0
             : (Number.isFinite(shippingFee) ? shippingFee : 49);
-          const totalEstimate = cartSubtotal + shippingFeeEstimate;
+          const promotion = this.getOrderPromotion(storeId, senderId, cartSubtotal);
+          const totalEstimate = Math.max(0, cartSubtotal + shippingFeeEstimate - promotion.discount);
 
           return JSON.stringify({
             success: true,
@@ -514,8 +569,10 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             cartTotalItems: ctx.cart.reduce((sum, i) => sum + i.quantity, 0),
             cartSubtotal: cartSubtotal,
             shippingFeeEstimate: shippingFeeEstimate,
+            discountEstimate: promotion.discount,
+            promotionLabel: promotion.label,
             totalEstimate: totalEstimate,
-            priceMessage: `Ara Toplam: ${cartSubtotal.toFixed(2)} TL | Kargo: ${shippingFeeEstimate === 0 ? 'ÜCRETSİZ' : shippingFeeEstimate + ' TL'} | Tahmini Toplam: ${totalEstimate.toFixed(2)} TL`,
+            priceMessage: `Ara Toplam: ${cartSubtotal.toFixed(2)} TL | Kargo: ${shippingFeeEstimate === 0 ? 'ÜCRETSİZ' : shippingFeeEstimate + ' TL'}${promotion.discount > 0 ? ` | ${promotion.label}: -${promotion.discount.toFixed(2)} TL` : ''} | Tahmini Toplam: ${totalEstimate.toFixed(2)} TL`,
             cart: ctx.cart
           });
         } catch (e: any) {
@@ -616,6 +673,14 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
 
           const subtotal = ctx.cart.reduce((sum, item) => sum + (item.unitPrice * item.quantity), 0);
           const totalQuantity = ctx.cart.reduce((sum, item) => sum + item.quantity, 0);
+          const primaryItem = ctx.cart[0];
+          if (ctx.cart.length !== 1) {
+            return JSON.stringify({
+              success: false,
+              orderCreated: false,
+              message: 'Sipariş kaydı şu anda her seferinde tek ürün varyantı için oluşturulabilir. Lütfen ürünleri ayrı siparişler olarak tamamlayın.'
+            });
+          }
 
           // Ayarlardan Kargo Ücreti (Store Isolated)
           const shippingSetting = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'shipping_fee'").get(storeId) as any;
@@ -630,54 +695,19 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             shippingFee = 0;
           }
 
-          let discount = 0;
-          let appliedLoyaltyReward = false;
-
-          // Müşterinin Instagram ID'sine tanımlı mağaza bazlı VIP Ödülü
-          const userReward = db.prepare('SELECT * FROM user_rewards WHERE store_id = ? AND sender_id = ? AND is_used = 0 ORDER BY id DESC LIMIT 1').get(storeId, senderId) as any;
-          
-          if (userReward) {
-            discount = (subtotal * (userReward.discount_percent / 100));
-            appliedLoyaltyReward = true;
-            db.prepare('UPDATE user_rewards SET is_used = 1, used_at = CURRENT_TIMESTAMP WHERE store_id = ? AND id = ?').run(storeId, userReward.id);
-          } else {
-            const activeCampaigns = db.prepare('SELECT * FROM campaigns WHERE store_id = ? AND active = 1').all(storeId) as any[];
-            for (const c of activeCampaigns) {
-              if (c.code === 'BARONS10') {
-                discount += (subtotal * 0.10);
-              }
-            }
-          }
-
+          const promotion = this.getOrderPromotion(storeId, senderId, subtotal);
+          const discount = promotion.discount;
+          const appliedLoyaltyReward = Boolean(promotion.vipReward);
+          const appliedCampaign = promotion.campaign ? {
+            id: promotion.campaign.id,
+            title: promotion.campaign.title,
+            code: promotion.campaign.code || ''
+          } : null;
           const totalPrice = Math.max(0, subtotal + shippingFee - discount);
 
           let earnedNewLoyaltyReward = false;
           const autoVipSetting = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'auto_vip_reward_enabled'").get(storeId) as any;
           const isAutoVipEnabled = autoVipSetting && (autoVipSetting.value === '1' || autoVipSetting.value === 'true');
-
-          if (isAutoVipEnabled && subtotal >= loyaltyThreshold) {
-            const rewardCode = 'YINEBEKLERIZ';
-            db.prepare(`
-              INSERT INTO user_rewards (store_id, sender_id, reward_code, discount_percent, min_qualifying_amount)
-              VALUES (?, ?, ?, 20.0, ?)
-            `).run(storeId, senderId, rewardCode, loyaltyThreshold);
-            earnedNewLoyaltyReward = true;
-
-            const autoDmText = `🎉 TEBRİKLER / VIP ÖDÜL KAZANDINIZ!\nSayın ${customerName.trim()}, profilinize özel %20 VIP İNDİRİM tanımlanmıştır! (Ödül Kodu: ${rewardCode})\nKeyifli alışverişler dileriz! 🎁✨`;
-            const autoRewardNotificationSent = await FacebookService.sendMessage(senderId, autoDmText, storeId);
-            if (!autoRewardNotificationSent) {
-              console.warn(`[Auto Reward DM] VIP ödülü tanımlandı ancak Instagram DM gönderilemedi (Store: ${storeId}).`);
-            }
-          }
-
-          const primaryItem = ctx.cart[0];
-          if (ctx.cart.length !== 1) {
-            return JSON.stringify({
-              success: false,
-              orderCreated: false,
-              message: 'Sipariş kaydı şu anda her seferinde tek ürün varyantı için oluşturulabilir. Lütfen ürünleri ayrı siparişler olarak tamamlayın.'
-            });
-          }
 
           const order = await OrderService.createOrder(storeId, {
             storeId: storeId,
@@ -691,6 +721,36 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             unitPrice: primaryItem.unitPrice,
             senderId: senderId
           });
+
+          // Promotions are consumed only after the order has been created successfully.
+          if (promotion.vipReward) {
+            db.prepare(`
+              UPDATE user_rewards SET is_used = 1, used_at = CURRENT_TIMESTAMP
+              WHERE store_id = ? AND id = ? AND is_used = 0
+            `).run(storeId, promotion.vipReward.id);
+          }
+
+          if (isAutoVipEnabled && subtotal >= loyaltyThreshold) {
+            const remainingReward = db.prepare(`
+              SELECT id FROM user_rewards
+              WHERE store_id = ? AND sender_id = ? AND is_used = 0
+              LIMIT 1
+            `).get(storeId, senderId) as any;
+            if (!remainingReward) {
+              const rewardCode = 'YINEBEKLERIZ';
+              db.prepare(`
+                INSERT INTO user_rewards (store_id, sender_id, reward_code, discount_percent, min_qualifying_amount)
+                VALUES (?, ?, ?, 20.0, ?)
+              `).run(storeId, senderId, rewardCode, loyaltyThreshold);
+              earnedNewLoyaltyReward = true;
+
+              const autoDmText = `🎉 TEBRİKLER / VIP ÖDÜL KAZANDINIZ!\nSayın ${customerName.trim()}, profilinize özel %20 VIP İNDİRİM tanımlanmıştır! (Ödül Kodu: ${rewardCode})\nBu hakkı ${loyaltyThreshold.toLocaleString('tr-TR')} TL ve üzeri bir sonraki siparişinizde kullanabilirsiniz.\nKeyifli alışverişler dileriz! 🎁✨`;
+              const autoRewardNotificationSent = await FacebookService.sendMessage(senderId, autoDmText, storeId);
+              if (!autoRewardNotificationSent) {
+                console.warn(`[Auto Reward DM] VIP ödülü tanımlandı ancak Instagram DM gönderilemedi (Store: ${storeId}).`);
+              }
+            }
+          }
 
           db.prepare(`
             UPDATE orders 
@@ -714,12 +774,14 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
             orderCreated: true,
             orderId: order.orderId,
             appliedLoyaltyReward,
+            appliedCampaign,
+            promotionLabel: promotion.label,
             earnedNewLoyaltyReward,
             subtotal,
             shippingFee,
             discount,
             totalPrice,
-            priceDetails: `Sipariş Özeti:\n${cartSummaryText}\n\nAra Toplam: ${subtotal.toFixed(2)} TL\nKargo: ${shippingFee === 0 ? 'ÜCRETSİZ' : shippingFee.toFixed(2) + ' TL'}\nİndirim: ${discount > 0 ? '-' + discount.toFixed(2) + ' TL' : '0 TL'}\nNET ÖDENECEK TOPLAM: ${totalPrice.toFixed(2)} TL`,
+            priceDetails: `Sipariş Özeti:\n${cartSummaryText}\n\nAra Toplam: ${subtotal.toFixed(2)} TL\nKargo: ${shippingFee === 0 ? 'ÜCRETSİZ' : shippingFee.toFixed(2) + ' TL'}\nİndirim${promotion.label ? ` (${promotion.label})` : ''}: ${discount > 0 ? '-' + discount.toFixed(2) + ' TL' : '0 TL'}\nNET ÖDENECEK TOPLAM: ${totalPrice.toFixed(2)} TL`,
             loyaltyNotice: earnedNewLoyaltyReward 
               ? `🎉 TEBRİKLER! ${loyaltyThreshold} TL ve üzeri sipariş verdiğiniz için Instagram hesabınıza tanımlı VIP İNDİRİM HAKKI KAZANDINIZ!`
               : ''
@@ -909,11 +971,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
       }
 
       // Veritabanından Aktif Kampanyaları Çek (Store Isolated)
-      const activeCampaigns = db.prepare(`
-        SELECT title, description, code, start_date, end_date 
-        FROM campaigns 
-        WHERE store_id = ? AND active = 1 AND (end_date IS NULL OR end_date = '' OR end_date >= DATE('now'))
-      `).all(storeId) as any[];
+      const activeCampaigns = this.getActiveCampaigns(storeId);
 
       const shippingSetting = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'shipping_fee'").get(storeId) as any;
       const thresholdSetting = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'free_shipping_threshold'").get(storeId) as any;
@@ -927,13 +985,20 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
 
       let rewardText = "";
       if (userReward) {
-        rewardText = `🎁 **MÜŞTERİNİN İNSTAGRAM HESABINA TANIMLI ÖZEL ÖDÜL:** Müşterinin hesabına tanımlı %${userReward.discount_percent} VIP İNDİRİM HAKKI vardır! Bu siparişinde müşteri özel %${userReward.discount_percent} VIP indirimi kazanır.`;
+        rewardText = `🎁 **MÜŞTERİNİN İNSTAGRAM HESABINA TANIMLI ÖZEL ÖDÜL:** Müşterinin hesabına tanımlı %${userReward.discount_percent} VIP İNDİRİM HAKKI vardır. Bu hak en az ${Number(userReward.min_qualifying_amount || 0).toLocaleString('tr-TR')} TL ara toplamda otomatik uygulanır ve yalnız başarılı siparişten sonra kullanılmış sayılır.`;
       } else {
         rewardText = `💡 **GELECEK SİPARİŞ İNDİRİM HAKKI KAZANMA:** Müşterinin bu siparişi ${loyaltyThreshold} TL ve üzeri olursa, bir sonraki siparişinde geçerli %20 VIP İNDİRİM HAKKI kazanacaktır!`;
       }
 
       const campaignsText = activeCampaigns.length > 0
-        ? activeCampaigns.map(c => `- ${c.title}: ${c.description} (Kod: ${c.code || 'Yok'})`).join('\n')
+        ? activeCampaigns.map(c => {
+            const benefits = [
+              Number(c.discount_percent) > 0 ? `%${Number(c.discount_percent)} indirim` : '',
+              Number(c.discount_amount) > 0 ? `${Number(c.discount_amount).toLocaleString('tr-TR')} TL indirim` : ''
+            ].filter(Boolean).join(' + ') || 'İndirim bilgisi tanımlanmamış';
+            const minimum = Number(c.min_order_amount) > 0 ? `, minimum ${Number(c.min_order_amount).toLocaleString('tr-TR')} TL` : '';
+            return `- ${c.title}: ${c.description} (${benefits}${minimum}, Kod: ${c.code || 'Yok'})`;
+          }).join('\n')
         : 'Şu an aktif genel kampanya bulunmamaktadır.';
 
       const cartText = ctx.cart.length > 0

@@ -8,6 +8,9 @@
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
   <link rel="stylesheet" href="styles.css?v=20260817-sidebar-scroll">
+  <style>
+    .stock-alert-kpi{cursor:pointer;position:relative;transition:transform .18s ease,border-color .18s ease,box-shadow .18s ease}.stock-alert-kpi:hover,.stock-alert-kpi:focus-visible{transform:translateY(-2px);border-color:rgba(245,158,11,.58);box-shadow:0 12px 28px rgba(0,0,0,.14);outline:none}.stock-alert-kpi::after{content:'Detayları gör';position:absolute;right:14px;bottom:10px;font-size:8px;font-weight:800;color:var(--muted);letter-spacing:.04em}.stock-alert-overlay{position:fixed;inset:0;z-index:10030;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;padding:18px}.stock-alert-overlay.open{display:flex}.stock-alert-modal{width:min(760px,100%);max-height:88vh;overflow:hidden;display:flex;flex-direction:column;background:var(--card);border:1px solid var(--border);border-radius:15px;box-shadow:0 28px 80px rgba(0,0,0,.45)}.stock-alert-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:18px 20px;border-bottom:1px solid var(--border)}.stock-alert-head h2{font-size:17px;margin:0 0 4px}.stock-alert-head p{font-size:10px;color:var(--muted);margin:0}.stock-alert-close{border:0;background:transparent;color:var(--text);cursor:pointer;padding:5px}.stock-alert-summary{display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:rgba(245,158,11,.06);font-size:11px}.stock-alert-count{font-weight:800;color:#f59e0b}.stock-alert-table-wrap{overflow:auto;padding:0 20px 20px}.stock-alert-table{width:100%;border-collapse:collapse}.stock-alert-table th{font-size:9px;color:var(--muted);text-align:left;padding:12px 8px;border-bottom:1px solid var(--border)}.stock-alert-table td{font-size:11px;padding:12px 8px;border-bottom:1px solid var(--border)}.stock-alert-stock{display:inline-flex;min-width:31px;height:25px;align-items:center;justify-content:center;border-radius:7px;font-weight:800;background:rgba(245,158,11,.12);color:#f59e0b}.stock-alert-stock.empty{background:rgba(239,68,68,.12);color:#ef4444}.stock-alert-empty{text-align:center;padding:48px 16px;color:var(--muted);font-size:11px}@media(max-width:650px){.stock-alert-overlay{padding:9px}.stock-alert-head{padding:15px}.stock-alert-summary{padding:11px 15px}.stock-alert-table-wrap{padding:0 10px 14px}.stock-alert-table th,.stock-alert-table td{padding:10px 6px}.stock-alert-table .optional-column{display:none}.stock-alert-kpi::after{display:none}}
+  </style>
 </head>
 <body>
 <div class="layout">
@@ -56,8 +59,8 @@
       <div class="kpi-grid">
         <div class="card kpi"><div class="kpi-top"><span class="kpi-label">TOPLAM ÜRÜN KODU</span><div class="kpi-icon orange"><i data-lucide="boxes" size="16"></i></div></div><div class="kpi-value" id="statTotalProducts">--</div><div class="kpi-bottom"><span class="up">Canlı</span><span class="muted">ürün çeşidi</span></div></div>
         <div class="card kpi"><div class="kpi-top"><span class="kpi-label">TOPLAM STOK ADEDİ</span><div class="kpi-icon blue"><i data-lucide="package" size="16"></i></div></div><div class="kpi-value" id="statTotalStock">--</div><div class="kpi-bottom"><span class="up">Anlık</span><span class="muted">depo miktarı</span></div></div>
-        <div class="card kpi"><div class="kpi-top"><span class="kpi-label">KRİTİK STOK</span><div class="kpi-icon orange"><i data-lucide="triangle-alert" size="16"></i></div></div><div class="kpi-value" id="statLowStock">--</div><div class="kpi-bottom"><span class="muted">1–5 adet kalan ürün</span></div></div>
-        <div class="card kpi"><div class="kpi-top"><span class="kpi-label">TÜKENEN ÜRÜN</span><div class="kpi-icon purple"><i data-lucide="package-x" size="16"></i></div></div><div class="kpi-value" id="statOutOfStock">--</div><div class="kpi-bottom"><span class="muted">stok adedi sıfır olan</span></div></div>
+        <div class="card kpi stock-alert-kpi" id="lowStockKpi" role="button" tabindex="0" aria-label="Kritik stoktaki ürünleri göster"><div class="kpi-top"><span class="kpi-label">KRİTİK STOK</span><div class="kpi-icon orange"><i data-lucide="triangle-alert" size="16"></i></div></div><div class="kpi-value" id="statLowStock">--</div><div class="kpi-bottom"><span class="muted">1–5 adet kalan ürün</span></div></div>
+        <div class="card kpi stock-alert-kpi" id="outOfStockKpi" role="button" tabindex="0" aria-label="Tükenen ürünleri göster"><div class="kpi-top"><span class="kpi-label">TÜKENEN ÜRÜN</span><div class="kpi-icon purple"><i data-lucide="package-x" size="16"></i></div></div><div class="kpi-value" id="statOutOfStock">--</div><div class="kpi-bottom"><span class="muted">stok adedi sıfır olan</span></div></div>
       </div>
 
       <div class="card table-card">
@@ -75,8 +78,15 @@
     </section>
   </main>
 </div>
+<div class="stock-alert-overlay" id="stockAlertModal" role="dialog" aria-modal="true" aria-labelledby="stockAlertTitle">
+  <div class="stock-alert-modal">
+    <div class="stock-alert-head"><div><h2 id="stockAlertTitle">Stok Detayı</h2><p id="stockAlertSubtitle">Ürünlerin güncel stok durumu</p></div><button class="stock-alert-close" id="btnCloseStockAlert" type="button" aria-label="Kapat"><i data-lucide="x"></i></button></div>
+    <div class="stock-alert-summary"><span id="stockAlertDescription">Stok listesi</span><span class="stock-alert-count" id="stockAlertCount">0 ürün</span></div>
+    <div class="stock-alert-table-wrap"><table class="stock-alert-table"><thead><tr><th>ÜRÜN KODU</th><th>ÜRÜN ADI</th><th>BEDEN</th><th class="optional-column">RENK</th><th>STOK</th></tr></thead><tbody id="stockAlertTableBody"></tbody></table></div>
+  </div>
+</div>
 <div class="toast-container" id="toastContainer"></div>
-<script src="app.js?v=20260817-instagram-media"></script>
+<script src="app.js?v=20260817-stock-alert-detail"></script>
 <script>function toggleSidebar(){document.getElementById('sidebar').classList.toggle('open')}lucide.createIcons();</script>
 </body>
 </html>

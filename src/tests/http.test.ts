@@ -51,8 +51,26 @@ async function run(): Promise<void> {
         && instagramMediaPage.ok
         && !dashboardHtml.includes('id="productsTableBody"')
         && stockHtml.includes('id="productsTableBody"')
-        && stockHtml.includes('Stok Yönetimi'),
+        && stockHtml.includes('Stok Yönetimi')
+        && stockHtml.includes('id="lowStockKpi"')
+        && stockHtml.includes('id="outOfStockKpi"')
+        && stockHtml.includes('id="stockAlertModal"'),
       'Dashboard analytics and editable stock management are served as separate pages'
+    );
+
+    const [missingPage, missingApi] = await Promise.all([
+      fetch(`${origin}/admin/lgn`),
+      fetch(`${origin}/api/does-not-exist`)
+    ]);
+    const missingPageHtml = await missingPage.text();
+    const missingApiBody = await missingApi.json() as any;
+    assert(
+      missingPage.status === 404
+        && missingPageHtml.includes('Aradığınız sayfa burada değil.')
+        && missingPageHtml.includes('id="requestedPath"')
+        && missingApi.status === 404
+        && missingApiBody.success === false,
+      'Unknown browser routes show the branded 404 page while unknown APIs stay JSON'
     );
 
     const login = await fetch(`${origin}/api/auth/login`, {
@@ -70,6 +88,16 @@ async function run(): Promise<void> {
       method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'facebook_page_access_token', value: 'replace-me' })
     });
     assert(forbiddenSetting.status === 400, 'Generic settings endpoint rejects secret credential writes');
+
+    const autoVipSetting = await fetch(`${origin}/api/settings`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'auto_vip_reward_enabled', value: '1' })
+    });
+    const refreshedSettings = await fetch(`${origin}/api/settings`, { headers: { Cookie: cookie } });
+    const refreshedSettingsBody = await refreshedSettings.json() as any;
+    assert(
+      autoVipSetting.ok && refreshedSettingsBody.settings.auto_vip_reward_enabled === '1',
+      'Automatic VIP reward setting can be saved and read by the merchant panel'
+    );
 
     const csrfRejected = await fetch(`${origin}/api/settings`, {
       method: 'POST', headers: { Cookie: cookie, Origin: 'https://attacker.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'shipping_fee', value: '50' })

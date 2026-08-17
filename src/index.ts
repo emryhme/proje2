@@ -391,8 +391,22 @@ app.post('/api/campaigns', AuthMiddleware.authenticate, AuthMiddleware.requireRo
     const numAmount = discountAmount !== undefined ? Number(discountAmount) : 0;
     const numMinOrder = minOrderAmount !== undefined ? Number(minOrderAmount) : 0;
 
-    if (isNaN(numPercent) || numPercent < 0) {
+    if (!Number.isFinite(numPercent) || numPercent < 0 || numPercent > 100) {
       return res.status(400).json({ success: false, error: 'Geçersiz indirim yüzdesi.' });
+    }
+    if (!Number.isFinite(numAmount) || numAmount < 0 || !Number.isFinite(numMinOrder) || numMinOrder < 0) {
+      return res.status(400).json({ success: false, error: 'İndirim ve minimum sipariş tutarı geçerli olmalıdır.' });
+    }
+    if (numPercent === 0 && numAmount === 0) {
+      return res.status(400).json({ success: false, error: 'En az bir indirim yüzdesi veya sabit indirim tutarı girin.' });
+    }
+    const cleanStartDate = startDate ? String(startDate).trim() : null;
+    const cleanEndDate = endDate ? String(endDate).trim() : null;
+    if ((cleanStartDate && !/^\d{4}-\d{2}-\d{2}$/.test(cleanStartDate)) || (cleanEndDate && !/^\d{4}-\d{2}-\d{2}$/.test(cleanEndDate))) {
+      return res.status(400).json({ success: false, error: 'Kampanya tarihleri geçerli olmalıdır.' });
+    }
+    if (cleanStartDate && cleanEndDate && cleanStartDate > cleanEndDate) {
+      return res.status(400).json({ success: false, error: 'Kampanya bitiş tarihi başlangıç tarihinden önce olamaz.' });
     }
 
     const stmt = db.prepare(`
@@ -407,8 +421,8 @@ app.post('/api/campaigns', AuthMiddleware.authenticate, AuthMiddleware.requireRo
       numPercent, 
       numAmount, 
       numMinOrder,
-      startDate || null,
-      endDate || null
+      cleanStartDate,
+      cleanEndDate
     );
 
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'CREATE_CAMPAIGN', 'campaigns', cleanCode || cleanTitle);
@@ -472,7 +486,10 @@ app.delete('/api/campaigns/:id', AuthMiddleware.authenticate, AuthMiddleware.req
 });
 
 // --- SETTINGS ---
-const PUBLIC_SETTING_KEYS = new Set(['shipping_fee', 'free_shipping_threshold', 'bot_name', 'bot_tone', 'bot_system_prompt']);
+const PUBLIC_SETTING_KEYS = new Set([
+  'shipping_fee', 'free_shipping_threshold', 'loyalty_threshold', 'auto_vip_reward_enabled',
+  'bot_name', 'bot_tone', 'bot_system_prompt'
+]);
 
 app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req: AuthenticatedRequest, res) => {
   try {
@@ -507,6 +524,9 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
         if (!['luxury', 'friendly', 'formal', 'patron'].includes(settingValue)) throw new Error('Geçersiz yapay zeka kişilik üslubu.');
       } else if (settingKey === 'bot_system_prompt') {
         settingValue = settingValue.trim().slice(0, 4000);
+      } else if (settingKey === 'auto_vip_reward_enabled') {
+        if (!['0', '1', 'false', 'true'].includes(settingValue.toLowerCase())) throw new Error('Geçersiz otomatik VIP ayarı.');
+        settingValue = ['1', 'true'].includes(settingValue.toLowerCase()) ? '1' : '0';
       } else {
         const numericValue = Number(settingValue);
         if (!Number.isFinite(numericValue) || numericValue < 0 || numericValue > 1_000_000) throw new Error('Fiyat ayarı geçerli bir pozitif sayı olmalıdır.');
@@ -645,8 +665,14 @@ app.post('/api/rewards', AuthMiddleware.authenticate, AuthMiddleware.requireRole
 
     const sId = senderId.trim();
     const code = (rewardCode || 'YINEBEKLERIZ').trim().toUpperCase();
-    const percent = Number(discountPercent) || 20;
-    const minAmt = Number(minQualifyingAmount) || 2000;
+    const percent = Number(discountPercent);
+    const minAmt = Number(minQualifyingAmount);
+    if (!Number.isFinite(percent) || percent <= 0 || percent > 100) {
+      return res.status(400).json({ success: false, error: 'VIP indirim oranı 1 ile 100 arasında olmalıdır.' });
+    }
+    if (!Number.isFinite(minAmt) || minAmt < 0) {
+      return res.status(400).json({ success: false, error: 'VIP minimum kullanım tutarı geçersiz.' });
+    }
 
     const stmt = db.prepare(`
       INSERT INTO user_rewards (store_id, sender_id, reward_code, discount_percent, min_qualifying_amount, is_used)
@@ -667,7 +693,6 @@ app.post('/api/rewards', AuthMiddleware.authenticate, AuthMiddleware.requireRole
         ? `Müşteri (${sId}) için %${percent} VIP indirim tanımlandı ve Instagram DM gönderildi.`
         : `Müşteri (${sId}) için %${percent} VIP indirim tanımlandı ancak Instagram DM gönderilemedi.`
     });
-    res.json({ success: true, message: `Müşteri (${sId}) için %${percent} VIP indirim tanımlandı.` });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message });
   }
@@ -676,7 +701,8 @@ app.post('/api/rewards', AuthMiddleware.authenticate, AuthMiddleware.requireRole
 app.delete('/api/rewards/:id', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER']), (req: AuthenticatedRequest, res) => {
   try {
     const storeId = req.auth!.storeId;
-    db.prepare('DELETE FROM user_rewards WHERE store_id = ? AND id = ?').run(storeId, String(req.params.id));
+    const result = db.prepare('DELETE FROM user_rewards WHERE store_id = ? AND id = ?').run(storeId, String(req.params.id));
+    if (result.changes === 0) return res.status(404).json({ success: false, error: 'VIP ödülü bulunamadı.' });
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'DELETE_REWARD', 'user_rewards', String(req.params.id));
     res.json({ success: true, message: 'VIP Ödülü silindi.' });
   } catch (e: any) {
@@ -779,6 +805,15 @@ app.delete('/api/api-keys/:id', AuthMiddleware.authenticate, AuthMiddleware.requ
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message });
   }
+});
+
+// Keep API errors machine-readable while giving browser navigation a branded 404 page.
+app.use((req, res) => {
+  const isApiRequest = req.path === '/api' || req.path.startsWith('/api/');
+  if (isApiRequest || (req.method !== 'GET' && req.method !== 'HEAD')) {
+    return res.status(404).json({ success: false, error: 'İstenen adres bulunamadı.' });
+  }
+  return res.status(404).sendFile(path.resolve(__dirname, '../public/404.html'));
 });
 
 /* Removed AI test simulator endpoints. */

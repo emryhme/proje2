@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex">
+  <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
+  <title>Sayfa Bulunamadı — ISCWORKS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root{color-scheme:dark;--bg:#09090b;--panel:#14151a;--line:rgba(255,255,255,.09);--text:#f7f7f8;--muted:#969aa7;--lime:#a3ff12}
+    *{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--text);font-family:Inter,Arial,sans-serif;overflow:hidden}a{color:inherit;text-decoration:none}
+    .page{position:relative;min-height:100vh;display:grid;grid-template-rows:auto 1fr auto;padding:0 28px;isolation:isolate;overflow:hidden}.orb{position:absolute;border-radius:50%;filter:blur(6px);pointer-events:none;z-index:-1}.orb.one{width:620px;height:520px;top:-310px;left:50%;transform:translateX(-50%);background:radial-gradient(circle,rgba(111,78,255,.31),transparent 69%)}.orb.two{width:460px;height:420px;right:-230px;bottom:-210px;background:radial-gradient(circle,rgba(163,255,18,.12),transparent 70%)}
+    header,footer{width:min(1160px,100%);margin:0 auto;display:flex;align-items:center;justify-content:space-between}header{height:76px;border-bottom:1px solid var(--line)}.brand{font-size:20px;font-weight:800;letter-spacing:-.06em}.system{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}.system i{width:7px;height:7px;border-radius:50%;background:var(--lime);box-shadow:0 0 12px rgba(163,255,18,.7)}
+    main{display:grid;place-items:center;padding:48px 0}.content{text-align:center;max-width:660px}.code-wrap{position:relative;width:max-content;margin:0 auto 25px}.code{font-size:clamp(108px,22vw,210px);font-weight:800;line-height:.8;letter-spacing:-.12em;color:transparent;-webkit-text-stroke:1px rgba(255,255,255,.2);user-select:none}.badge{position:absolute;right:-28px;top:3px;padding:7px 10px;border:1px solid rgba(163,255,18,.27);border-radius:999px;background:rgba(163,255,18,.08);color:var(--lime);font-size:10px;font-weight:800;letter-spacing:.1em;text-transform:uppercase;transform:rotate(7deg)}
+    h1{font-size:clamp(31px,5vw,52px);letter-spacing:-.06em;line-height:1.05;margin:0 0 15px}p{max-width:520px;margin:0 auto;color:var(--muted);font-size:15px;line-height:1.7}.path{display:inline-block;max-width:100%;margin-top:14px;padding:7px 11px;border:1px solid var(--line);border-radius:8px;background:rgba(255,255,255,.03);color:#c8cad2;font:500 11px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;vertical-align:top}
+    .actions{display:flex;justify-content:center;gap:10px;margin-top:30px}.btn{min-height:45px;padding:0 18px;border:1px solid var(--line);border-radius:10px;display:inline-flex;align-items:center;justify-content:center;gap:9px;font-size:13px;font-weight:700;transition:.2s ease}.btn.primary{background:#fff;color:#0a0a0c;border-color:#fff}.btn.secondary{background:rgba(255,255,255,.025)}.btn:hover{transform:translateY(-2px)}.btn.primary:hover{background:#e5e5e7}.btn.secondary:hover{background:rgba(255,255,255,.075);border-color:rgba(255,255,255,.18)}.arrow{font-size:17px;line-height:1}
+    footer{height:66px;border-top:1px solid var(--line);color:#696d78;font-size:11px}.help{color:#979ba7}.help:hover{color:#fff}
+    @media(max-width:600px){.page{padding:0 18px}.system{font-size:0}.system::after{content:'Sistem aktif';font-size:11px}.code{font-size:120px}.badge{right:-14px;top:-9px}.actions{flex-direction:column}.btn{width:100%}footer{gap:12px}.footer-copy{max-width:170px}.content{width:100%}}
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="orb one"></div><div class="orb two"></div>
+    <header><a class="brand" href="/" aria-label="ISCWORKS ana sayfa">ISCWORKS</a><span class="system"><i></i>Tüm sistemler çalışıyor</span></header>
+    <main>
+      <section class="content" aria-labelledby="errorTitle">
+        <div class="code-wrap"><div class="code" aria-hidden="true">404</div><span class="badge">Rota bulunamadı</span></div>
+        <h1 id="errorTitle">Aradığınız sayfa burada değil.</h1>
+        <p>Adres hatalı yazılmış, taşınmış veya artık kullanılamıyor olabilir. Güvenli bir noktaya dönerek devam edebilirsiniz.</p>
+        <span class="path" id="requestedPath">/</span>
+        <div class="actions">
+          <a class="btn primary" href="/"><span>Ana Sayfaya Dön</span><span class="arrow">→</span></a>
+          <a class="btn secondary" href="/admin/login.html">Yönetim Paneline Giriş</a>
+        </div>
+      </section>
+    </main>
+    <footer><span class="footer-copy">© 2026 ISCWORKS. Tüm hakları saklıdır.</span><a class="help" href="mailto:info@iscworks.info">Yardıma mı ihtiyacınız var?</a></footer>
+  </div>
+  <script>document.getElementById('requestedPath').textContent = window.location.pathname;</script>
+</body>
+</html>

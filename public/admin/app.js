@@ -406,6 +406,7 @@ function initApp() {
   fetchMerchantApplications();
   initializeDataSourcesPage();
   initializeInstagramMediaPage();
+  initializeStockAlertCards();
   setInterval(pollOrdersInBackground, POLL_INTERVAL_MS);
 }
 
@@ -732,6 +733,70 @@ function updateMetrics() {
 
   // 2. Gerçek En Çok Satılan Ürünler (Top 5) Sıralamasını Çiz
   renderTopProductsRankingList();
+}
+
+function closeStockAlertModal() {
+  document.getElementById('stockAlertModal')?.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function openStockAlertModal(type) {
+  const modal = document.getElementById('stockAlertModal');
+  const body = document.getElementById('stockAlertTableBody');
+  if (!modal || !body) return;
+  const isCritical = type === 'critical';
+  const products = getStoreProducts()
+    .filter(product => {
+      const stock = Number(product.stock) || 0;
+      return isCritical ? stock >= 1 && stock <= 5 : stock <= 0;
+    })
+    .sort((a, b) => (Number(a.stock) || 0) - (Number(b.stock) || 0) || String(a.productCode || '').localeCompare(String(b.productCode || ''), 'tr'));
+
+  document.getElementById('stockAlertTitle').textContent = isCritical ? 'Kritik Stoktaki Ürünler' : 'Tükenen Ürünler';
+  document.getElementById('stockAlertSubtitle').textContent = isCritical
+    ? 'Stok adedi 1 ile 5 arasında kalan ürünler'
+    : 'Stok adedi sıfır olan ürünler';
+  document.getElementById('stockAlertDescription').textContent = isCritical
+    ? 'Bu ürünler için stok takviyesi planlayabilirsiniz.'
+    : 'Bu ürünler şu anda satışa uygun stok bulundurmuyor.';
+  document.getElementById('stockAlertCount').textContent = `${products.length} ürün`;
+
+  body.innerHTML = products.length ? products.map(product => {
+    const stock = Number(product.stock) || 0;
+    return `<tr>
+      <td><span class="code-tag">${escapeHtml(product.productCode || product.shortCode || '-')}</span></td>
+      <td><strong>${escapeHtml(product.name || '-')}</strong></td>
+      <td><span class="size-pill">${escapeHtml(product.size || '-')}</span></td>
+      <td class="optional-column">${escapeHtml(product.color || '-')}</td>
+      <td><span class="stock-alert-stock${stock <= 0 ? ' empty' : ''}">${stock}</span></td>
+    </tr>`;
+  }).join('') : `<tr><td colspan="5"><div class="stock-alert-empty"><i data-lucide="circle-check" size="28"></i><div>${isCritical ? 'Kritik stokta ürün bulunmuyor.' : 'Tükenen ürün bulunmuyor.'}</div></div></td></tr>`;
+  modal.classList.add('open');
+  document.body.style.overflow = 'hidden';
+  if (window.lucide) lucide.createIcons();
+}
+
+function initializeStockAlertCards() {
+  const lowStockCard = document.getElementById('lowStockKpi');
+  const outOfStockCard = document.getElementById('outOfStockKpi');
+  const bindCard = (card, type) => {
+    if (!card) return;
+    card.addEventListener('click', () => openStockAlertModal(type));
+    card.addEventListener('keydown', event => {
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      openStockAlertModal(type);
+    });
+  };
+  bindCard(lowStockCard, 'critical');
+  bindCard(outOfStockCard, 'empty');
+  document.getElementById('btnCloseStockAlert')?.addEventListener('click', closeStockAlertModal);
+  document.getElementById('stockAlertModal')?.addEventListener('click', event => {
+    if (event.target.id === 'stockAlertModal') closeStockAlertModal();
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && document.getElementById('stockAlertModal')?.classList.contains('open')) closeStockAlertModal();
+  });
 }
 
 let revenueTrendChartInstance = null;
@@ -1834,7 +1899,7 @@ async function fetchCampaigns() {
             <td><strong>${escapeHtml(c.title)}</strong></td>
             <td>${escapeHtml(c.description)}</td>
             <td><span class="code-tag">${escapeHtml(c.code || '-')}</span></td>
-            <td><strong class="text-green">%${c.discount_percent || 0}</strong></td>
+            <td><strong class="text-green">${[Number(c.discount_percent) > 0 ? `%${Number(c.discount_percent)}` : '', Number(c.discount_amount) > 0 ? `${Number(c.discount_amount).toLocaleString('tr-TR')} TL` : ''].filter(Boolean).join(' + ') || '-'}</strong>${Number(c.min_order_amount) > 0 ? `<small class="text-muted" style="display:block">Min. ${Number(c.min_order_amount).toLocaleString('tr-TR')} TL</small>` : ''}</td>
             <td>${endDateBadge}</td>
             <td>
               <button class="btn btn-sm btn-delete" onclick="deleteCampaign(${c.id})"><i class="fa-solid fa-trash-can"></i> Sil</button>
@@ -1857,6 +1922,8 @@ async function handleCampaignSubmit(e) {
   const titleElem = document.getElementById('campTitle');
   const codeElem = document.getElementById('campCode');
   const percentElem = document.getElementById('campPercent');
+  const amountElem = document.getElementById('campAmount');
+  const minOrderElem = document.getElementById('campMinOrder');
   const descElem = document.getElementById('campDesc');
   const startDateElem = document.getElementById('campStartDate');
   const endDateElem = document.getElementById('campEndDate');
@@ -1870,6 +1937,8 @@ async function handleCampaignSubmit(e) {
     title: titleElem.value.trim(),
     code: codeElem ? codeElem.value.trim().toUpperCase() : '',
     discountPercent: percentElem ? (Number(percentElem.value) || 0) : 0,
+    discountAmount: amountElem ? (Number(amountElem.value) || 0) : 0,
+    minOrderAmount: minOrderElem ? (Number(minOrderElem.value) || 0) : 0,
     description: descElem.value.trim(),
     startDate: startDateElem ? startDateElem.value : null,
     endDate: endDateElem ? endDateElem.value : null
