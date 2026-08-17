@@ -130,10 +130,21 @@ export class AIService {
     };
   }
 
+  private static extractLabeledContactData(text: string): Partial<SessionContext> {
+    const value = String(text || '');
+    const customerName = value.match(/(?:^|[,;\n])\s*(?:ad(?:\s*soyad)?|isim(?:\s*soyisim)?)\s*[:=]\s*([^,;\n]+)/iu)?.[1]?.trim();
+    const customerPhone = value.match(/(?:^|[,;\n])\s*(?:telefon|tel|cep)\s*[:=]\s*([+\d][\d\s().-]{8,})/iu)?.[1]?.trim();
+    const address = value.match(/(?:^|[,;\n])\s*(?:açık\s+teslimat\s+adresi|adres)\s*[:=]\s*(.+)$/iu)?.[1]?.trim();
+    return {
+      ...(customerName ? { customerName } : {}),
+      ...(customerPhone ? { customerPhone } : {}),
+      ...(address ? { address } : {})
+    };
+  }
+
   /**
-   * LangChain DynamicTool bazen argümanları doğrudan alanlar yerine
-   * { input: "sepete_ekle productCode=HBL-M size=M quantity=1" } biçiminde gönderir.
-   * Her iki biçimi de tek ve güvenilir SIPARIS komutuna dönüştürür.
+   * LangChain DynamicTool argümanlarını JSON, düz komut, virgüllü anahtar/değer
+   * veya etiketli müşteri bilgisi biçimlerinden tek SIPARIS komutuna dönüştürür.
    */
   private static normalizeSiparisToolInput(input: any): any {
     let data: any = input;
@@ -142,24 +153,44 @@ export class AIService {
     }
     if (!data || typeof data !== 'object') data = {};
 
-    if (typeof data.input !== 'string' || !data.input.trim()) return data;
-
-    const command = data.input.trim();
+    const command = typeof data.input === 'string' ? data.input.trim() : '';
+    let parsed: any = {};
     if (command.startsWith('{')) {
-      try { return { ...data, ...JSON.parse(command) }; } catch {}
+      try { parsed = JSON.parse(command); } catch {}
+    } else if (command) {
+      const explicitAction = command.match(/(?:^|[,\s])action\s*=\s*(stok|sepete_ekle|sepet_goruntule|sepet_onayla|kayit)\b/i)?.[1];
+      const leadingAction = command.match(/^\s*(stok|sepete_ekle|sepet_goruntule|sepet_onayla|kayit)\b/i)?.[1];
+      if (explicitAction || leadingAction) parsed.action = String(explicitAction || leadingAction).toLowerCase();
+
+      const pairPattern = /([a-zA-Z][a-zA-Z0-9_]*)\s*=\s*("[^"]*"|'[^']*'|[^,\s]+)/g;
+      let match: RegExpExecArray | null;
+      while ((match = pairPattern.exec(command)) !== null) {
+        parsed[match[1]] = match[2].replace(/^("|')|("|')$/g, '').replace(/[,;]+$/g, '');
+      }
+      Object.assign(parsed, this.extractLabeledContactData(command));
+
+      if ((parsed.action || '').toLowerCase() === 'stok' && !parsed.productCode) {
+        const positional = command
+          .split(/[\s,]+/)
+          .map((part: string) => part.trim())
+          .filter(Boolean)
+          .filter((part: string) => !/^(?:action=)?stok$/i.test(part));
+        if (positional[0] && !positional[0].includes('=')) parsed.productCode = positional[0];
+        if (positional[1] && !positional[1].includes('=')) parsed.size = positional[1];
+      }
     }
 
-    const parsed: any = {};
-    const actionMatch = command.match(/^([a-z_]+)/i);
-    if (actionMatch) parsed.action = actionMatch[1].toLowerCase();
-
-    const pairPattern = /([a-zA-Z][a-zA-Z0-9_]*)=("[^"]*"|'[^']*'|\S+)/g;
-    let match: RegExpExecArray | null;
-    while ((match = pairPattern.exec(command)) !== null) {
-      parsed[match[1]] = match[2].replace(/^("|')|("|')$/g, '');
+    const normalized: any = { ...data, ...parsed };
+    normalized.customerName = normalized.customerName || normalized.adSoyad || normalized.ad_soyad || normalized.ad;
+    normalized.customerPhone = normalized.customerPhone || normalized.telefon || normalized.phone;
+    normalized.address = normalized.address || normalized.adres;
+    if (normalized.action) normalized.action = String(normalized.action).toLowerCase().replace(/[^a-z_].*$/i, '');
+    if (normalized.productCode) normalized.productCode = String(normalized.productCode).replace(/[,;]+$/g, '').trim();
+    if (normalized.size) normalized.size = String(normalized.size).replace(/[,;]+$/g, '').trim();
+    if (!normalized.action && (normalized.customerName || normalized.customerPhone || normalized.address)) {
+      normalized.action = 'kayit';
     }
-
-    return { ...data, ...parsed };
+    return normalized;
   }
 
   private static validateStoreId(storeId: any): void {
@@ -234,6 +265,19 @@ export class AIService {
    */
   private static async extractSessionDataWithAI(senderId: string, userText: string, apiKey: string, storeSlug: string, storeId: number, channel: string) {
     const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
+    const labeledContact = this.extractLabeledContactData(userText);
+    if (labeledContact.customerName) {
+      ctx.customerName = labeledContact.customerName;
+      if (!ctx.currentTurnContactFields?.includes('customerName')) ctx.currentTurnContactFields?.push('customerName');
+    }
+    if (labeledContact.customerPhone) {
+      ctx.customerPhone = labeledContact.customerPhone;
+      if (!ctx.currentTurnContactFields?.includes('customerPhone')) ctx.currentTurnContactFields?.push('customerPhone');
+    }
+    if (labeledContact.address) {
+      ctx.address = labeledContact.address;
+      if (!ctx.currentTurnContactFields?.includes('address')) ctx.currentTurnContactFields?.push('address');
+    }
 
     try {
       const extractorModel = new ChatOpenAI({

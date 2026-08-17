@@ -621,6 +621,40 @@ async function runTestSuite() {
   assert(parsedAddToCart.action === 'sepete_ekle' && parsedAddToCart.productCode === 'GMA-S' && parsedAddToCart.size === 'S' && parsedAddToCart.quantity === '1', 'Nested sepete_ekle command is parsed into structured tool arguments');
   const parsedSaveOrder = (AIService as any).normalizeSiparisToolInput({ input: 'kayit' });
   assert(parsedSaveOrder.action === 'kayit', 'Nested kayit command invokes order creation instead of stock lookup');
+  const parsedCommaCart = (AIService as any).normalizeSiparisToolInput({ input: 'action=sepete_ekle, productCode=PNT-PAL-002, size=38, quantity=2' });
+  assert(
+    parsedCommaCart.action === 'sepete_ekle' && parsedCommaCart.productCode === 'PNT-PAL-002' && parsedCommaCart.size === '38' && parsedCommaCart.quantity === '2',
+    'Comma-separated tool arguments are normalized without trailing punctuation'
+  );
+  const parsedLabeledOrder = (AIService as any).normalizeSiparisToolInput({ input: 'action=kayit\nAd Soyad: Emre İşcenkal\nTelefon: 05435207770\nAdres: Süleyman Demirel Mahallesi 1010 Sokak No 6' });
+  assert(
+    parsedLabeledOrder.action === 'kayit' && parsedLabeledOrder.customerName === 'Emre İşcenkal' &&
+    parsedLabeledOrder.customerPhone === '05435207770' && parsedLabeledOrder.address.includes('Süleyman Demirel'),
+    'Labeled customer details sent inside a kayit command are mapped to canonical order fields'
+  );
+  const inferredLabeledOrder = (AIService as any).normalizeSiparisToolInput({ input: 'Ad: Emre İşcenkal, Telefon: 05428523712, Adres: Süleyman Demirel Mahallesi 1010 Sokak No: 4' });
+  assert(
+    inferredLabeledOrder.action === 'kayit' && inferredLabeledOrder.customerName === 'Emre İşcenkal' && inferredLabeledOrder.customerPhone === '05428523712',
+    'Customer details without an explicit action are safely inferred as kayit instead of stock lookup'
+  );
+  const parsedPositionalStock = (AIService as any).normalizeSiparisToolInput({ input: 'stok\nPNT-PAL-002\n38' });
+  assert(parsedPositionalStock.action === 'stok' && parsedPositionalStock.productCode === 'PNT-PAL-002' && parsedPositionalStock.size === '38', 'Positional stock commands retain the requested product and size');
+
+  const labeledCheckoutCtx = AIService.getSessionContext('labeled-checkout', 'store-alpha', 100, 'TEST');
+  labeledCheckoutCtx.cart = [{ productCode: 'HBL-S', productName: 'HBL Test', size: 'S', quantity: 1, unitPrice: 250 }];
+  labeledCheckoutCtx.checkoutConfirmed = true;
+  const labeledCheckoutTools = (AIService as any).createLeafTools('labeled-checkout', 'store-alpha', 100, 'TEST');
+  const labeledCheckoutAgent = (AIService as any).createSiparisSubAgent(
+    {},
+    labeledCheckoutTools.stokTool,
+    labeledCheckoutTools.sepeteEkleTool,
+    labeledCheckoutTools.sepetGoruntuleTool,
+    labeledCheckoutTools.sepetOnaylaTool,
+    labeledCheckoutTools.kayitTool,
+    { invoke: async () => '' }
+  );
+  const labeledCheckoutResult = JSON.parse(String(await labeledCheckoutAgent.invoke(JSON.stringify({ input: 'Ad: Emre İşcenkal, Telefon: 05428523712, Adres: Süleyman Demirel Mahallesi 1010 Sokak No: 4' }))));
+  assert(labeledCheckoutResult.orderCreated === true, 'A confirmed checkout is persisted when the AI sends labeled customer details without an explicit action');
 
   console.log('\n2️⃣7️⃣-D AI PERSONA TEST: Mağaza kişiselleştirme ayarları çalışma anında okunmalı');
   db.prepare("INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (100, 'bot_tone', 'friendly')").run();
