@@ -52,6 +52,7 @@ app.get('/healthz', (_req, res) => {
 
 const apiLimiter = createRateLimiter({ windowMs: 5 * 60_000, max: 600, message: 'Çok fazla API isteği gönderildi. Lütfen kısa süre sonra tekrar deneyin.' });
 app.use('/api', apiLimiter);
+const masterPanelLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 180, message: 'Çok fazla panel isteği gönderildi. Lütfen daha sonra tekrar deneyin.' });
 
 const demoAiRequests = new Map<string, number[]>();
 let demoAiGlobalRequests: number[] = [];
@@ -104,30 +105,32 @@ app.get(['/admin/login', '/admin/login.html'], (req, res) => {
   res.sendFile(path.resolve(__dirname, '../public/admin/login.html'));
 });
 
-// Static Master Admin UI Server (Platform Owner Panel)
-app.use('/master-admin', express.static(path.resolve(__dirname, '../public/master-admin')));
-// Keep the trailing slash on the console root so relative static assets resolve correctly.
-app.get('/master-admin', (req, res) => {
-  res.redirect(302, '/master-admin/');
-});
-app.get('/master-admin/', (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../public/master-admin/index.html'));
-});
-app.get(['/master-admin/login', '/master-admin/login.html'], (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../public/master-admin/login.html'));
-});
-app.get(['/master-admin/merchants', '/master-admin/merchants.html'], (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../public/master-admin/merchants.html'));
-});
-app.get(['/master-admin/merchant', '/master-admin/merchant.html'], (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../public/master-admin/merchant.html'));
-});
-app.get(['/master-admin/applications', '/master-admin/applications.html'], (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../public/master-admin/applications.html'));
-});
-app.get(['/master-admin/plans', '/master-admin/plans.html'], (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../public/master-admin/plans.html'));
-});
+// Static Master Admin UI Server (Platform Owner Panel).
+// Its public path exists only in the server environment and is never embedded in public pages.
+const masterAdminBasePath = `/${env.masterAdminPanelPath}`;
+const masterAdminDirectory = path.resolve(__dirname, '../public/master-admin');
+const hideMasterPanelFromIndexes = (_req: express.Request, res: express.Response, next: express.NextFunction) => {
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  res.setHeader('Cache-Control', 'no-store');
+  next();
+};
+
+// The former well-known path must look exactly like any other missing page.
+if (masterAdminBasePath !== '/master-admin') {
+  app.use('/master-admin', (_req, res) => {
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+    return res.status(404).sendFile(path.resolve(__dirname, '../public/404.html'));
+  });
+}
+
+app.use(masterAdminBasePath, masterPanelLimiter, hideMasterPanelFromIndexes, express.static(masterAdminDirectory, { index: false, redirect: false, dotfiles: 'deny' }));
+app.get(masterAdminBasePath, (_req, res) => res.redirect(302, `${masterAdminBasePath}/`));
+app.get(`${masterAdminBasePath}/`, (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'index.html')));
+app.get([`${masterAdminBasePath}/login`, `${masterAdminBasePath}/login.html`], (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'login.html')));
+app.get([`${masterAdminBasePath}/merchants`, `${masterAdminBasePath}/merchants.html`], (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'merchants.html')));
+app.get([`${masterAdminBasePath}/merchant`, `${masterAdminBasePath}/merchant.html`], (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'merchant.html')));
+app.get([`${masterAdminBasePath}/applications`, `${masterAdminBasePath}/applications.html`], (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'applications.html')));
+app.get([`${masterAdminBasePath}/plans`, `${masterAdminBasePath}/plans.html`], (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'plans.html')));
 
 // ==========================================
 import masterAdminRouter from './routes/master-admin.routes';

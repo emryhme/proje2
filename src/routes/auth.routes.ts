@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import { db, hashPassword, needsPasswordRehash, verifyPassword } from '../database/db';
+import { env } from '../config/env';
 import { AuthMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { EmailVerificationService } from '../services/email-verification.service';
 import { clearSessionCookie, createRateLimiter, sessionCookie, setSessionCookie } from '../middleware/security.middleware';
@@ -10,6 +12,12 @@ const registerLimiter = createRateLimiter({ windowMs: 60 * 60_000, max: 5, messa
 const loginLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 8, message: 'Çok fazla giriş denemesi yapıldı. Lütfen 15 dakika sonra tekrar deneyin.' });
 const verificationLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 10, message: 'Çok fazla doğrulama denemesi yapıldı. Lütfen daha sonra tekrar deneyin.' });
 const resendLimiter = createRateLimiter({ windowMs: 15 * 60_000, max: 3, message: 'Çok fazla kod gönderim isteği yapıldı. Lütfen daha sonra tekrar deneyin.' });
+
+function secureValueMatches(actual: string, expected: string): boolean {
+  const actualDigest = crypto.createHash('sha256').update(actual).digest();
+  const expectedDigest = crypto.createHash('sha256').update(expected).digest();
+  return crypto.timingSafeEqual(actualDigest, expectedDigest);
+}
 
 function uniqueStoreSlug(storeName: string): string {
   const base = storeName.toLowerCase().replace(/[^a-z0-9]/g, '-').replace(/-+/g, '-').replace(/^-|-$/g, '') || 'magaza';
@@ -111,6 +119,11 @@ router.post('/api/auth/login', loginLimiter, (req, res) => {
   if (!cleanEmail || !cleanPass) return res.status(400).json({ success: false, error: 'E-posta ve şifre zorunludur.' });
 
   const user = db.prepare('SELECT id, full_name, email, password_hash, status, email_verified_at, session_version FROM users WHERE LOWER(email) = ?').get(cleanEmail) as any;
+  const isMasterAccount = Boolean(user && (user.id === 1 || db.prepare("SELECT 1 FROM memberships WHERE user_id = ? AND store_id = 1 AND role = 'OWNER' LIMIT 1").get(user.id)));
+  const suppliedMasterPanelKey = String(req.headers['x-master-panel-key'] || '').trim();
+  if (isMasterAccount && !secureValueMatches(suppliedMasterPanelKey, env.masterAdminPanelPath)) {
+    return res.status(401).json({ success: false, error: 'Geçersiz e-posta veya şifre.' });
+  }
   if (!user || !verifyPassword(cleanPass, user.password_hash)) return res.status(401).json({ success: false, error: 'Geçersiz e-posta veya şifre.' });
   if (needsPasswordRehash(user.password_hash)) db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(cleanPass), user.id);
   if (!user.email_verified_at && user.id !== 1) return res.status(403).json({ success: false, code: 'EMAIL_NOT_VERIFIED', error: 'Giriş yapmadan önce e-posta adresinizi doğrulayın.' });

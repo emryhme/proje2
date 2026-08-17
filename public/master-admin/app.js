@@ -78,7 +78,7 @@ async function apiFetch(url, options = {}) {
     if (response.status === 401) {
       localStorage.removeItem('barons_admin_token');
       localStorage.removeItem('barons_admin_user');
-      window.location.href = '/master-admin/login.html';
+      window.location.href = 'login.html';
       throw new Error('UNAUTHORIZED');
     }
 
@@ -112,7 +112,7 @@ async function checkMasterAuth() {
   const rawUser = localStorage.getItem('barons_admin_user');
 
   if (!rawUser) {
-    window.location.href = '/master-admin/login.html';
+    window.location.href = 'login.html';
     return;
   }
 
@@ -123,7 +123,7 @@ async function checkMasterAuth() {
       window.location.href = '/admin/login.html';
     }
   } catch (e) {
-    window.location.href = '/master-admin/login.html';
+    window.location.href = 'login.html';
   }
 }
 
@@ -590,7 +590,7 @@ document.addEventListener('DOMContentLoaded', () => {
   renderMasterUser();
 
   const path = window.location.pathname;
-  if (path.includes('index.html') || path.endsWith('/master-admin') || path.endsWith('/master-admin/')) {
+  if (path.endsWith('/index.html') || path.endsWith('/')) {
     loadDashboardData();
   } else if (path.includes('merchants.html')) {
     loadMerchantsList();

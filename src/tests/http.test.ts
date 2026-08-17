@@ -38,6 +38,24 @@ async function run(): Promise<void> {
     const health = await fetch(`${origin}/healthz`);
     assert(health.ok && health.headers.get('x-content-type-options') === 'nosniff', 'Health endpoint and security headers are active');
 
+    const [oldMasterLogin, privateMasterLogin, publicHomepage] = await Promise.all([
+      fetch(`${origin}/master-admin/login`),
+      fetch(`${origin}/platform-test-console/login`),
+      fetch(`${origin}/`)
+    ]);
+    const oldMasterHtml = await oldMasterLogin.text();
+    const privateMasterHtml = await privateMasterLogin.text();
+    const publicHomepageHtml = await publicHomepage.text();
+    assert(
+      oldMasterLogin.status === 404
+        && !oldMasterHtml.includes('Platform Konsoluna Giriş Yap')
+        && privateMasterLogin.ok
+        && String(privateMasterLogin.headers.get('x-robots-tag')).includes('noindex')
+        && privateMasterHtml.includes('X-Master-Panel-Key')
+        && !publicHomepageHtml.includes('/master-admin'),
+      'Master Admin console is available only on the private noindex path and is not linked publicly'
+    );
+
     const [dashboardPage, stockPage, instagramMediaPage] = await Promise.all([
       fetch(`${origin}/admin/index.html`),
       fetch(`${origin}/admin/stock.html`),
@@ -83,6 +101,17 @@ async function run(): Promise<void> {
     const loginBody = await login.json() as any;
     const cookie = String(login.headers.get('set-cookie') || '').split(';')[0];
     assert(login.ok && loginBody.token && cookie.startsWith('iscworks_session='), 'Login issues an HttpOnly browser session cookie');
+
+    db.prepare("INSERT INTO memberships (user_id, store_id, role, status) VALUES (?, 1, 'OWNER', 'active')").run(userId);
+    const masterLoginWithoutPanelKey = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ email, password, storeId: 1 })
+    });
+    const masterLoginWithPanelKey = await fetch(`${origin}/api/auth/login`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin, 'X-Master-Panel-Key': 'platform-test-console' }, body: JSON.stringify({ email, password, storeId: 1 })
+    });
+    const keyedMasterBody = await masterLoginWithPanelKey.json() as any;
+    assert(masterLoginWithoutPanelKey.status === 401 && masterLoginWithPanelKey.ok && keyedMasterBody.user?.storeId === 1, 'Master account login requires the private panel path key even when credentials are correct');
+    db.prepare('DELETE FROM memberships WHERE user_id = ? AND store_id = 1').run(userId);
 
     const adminAppScript = await fetch(`${origin}/admin/app.js`);
     const adminAppSource = await adminAppScript.text();
@@ -184,6 +213,7 @@ async function run(): Promise<void> {
     console.log(`HTTP SECURITY TEST SUMMARY: Passed: ${passed} | Failed: 0`);
   } finally {
     await new Promise<void>(resolve => server.close(() => resolve()));
+    db.prepare('DELETE FROM memberships WHERE user_id = ? AND store_id = 1').run(userId);
     db.prepare('DELETE FROM stores WHERE id = ?').run(storeId);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
   }

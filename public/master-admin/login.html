@@ -247,7 +247,10 @@
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Master-Panel-Key': window.location.pathname.split('/').filter(Boolean)[0] || ''
+        },
         body: JSON.stringify({ username, password })
       });
 
@@ -272,7 +275,7 @@
         // Session token is held only in the secure HttpOnly cookie.
         localStorage.removeItem('barons_admin_token');
         localStorage.setItem('barons_admin_user', JSON.stringify(u));
-        window.location.href = '/master-admin/index.html';
+        window.location.href = 'index.html';
       } else {
         const errorMsg = data.error?.message || data.error || 'Hatalı kullanıcı adı veya şifre!';
         alertText.textContent = typeof errorMsg === 'string' ? errorMsg : 'Giriş başarısız.';
