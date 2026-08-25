@@ -2420,13 +2420,24 @@ async function loadSystemSettingsIntoModal() {
       if (document.getElementById('sysBotTone')) document.getElementById('sysBotTone').value = s.bot_tone || 'luxury';
       if (document.getElementById('sysBotSystemPrompt')) document.getElementById('sysBotSystemPrompt').value = s.bot_system_prompt || '';
       if (document.getElementById('sysAiProvider')) document.getElementById('sysAiProvider').value = s.ai_provider || 'openai';
-      if (document.getElementById('sysAiApiKey')) document.getElementById('sysAiApiKey').value = '';
-      if (document.getElementById('sysClearAiApiKey')) document.getElementById('sysClearAiApiKey').checked = false;
+      const apiKeyInput = document.getElementById('sysAiApiKey');
+      const clearApiKeyInput = document.getElementById('sysClearAiApiKey');
+      const configured = s.ai_api_key_configured === '1';
+      if (apiKeyInput) {
+        apiKeyInput.value = '';
+        apiKeyInput.placeholder = configured
+          ? '••••••••••••••••  Kayıtlı — değiştirmek için yeni anahtar girin'
+          : 'Henüz anahtar yok — yeni API anahtarını girin';
+      }
+      if (clearApiKeyInput) {
+        clearApiKeyInput.checked = false;
+        clearApiKeyInput.disabled = !configured;
+      }
       const apiKeyStatus = document.getElementById('sysAiApiKeyStatus');
       if (apiKeyStatus) {
-        const configured = s.ai_api_key_configured === '1';
-        apiKeyStatus.textContent = configured ? '✓ Bu mağaza için şifrelenmiş bir API anahtarı kayıtlı.' : '⚠ Bu mağaza için API anahtarı henüz tanımlanmamış.';
+        apiKeyStatus.textContent = configured ? '✓ API anahtarı kayıtlı ve şifreli olarak korunuyor.' : '⚠ Bu mağaza için API anahtarı henüz tanımlanmamış.';
         apiKeyStatus.style.color = configured ? '#34d399' : '#fbbf24';
+        apiKeyStatus.style.fontWeight = '700';
       }
     }
   } catch (e) {}
