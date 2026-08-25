@@ -731,8 +731,10 @@ async function runTestSuite() {
   const storedStoreAKey = (db.prepare("SELECT value FROM settings WHERE store_id = 100 AND key = 'ai_api_key'").get() as any).value;
   const storeAConfig = AIProviderService.getStoreConfig(100);
   const storeBConfig = AIProviderService.getStoreConfig(200);
+  const storeAModel = AIProviderService.createChatModel(100) as any;
   assert(storedStoreAKey !== storeAKey && storedStoreAKey.startsWith('sv1:'), 'Store AI API keys are encrypted at rest');
   assert(storeAConfig.provider === 'openai' && storeAConfig.apiKey === storeAKey, 'Store A resolves only its OpenAI provider and API key');
+  assert(storeAModel.apiKey === storeAKey && storeAModel.model === 'gpt-4o-mini', 'OpenAI client receives the tenant API key and model through current LangChain fields');
   assert(storeBConfig.provider === 'gemini' && storeBConfig.apiKey === storeBKey, 'Store B resolves only its Gemini provider and API key');
   assert(storeAConfig.apiKey !== storeBConfig.apiKey, 'Store AI credentials remain isolated across tenants');
 

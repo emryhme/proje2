@@ -49,8 +49,8 @@ export class AIProviderService {
       });
     }
     return new ChatOpenAI({
-      openAIApiKey: config.apiKey,
-      modelName: options.model || config.model,
+      apiKey: config.apiKey,
+      model: options.model || config.model,
       temperature: options.temperature ?? 0.2
     });
   }
