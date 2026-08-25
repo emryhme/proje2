@@ -2419,6 +2419,15 @@ async function loadSystemSettingsIntoModal() {
       const s = data.settings;
       if (document.getElementById('sysBotTone')) document.getElementById('sysBotTone').value = s.bot_tone || 'luxury';
       if (document.getElementById('sysBotSystemPrompt')) document.getElementById('sysBotSystemPrompt').value = s.bot_system_prompt || '';
+      if (document.getElementById('sysAiProvider')) document.getElementById('sysAiProvider').value = s.ai_provider || 'openai';
+      if (document.getElementById('sysAiApiKey')) document.getElementById('sysAiApiKey').value = '';
+      if (document.getElementById('sysClearAiApiKey')) document.getElementById('sysClearAiApiKey').checked = false;
+      const apiKeyStatus = document.getElementById('sysAiApiKeyStatus');
+      if (apiKeyStatus) {
+        const configured = s.ai_api_key_configured === '1';
+        apiKeyStatus.textContent = configured ? '✓ Bu mağaza için şifrelenmiş bir API anahtarı kayıtlı.' : '⚠ Bu mağaza için API anahtarı henüz tanımlanmamış.';
+        apiKeyStatus.style.color = configured ? '#34d399' : '#fbbf24';
+      }
     }
   } catch (e) {}
 }
@@ -2432,16 +2441,19 @@ async function saveSystemSettingsPage() {
   const payload = {
     bot_tone: document.getElementById('sysBotTone')?.value || 'luxury',
     bot_system_prompt: document.getElementById('sysBotSystemPrompt')?.value || '',
-    // Secrets are server-managed or obtained through the Instagram OAuth flow.
   };
+  const aiProviderInput = document.getElementById('sysAiProvider');
+  if (aiProviderInput) payload.ai_provider = aiProviderInput.value || 'openai';
+  const aiApiKey = document.getElementById('sysAiApiKey')?.value?.trim() || '';
+  const clearAiApiKey = Boolean(document.getElementById('sysClearAiApiKey')?.checked);
 
   try {
     const data = await apiFetch(`${API_BASE}/api/settings`, {
       method: 'POST',
-      body: JSON.stringify({ settings: payload })
+      body: JSON.stringify({ settings: payload, aiApiKey, clearAiApiKey })
     });
     if (data.success) {
-      showToast('✅ Müşteri temsilcisi üslubu ve mağaza konuşma kuralları kaydedildi.', 'success');
+      showToast('✅ Yapay zekâ sağlayıcısı ve mağaza ayarları kaydedildi.', 'success');
       await loadSystemSettingsIntoModal();
     } else {
       showToast(`❌ Hata: ${data.error || 'Ayarlar kaydedilemedi'}`, 'error');

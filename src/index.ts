@@ -15,6 +15,8 @@ import { extractProductCode } from './utils/regex.util';
 import { db, hashPassword, initDatabase, needsPasswordRehash, performDataMaintenance, verifyPassword } from './database/db';
 import { AuthMiddleware, AuthenticatedRequest } from './middleware/auth.middleware';
 import { createRateLimiter, csrfProtection, securityHeaders } from './middleware/security.middleware';
+import { encryptSettingSecret } from './utils/secret.util';
+import { AIProviderService } from './services/ai-provider.service';
 
 // Initialize schema, migrations, and seed data once before serving requests.
 initDatabase();
@@ -491,7 +493,7 @@ app.delete('/api/campaigns/:id', AuthMiddleware.authenticate, AuthMiddleware.req
 // --- SETTINGS ---
 const PUBLIC_SETTING_KEYS = new Set([
   'shipping_fee', 'free_shipping_threshold', 'loyalty_threshold', 'auto_vip_reward_enabled',
-  'bot_name', 'bot_tone', 'bot_system_prompt'
+  'bot_name', 'bot_tone', 'bot_system_prompt', 'ai_provider'
 ]);
 
 app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req: AuthenticatedRequest, res) => {
@@ -505,6 +507,8 @@ app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole
         settingsObj[r.key] = r.value || '';
       }
     }
+    settingsObj.ai_provider = settingsObj.ai_provider === 'gemini' ? 'gemini' : 'openai';
+    settingsObj.ai_api_key_configured = AIProviderService.hasStoreApiKey(storeId) ? '1' : '0';
     res.json({ success: true, settings: settingsObj, settingsList: rows });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message, settings: {} });
@@ -514,7 +518,7 @@ app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole
 app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN']), (req: AuthenticatedRequest, res) => {
   try {
     const storeId = req.auth!.storeId;
-    const { key, value, settings, shippingFee, freeShippingThreshold } = req.body || {};
+    const { key, value, settings, shippingFee, freeShippingThreshold, aiApiKey, clearAiApiKey } = req.body || {};
 
     const normalizeSetting = (rawKey: unknown, rawValue: unknown): { key: string; value: string } | null => {
       const settingKey = String(rawKey || '');
@@ -527,6 +531,8 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
         if (!['luxury', 'friendly', 'formal', 'patron'].includes(settingValue)) throw new Error('Geçersiz yapay zeka kişilik üslubu.');
       } else if (settingKey === 'bot_system_prompt') {
         settingValue = settingValue.trim().slice(0, 4000);
+      } else if (settingKey === 'ai_provider') {
+        if (!['openai', 'gemini'].includes(settingValue)) throw new Error('Geçersiz yapay zeka sağlayıcısı.');
       } else if (settingKey === 'auto_vip_reward_enabled') {
         if (!['0', '1', 'false', 'true'].includes(settingValue.toLowerCase())) throw new Error('Geçersiz otomatik VIP ayarı.');
         settingValue = ['1', 'true'].includes(settingValue.toLowerCase()) ? '1' : '0';
@@ -560,7 +566,15 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     }
 
     const saveSetting = db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)');
-    db.transaction(() => updates.forEach(update => saveSetting.run(storeId, update.key, update.value)))();
+    const cleanAiApiKey = typeof aiApiKey === 'string' ? aiApiKey.trim() : '';
+    if (cleanAiApiKey && (cleanAiApiKey.length < 20 || cleanAiApiKey.length > 512)) {
+      return res.status(400).json({ success: false, error: 'API anahtarı geçerli uzunlukta değil.' });
+    }
+    db.transaction(() => {
+      updates.forEach(update => saveSetting.run(storeId, update.key, update.value));
+      if (cleanAiApiKey) saveSetting.run(storeId, 'ai_api_key', encryptSettingSecret(cleanAiApiKey));
+      if (clearAiApiKey === true) db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'ai_api_key'").run(storeId);
+    })();
 
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'UPDATE_SETTINGS', 'settings', 'all');
     res.json({ success: true, message: 'Ayarlar güncellendi.' });

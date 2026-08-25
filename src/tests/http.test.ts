@@ -156,6 +156,24 @@ async function run(): Promise<void> {
     });
     assert(forbiddenSetting.status === 400, 'Generic settings endpoint rejects secret credential writes');
 
+    const storeAiKey = 'AIza-http-store-isolated-123456789012345';
+    const savedAiProvider = await fetch(`${origin}/api/settings`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { ai_provider: 'gemini' }, aiApiKey: storeAiKey })
+    });
+    const aiSettingsResponse = await fetch(`${origin}/api/settings`, { headers: { Cookie: cookie } });
+    const aiSettingsBody = await aiSettingsResponse.json() as any;
+    const storedAiSecret = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_api_key'").get(storeId) as any)?.value || '';
+    assert(
+      savedAiProvider.ok
+        && aiSettingsBody.settings.ai_provider === 'gemini'
+        && aiSettingsBody.settings.ai_api_key_configured === '1'
+        && !JSON.stringify(aiSettingsBody).includes(storeAiKey)
+        && storedAiSecret.startsWith('sv1:')
+        && storedAiSecret !== storeAiKey,
+      'Store AI provider and encrypted API key can be configured without exposing the secret'
+    );
+
     const autoVipSetting = await fetch(`${origin}/api/settings`, {
       method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'auto_vip_reward_enabled', value: '1' })
     });

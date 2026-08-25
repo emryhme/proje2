@@ -1,7 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { DynamicTool } from '@langchain/core/tools';
 import { SystemMessage, HumanMessage, ToolMessage, BaseMessage } from '@langchain/core/messages';
-import { env } from '../config/env';
+import { AIProviderService } from './ai-provider.service';
 import { StockService } from './stock.service';
 import { OrderService } from './order.service';
 import { db } from '../database/db';
@@ -16,16 +16,11 @@ export class AdminCopilotService {
     }
   }
 
-  private static getApiKey(): string {
-    return env.openaiApiKey || env.geminiApiKey || 'DUMMY_KEY';
-  }
-
   public static async processAdminCommand(userPrompt: string, storeId: number): Promise<string> {
     this.validateStoreId(storeId);
-    const apiKey = this.getApiKey();
-
-    if (!apiKey || apiKey === 'DUMMY_KEY') {
-      return "⚠️ Patron, geçerli bir OPENAI_API_KEY veya GEMINI_API_KEY bulunamadı. Lütfen .env dosyanızı kontrol ediniz.";
+    const aiConfig = AIProviderService.getStoreConfig(storeId);
+    if (!aiConfig.apiKey) {
+      return `⚠️ Bu mağaza için ${aiConfig.provider === 'gemini' ? 'Gemini' : 'OpenAI'} API anahtarı tanımlanmamış. API & AI Kişiselleştirme sayfasını kontrol edin.`;
     }
 
     // 1. Stok Güncelleme Aracı (Store Isolated)
@@ -183,11 +178,7 @@ export class AdminCopilotService {
       }
     });
 
-    const model = new ChatOpenAI({
-      openAIApiKey: apiKey,
-      modelName: env.openaiModel || 'gpt-4o',
-      temperature: 0.1
-    });
+    const model = AIProviderService.createChatModel(storeId, { temperature: 0.1 });
 
     const tools = [stokGuncelleTool, fiyatGuncelleTool, siparisSorgulaTool, urunEkleTool, urunListeleSorgulaTool];
     const boundModel = model.bindTools(tools);

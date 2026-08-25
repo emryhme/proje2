@@ -9,6 +9,7 @@ import { GeminiService } from '../services/gemini.service';
 import { WebhookController } from '../controllers/webhook.controller';
 import { FacebookService } from '../services/facebook.service';
 import { DemoAIService } from '../services/demo-ai.service';
+import { AIProviderService } from '../services/ai-provider.service';
 import { EmailVerificationService } from '../services/email-verification.service';
 import { AuthMiddleware } from '../middleware/auth.middleware';
 import { db, hashPassword, initDatabase, needsPasswordRehash, verifyPassword } from '../database/db';
@@ -718,6 +719,22 @@ async function runTestSuite() {
   console.log('\n3️⃣2️⃣ STOCK BUG FIX TEST 6: False Success Prevention on Non-Existent Product');
   const nonExistentResult = await StockService.updateStock(100, 'NON-EXISTENT-CODE-999', 50);
   assert(nonExistentResult === false, 'Updating non-existent product returns false (HTTP 404), preventing false-success bug');
+
+  console.log('\n3️⃣3️⃣ AI PROVIDER TEST: Store-specific provider and encrypted API key isolation');
+  const storeAKey = 'sk-test-store-a-12345678901234567890';
+  const storeBKey = 'AIza-test-store-b-12345678901234567890';
+  const saveAiSetting = db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)');
+  saveAiSetting.run(100, 'ai_provider', 'openai');
+  saveAiSetting.run(100, 'ai_api_key', encryptSettingSecret(storeAKey));
+  saveAiSetting.run(200, 'ai_provider', 'gemini');
+  saveAiSetting.run(200, 'ai_api_key', encryptSettingSecret(storeBKey));
+  const storedStoreAKey = (db.prepare("SELECT value FROM settings WHERE store_id = 100 AND key = 'ai_api_key'").get() as any).value;
+  const storeAConfig = AIProviderService.getStoreConfig(100);
+  const storeBConfig = AIProviderService.getStoreConfig(200);
+  assert(storedStoreAKey !== storeAKey && storedStoreAKey.startsWith('sv1:'), 'Store AI API keys are encrypted at rest');
+  assert(storeAConfig.provider === 'openai' && storeAConfig.apiKey === storeAKey, 'Store A resolves only its OpenAI provider and API key');
+  assert(storeBConfig.provider === 'gemini' && storeBConfig.apiKey === storeBKey, 'Store B resolves only its Gemini provider and API key');
+  assert(storeAConfig.apiKey !== storeBConfig.apiKey, 'Store AI credentials remain isolated across tenants');
 
   console.log(`\n📊 MASTER SECURITY & STOCK BUG FIX TEST SUMMARY: Passed: ${passed} | Failed: ${failed}`);
   if (failed > 0) {

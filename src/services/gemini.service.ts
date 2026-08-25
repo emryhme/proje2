@@ -1,6 +1,6 @@
-import axios from 'axios';
-import { env } from '../config/env';
 import { StockService } from './stock.service';
+import { HumanMessage, SystemMessage } from '@langchain/core/messages';
+import { AIProviderService } from './ai-provider.service';
 
 export interface AIProductItem {
   shortCode: string;
@@ -35,19 +35,19 @@ export class GeminiService {
   public static async createProductFromPrompt(prompt: string, storeId: number): Promise<AIBatchResult> {
     this.validateStoreId(storeId);
     try {
-      const apiKey = env.geminiApiKey || process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
+      const aiConfig = AIProviderService.getStoreConfig(storeId);
       let parsedProducts: AIProductItem[] = [];
       let customAiMessage = '';
 
-      if (apiKey) {
-        console.log(`[GeminiService] 🤖 Google Gemini AI ile ürün(ler) ayrıştırılıyor (Store: ${storeId})...`);
-        const geminiResult = await this.callGeminiAPI(prompt, apiKey);
-        if (geminiResult && geminiResult.products && geminiResult.products.length > 0) {
-          parsedProducts = geminiResult.products;
-          customAiMessage = geminiResult.aiMessage;
+      if (aiConfig.apiKey) {
+        console.log(`[AI Product] 🤖 ${aiConfig.provider} ile ürün(ler) ayrıştırılıyor (Store: ${storeId})...`);
+        const aiResult = await this.callSelectedProvider(prompt, storeId);
+        if (aiResult && aiResult.products && aiResult.products.length > 0) {
+          parsedProducts = aiResult.products;
+          customAiMessage = aiResult.aiMessage;
         }
       } else {
-        console.log('[GeminiService] 🔑 Gemini API key bulunamadı, Akıllı Kural Motoru çalışıyor...');
+        console.log('[AI Product] 🔑 Mağaza API anahtarı bulunamadı, Akıllı Kural Motoru çalışıyor...');
       }
 
       if (!parsedProducts || parsedProducts.length === 0) {
@@ -108,14 +108,12 @@ export class GeminiService {
   }
 
   /**
-   * Google Gemini REST API Çağrısı
+   * Mağazanın seçtiği yapay zeka sağlayıcısıyla yapılandırılmış ürün çıkarımı.
    */
-  private static async callGeminiAPI(prompt: string, apiKey: string): Promise<{ products: AIProductItem[]; aiMessage: string } | null> {
+  private static async callSelectedProvider(prompt: string, storeId: number): Promise<{ products: AIProductItem[]; aiMessage: string } | null> {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
-
       const systemInstruction = `
-Sen BARON'S SILLAGE e-ticaret yönetim paneli için Akıllı Ürün Ekleyici yapay zeka asistanısın.
+Sen ISCWORKS e-ticaret yönetim paneli için Akıllı Ürün Ekleyici yapay zeka asistanısın.
 Kullanıcının doğal dille yazdığı Türkçe metinden ürün bilgilerini çıkar.
 Eğer kullanıcı tek bir cümlede birden fazla beden belirttiyse, HER BEDEN İÇİN AYRI BIR ÜRÜN OBJESİ OLUŞTUR.
 
@@ -136,33 +134,19 @@ ZORUNLU JSON ŞEMASI:
 }
 `;
 
-      const response = await axios.post(
-        url,
-        {
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                { text: `${systemInstruction}\n\nKullanıcı Girdisi: "${prompt}"` }
-              ]
-            }
-          ],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            temperature: 0.1
-          }
-        },
-        { headers: { 'Content-Type': 'application/json' }, timeout: 10000 }
-      );
-
-      const textResponse = response.data?.candidates?.[0]?.content?.parts?.[0]?.text;
+      const model = AIProviderService.createChatModel(storeId, { temperature: 0.1 });
+      const response = await model.invoke([
+        new SystemMessage(systemInstruction),
+        new HumanMessage(`Kullanıcı Girdisi: "${prompt}"\nYalnızca geçerli JSON döndür.`)
+      ]);
+      const textResponse = typeof response.content === 'string' ? response.content : '';
       if (textResponse) {
         const cleanJson = textResponse.replace(/```json/g, '').replace(/```/g, '').trim();
         return JSON.parse(cleanJson);
       }
       return null;
     } catch (err: any) {
-      console.warn('[Gemini API Fallback Triggered]:', err?.response?.data || err?.message);
+      console.warn('[AI Product Fallback Triggered]:', err?.response?.data || err?.message);
       return null;
     }
   }

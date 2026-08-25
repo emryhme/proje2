@@ -1,7 +1,7 @@
 import { ChatOpenAI } from '@langchain/openai';
 import { DynamicTool } from '@langchain/core/tools';
 import { SystemMessage, HumanMessage, AIMessage, ToolMessage, BaseMessage } from '@langchain/core/messages';
-import { env } from '../config/env';
+import { AIProviderService } from './ai-provider.service';
 import { StockService } from './stock.service';
 import { OrderService } from './order.service';
 import { TelegramService } from './telegram.service';
@@ -199,10 +199,6 @@ export class AIService {
     }
   }
 
-  private static getApiKey(): string {
-    return (process.env.OPENAI_API_KEY || env.openaiApiKey || '').trim().replace(/^["']|["']$/g, '');
-  }
-
   public static getSessionContext(senderId: string, storeSlug: string, storeId: number, channel: string = 'instagram'): SessionContext {
     this.validateStoreId(storeId);
     const key = `${storeId}:${storeSlug}:${channel}:${senderId}`;
@@ -263,7 +259,7 @@ export class AIService {
   /**
    * Yapay Zeka Destekli Akıllı Veri Ayıklama Motoru (AI Extractor)
    */
-  private static async extractSessionDataWithAI(senderId: string, userText: string, apiKey: string, storeSlug: string, storeId: number, channel: string) {
+  private static async extractSessionDataWithAI(senderId: string, userText: string, storeSlug: string, storeId: number, channel: string) {
     const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
     const labeledContact = this.extractLabeledContactData(userText);
     if (labeledContact.customerName) {
@@ -280,11 +276,7 @@ export class AIService {
     }
 
     try {
-      const extractorModel = new ChatOpenAI({
-        openAIApiKey: apiKey,
-        modelName: 'gpt-4o-mini',
-        temperature: 0
-      });
+      const extractorModel = AIProviderService.createChatModel(storeId, { temperature: 0 });
 
       const extractionPrompt = `
 Müşterinin gönderdiği mesajdan ad-soyad, telefon, adres, ürün kodu, beden ve adet verilerini ayıkla.
@@ -1014,11 +1006,10 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     cart: CartItem[];
   }> {
     this.validateStoreId(storeId);
-    const apiKey = this.getApiKey();
-
-    if (!apiKey) {
+    const aiConfig = AIProviderService.getStoreConfig(storeId);
+    if (!aiConfig.apiKey) {
       return {
-        reply: "Merhaba! Lütfen geçerli bir OPENAI_API_KEY tanımlayınız.",
+        reply: `Merhaba! Mağaza ayarlarından ${aiConfig.provider === 'gemini' ? 'Gemini' : 'OpenAI'} API anahtarını tanımlayınız.`,
         tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
         toolTraces: [],
         cart: []
@@ -1042,7 +1033,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     try {
       const turnContext = this.getSessionContext(senderId, storeSlug, storeId, channel);
       turnContext.currentTurnContactFields = [];
-      await this.extractSessionDataWithAI(senderId, userMessage, apiKey, storeSlug, storeId, channel);
+      await this.extractSessionDataWithAI(senderId, userMessage, storeSlug, storeId, channel);
       const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
       this.hydrateProductCodeFromMessage(userMessage, storeId, ctx);
 
@@ -1125,11 +1116,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
 
       const persona = this.getStorePersona(storeId);
 
-      const model = new ChatOpenAI({
-        openAIApiKey: apiKey,
-        modelName: env.openaiModel || 'gpt-4o',
-        temperature: 0.2
-      });
+      const model = AIProviderService.createChatModel(storeId, { temperature: 0.2 });
 
       const { stokTool, sepeteEkleTool, sepetGoruntuleTool, sepetOnaylaTool, kayitTool, mesajTool, guncelleTool } = this.createLeafTools(senderId, storeSlug, storeId, channel);
       const bilgilendirmeAgentTool = this.createBilgilendirmeSubAgent(model, mesajTool);

@@ -136,7 +136,7 @@
         <div class="page-header">
             <div class="page-title">
                 <h1>API Ayarları & Yapay Zeka Kişiselleştirme</h1>
-                <p>Gemini AI asistanınızın üslubunu, bot adını, sistem talimatlarını ve API anahtarlarını yönetin.</p>
+                <p>Mağazanızın OpenAI veya Gemini sağlayıcısını, izole API anahtarını ve müşteri temsilcisi üslubunu yönetin.</p>
             </div>
 
             <div class="header-actions">
@@ -154,6 +154,26 @@
             </div>
 
             <div class="form-grid">
+                <div class="form-group">
+                    <label>Yapay Zekâ Sağlayıcısı</label>
+                    <select id="sysAiProvider" class="select" style="width:100%; height:40px; font-size:12px;">
+                        <option value="openai">OpenAI</option>
+                        <option value="gemini">Google Gemini</option>
+                    </select>
+                    <small style="color:#94a3b8; margin-top:6px; display:block;">Bu seçim yalnızca bu mağazanın müşteri asistanı, Copilot ve ürün oluşturucusu için geçerlidir.</small>
+                </div>
+
+                <div class="form-group">
+                    <label>Mağazaya Özel API Anahtarı</label>
+                    <input type="password" id="sysAiApiKey" autocomplete="new-password" placeholder="Yeni anahtar girin (kayıtlı anahtar gösterilmez)">
+                    <small id="sysAiApiKeyStatus" style="color:#94a3b8; margin-top:6px; display:block;">Anahtar durumu yükleniyor…</small>
+                </div>
+
+                <div class="form-group full-width" style="display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" id="sysClearAiApiKey" style="width:auto;">
+                    <label for="sysClearAiApiKey" style="margin:0; color:#fca5a5;">Kayıtlı mağaza API anahtarını kaldır</label>
+                </div>
+
                 <div class="form-group">
                     <label>Müşteri Mesajları Ses Tonu & Kişilik Üslubu</label>
                     <select id="sysBotTone" class="select" style="width:100%; height:40px; font-size:12px;">
