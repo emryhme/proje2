@@ -16,7 +16,7 @@ export type StoreChatModel = ChatOpenAI | ChatGoogleGenerativeAI;
 export class AIProviderService {
   private static readonly DEFAULT_MODELS: Record<AIProvider, string> = {
     openai: 'gpt-4o-mini',
-    gemini: 'gemini-2.5-flash'
+    gemini: 'gemini-3.6-flash'
   };
 
   public static getStoreConfig(storeId: number): StoreAIConfig {
