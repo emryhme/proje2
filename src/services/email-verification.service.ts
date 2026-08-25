@@ -87,7 +87,7 @@ export class EmailVerificationService {
 
   public static async sendAccountApprovedEmail(input: { email: string; fullName: string; storeName: string }): Promise<void> {
     if (!this.isConfigured()) throw new Error('E-posta servisi yapılandırılmamış.');
-    const loginUrl = 'https://www.iscworks.info/admin/login.html';
+    const loginUrl = 'https://www.iscworks.info/admin/login';
     await axios.post('https://api.resend.com/emails', {
       from: env.emailFrom,
       to: [input.email],
@@ -106,7 +106,7 @@ export class EmailVerificationService {
 
   public static async sendPlanSupportResponseEmail(input: { email: string; fullName: string; storeName: string; requestedPlan: string; adminNote: string; resolved: boolean; requestId: number }): Promise<void> {
     if (!this.isConfigured()) throw new Error('E-posta servisi yapılandırılmamış.');
-    const planUrl = 'https://www.iscworks.info/admin/plan.html';
+    const planUrl = 'https://www.iscworks.info/admin/plan';
     const statusText = input.resolved ? 'yanıtlandı' : 'sonuçlandırıldı';
     await axios.post('https://api.resend.com/emails', {
       from: env.emailFrom,

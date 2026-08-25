@@ -58,10 +58,12 @@ async function run(): Promise<void> {
       'Master Admin console is available only on the private noindex path and is not linked publicly'
     );
 
-    const [dashboardPage, stockPage, instagramMediaPage] = await Promise.all([
-      fetch(`${origin}/admin/index.html`),
-      fetch(`${origin}/admin/stock.html`),
-      fetch(`${origin}/admin/instagram-media.html`)
+    const [dashboardPage, stockPage, instagramMediaPage, legacyDashboard, legacyLegal] = await Promise.all([
+      fetch(`${origin}/admin/dashboard`),
+      fetch(`${origin}/admin/stock`),
+      fetch(`${origin}/admin/instagram-media`),
+      fetch(`${origin}/admin/index.html`, { redirect: 'manual' }),
+      fetch(`${origin}/gizlilik.html`, { redirect: 'manual' })
     ]);
     const dashboardHtml = await dashboardPage.text();
     const stockHtml = await stockPage.text();
@@ -70,6 +72,10 @@ async function run(): Promise<void> {
       dashboardPage.ok
         && stockPage.ok
         && instagramMediaPage.ok
+        && legacyDashboard.status === 301
+        && legacyDashboard.headers.get('location') === '/admin/dashboard'
+        && legacyLegal.status === 301
+        && legacyLegal.headers.get('location') === '/gizlilik'
         && dashboardHtml.includes('app.js?v=20260817-plan-expiry-v2')
         && stockHtml.includes('app.js?v=20260817-plan-expiry-v2')
         && instagramMediaHtml.includes('app.js?v=20260817-plan-expiry-v2')
@@ -79,7 +85,7 @@ async function run(): Promise<void> {
         && stockHtml.includes('id="lowStockKpi"')
         && stockHtml.includes('id="outOfStockKpi"')
         && stockHtml.includes('id="stockAlertModal"'),
-      'Dashboard analytics and editable stock management are served as separate pages'
+      'Clean page URLs work and legacy HTML URLs redirect to their canonical routes'
     );
 
     const [missingPage, missingApi] = await Promise.all([

@@ -191,7 +191,7 @@
     <span id="loginAlertText">Hatalı kullanıcı adı veya şifre!</span>
   </div>
   <div id="verificationHelp" style="display:none;text-align:center;margin:10px 0 16px;font-size:12px">
-    <a id="verificationHelpLink" href="verify-email.html" style="color:var(--primary);font-weight:700;text-decoration:none">
+    <a id="verificationHelpLink" href="verify-email" style="color:var(--primary);font-weight:700;text-decoration:none">
       <i class="fa-solid fa-envelope"></i> Doğrulama kodunu gir veya yeni kod iste
     </a>
   </div>
@@ -227,7 +227,7 @@
   </form>
 
   <div style="text-align: center; margin-top: 20px; font-size: 12px; color: #94a3b8;">
-    Henüz bir mağazanız yok mu? <a href="register.html" style="color: var(--primary); font-weight: 700; text-decoration: none;">Mağazanızı Oluşturun</a>
+    Henüz bir mağazanız yok mu? <a href="register" style="color: var(--primary); font-weight: 700; text-decoration: none;">Mağazanızı Oluşturun</a>
   </div>
   <div class="powered-by">
     🔐 ISCWORKS Çoklu Mağaza Altyapısı
@@ -269,13 +269,13 @@
       if (response.ok && data.success) {
         localStorage.removeItem('barons_admin_token');
         localStorage.setItem('barons_admin_user', JSON.stringify(data.user || { name: username, role: 'OWNER' }));
-        window.location.href = 'index.html';
+        window.location.href = 'dashboard';
       } else {
         const errorMsg = data.error?.message || data.error || 'Hatalı kullanıcı adı veya şifre!';
         alertText.textContent = typeof errorMsg === 'string' ? errorMsg : 'Giriş başarısız.';
         alertBox.style.display = 'flex';
         if (data.code === 'EMAIL_NOT_VERIFIED') {
-          document.getElementById('verificationHelpLink').href = `verify-email.html?email=${encodeURIComponent(username)}`;
+          document.getElementById('verificationHelpLink').href = `verify-email?email=${encodeURIComponent(username)}`;
           verificationHelp.style.display = 'block';
         }
         submitBtn.disabled = false;

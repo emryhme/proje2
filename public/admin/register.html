@@ -295,7 +295,7 @@
       <strong style="display: block; font-size: 14px; margin-bottom: 4px;">E-Posta Adresinizi Doğrulayın</strong>
       <span id="verificationSuccessText">Doğrulama bağlantısını e-posta adresinize gönderdik. Bağlantıya tıkladıktan sonra başvurunuz süper admin onayına sunulacaktır.</span>
     </div>
-    <a href="login.html" class="btn-go-login">
+    <a href="login" class="btn-go-login">
       <i class="fa-solid fa-right-to-bracket"></i> Giriş Sayfasına Git
     </a>
     <button type="button" class="btn-go-login" id="btnResendVerification" style="border:0;cursor:pointer">
@@ -382,7 +382,7 @@
   </form>
 
   <div class="bottom-link" id="bottomLinkSection">
-    Zaten bir mağaza hesabınız var mı? <a href="login.html">Giriş Yapın</a>
+    Zaten bir mağaza hesabınız var mı? <a href="login">Giriş Yapın</a>
   </div>
 
   <div class="powered-by">
@@ -473,7 +473,7 @@
       const data = await response.json();
 
       if (response.ok && data.success) {
-        window.location.href = `verify-email.html?email=${encodeURIComponent(email)}&sent=${data.emailSent === false ? '0' : '1'}`;
+        window.location.href = `verify-email?email=${encodeURIComponent(email)}&sent=${data.emailSent === false ? '0' : '1'}`;
       } else {
         const errorMsg = data.error || 'Kayıt esnasında bir hata oluştu.';
         alertDangerText.textContent = typeof errorMsg === 'string' ? errorMsg : 'Kayıt başarısız.';

@@ -27,9 +27,9 @@ async function apiFetch(url, options = {}) {
     if (response.status === 401) {
       localStorage.removeItem('barons_admin_token');
       localStorage.removeItem('barons_admin_user');
-      if (!window.location.pathname.endsWith('login.html')) {
+      if (!window.location.pathname.endsWith('login')) {
         showToast('🔑 Oturumunuzun süresi doldu. Giriş sayfasına yönlendiriliyorsunuz...', 'warning');
-        setTimeout(() => { window.location.href = 'login.html'; }, 800);
+        setTimeout(() => { window.location.href = 'login'; }, 800);
       }
       throw new Error('UNAUTHORIZED');
     }
@@ -172,13 +172,13 @@ function applyCurrentUserProfile() {
 
 async function checkAuthStatus() {
   const path = window.location.pathname;
-  if (path.endsWith('login.html')) return;
+  if (path.endsWith('login')) return;
   try {
     const response = await fetch('/api/auth/verify', { credentials: 'same-origin' });
     if (!response.ok) throw new Error('UNAUTHORIZED');
   } catch {
     localStorage.removeItem('barons_admin_user');
-    window.location.href = 'login.html';
+    window.location.href = 'login';
   }
 }
 
@@ -199,54 +199,54 @@ async function logoutUser() {
 }
 
 function ensurePlanNavigation() {
-  if (document.querySelector('.nav-item[href="plan.html"]')) return;
-  const apiSettingsLink = document.querySelector('.nav-item[href="api-settings.html"]');
+  if (document.querySelector('.nav-item[href="plan"]')) return;
+  const apiSettingsLink = document.querySelector('.nav-item[href="api-settings"]');
   if (!apiSettingsLink) return;
   const link = document.createElement('a');
-  link.href = 'plan.html';
-  link.className = `nav-item${window.location.pathname.endsWith('/plan.html') ? ' active' : ''}`;
+  link.href = 'plan';
+  link.className = `nav-item${window.location.pathname.endsWith('/plan') ? ' active' : ''}`;
   link.innerHTML = '<i data-lucide="credit-card"></i>Plan Yönetimi';
   apiSettingsLink.before(link);
 }
 
 function ensureDashboardStockNavigation() {
-  const dashboardLink = document.querySelector('.nav-item[href="index.html"]');
+  const dashboardLink = document.querySelector('.nav-item[href="dashboard"]');
   if (!dashboardLink) return;
 
   dashboardLink.innerHTML = '<i data-lucide="layout-dashboard"></i>Dashboard';
-  dashboardLink.classList.toggle('active', window.location.pathname.endsWith('/index.html') || window.location.pathname.endsWith('/admin/'));
+  dashboardLink.classList.toggle('active', window.location.pathname.endsWith('/dashboard') || window.location.pathname.endsWith('/admin/'));
 
-  let stockLink = document.querySelector('.nav-item[href="stock.html"]');
+  let stockLink = document.querySelector('.nav-item[href="stock"]');
   if (!stockLink) {
     stockLink = document.createElement('a');
-    stockLink.href = 'stock.html';
+    stockLink.href = 'stock';
     stockLink.className = 'nav-item';
     stockLink.innerHTML = '<i data-lucide="package-search"></i>Stok Yönetimi';
     dashboardLink.after(stockLink);
   }
-  stockLink.classList.toggle('active', window.location.pathname.endsWith('/stock.html'));
+  stockLink.classList.toggle('active', window.location.pathname.endsWith('/stock'));
 }
 
 function ensureDataSourcesNavigation() {
-  if (document.querySelector('.nav-item[href="data-sources.html"]')) return;
-  const apiSettingsLink = document.querySelector('.nav-item[href="api-settings.html"]');
+  if (document.querySelector('.nav-item[href="data-sources"]')) return;
+  const apiSettingsLink = document.querySelector('.nav-item[href="api-settings"]');
   if (!apiSettingsLink) return;
   const link = document.createElement('a');
-  link.href = 'data-sources.html';
-  link.className = `nav-item${window.location.pathname.endsWith('/data-sources.html') ? ' active' : ''}`;
+  link.href = 'data-sources';
+  link.className = `nav-item${window.location.pathname.endsWith('/data-sources') ? ' active' : ''}`;
   link.innerHTML = '<i data-lucide="database-zap"></i>Veri Kaynakları';
   apiSettingsLink.before(link);
 }
 
 function ensureInstagramMediaNavigation() {
-  if (document.querySelector('.nav-item[href="instagram-media.html"]')) return;
-  const dataSourcesLink = document.querySelector('.nav-item[href="data-sources.html"]');
-  const apiSettingsLink = document.querySelector('.nav-item[href="api-settings.html"]');
+  if (document.querySelector('.nav-item[href="instagram-media"]')) return;
+  const dataSourcesLink = document.querySelector('.nav-item[href="data-sources"]');
+  const apiSettingsLink = document.querySelector('.nav-item[href="api-settings"]');
   const anchor = dataSourcesLink || apiSettingsLink;
   if (!anchor) return;
   const link = document.createElement('a');
-  link.href = 'instagram-media.html';
-  link.className = `nav-item${window.location.pathname.endsWith('/instagram-media.html') ? ' active' : ''}`;
+  link.href = 'instagram-media';
+  link.className = `nav-item${window.location.pathname.endsWith('/instagram-media') ? ' active' : ''}`;
   link.innerHTML = '<i data-lucide="images"></i>Instagram Gönderileri';
   anchor.before(link);
 }
@@ -291,7 +291,7 @@ function renderPlanExpiryBanner(subscription) {
       <i data-lucide="triangle-alert" aria-hidden="true"></i>
       <div><strong>Planınız sona erdi.</strong><span>Kesintiye uğramamak için yenileme yapınız.</span></div>
     </div>
-    <a class="plan-expiry-action" href="plan.html">Planı Yenile</a>
+    <a class="plan-expiry-action" href="plan">Planı Yenile</a>
   `;
   topbar.insertAdjacentElement('afterend', banner);
   if (window.lucide) lucide.createIcons();
@@ -1176,7 +1176,7 @@ function handleNewProductSubmit(e) {
   if (form) form.reset();
 
   setTimeout(() => {
-    window.location.href = 'stock.html';
+    window.location.href = 'stock';
   }, 1000);
 }
 
@@ -3030,7 +3030,7 @@ async function importFromCustomGoogleSheet() {
     showToast(`🎉 Başarılı! Google Sheet tablosundan ${importedProducts.length} adet stok ürünü veritabanınıza içe aktarıldı!`, 'success');
     
     setTimeout(() => {
-      window.location.href = 'stock.html';
+      window.location.href = 'stock';
     }, 1200);
 
   } catch (err) {
@@ -3345,7 +3345,7 @@ async function handleNewProductSubmit(e) {
       if (form) form.reset();
       updateProductCodePreview();
       setTimeout(() => {
-        window.location.href = 'stock.html';
+        window.location.href = 'stock';
       }, 800);
     } else {
       showToast(`❌ Hata: ${data?.error || 'Ürün kaydedilemedi.'}`, 'error');

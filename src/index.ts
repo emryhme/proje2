@@ -98,14 +98,26 @@ import authRouter from './routes/auth.routes';
 app.use(authRouter);
 import integrationRouter from './routes/integration.routes';
 app.use(integrationRouter);
+
+// Keep legacy HTML links working while presenting canonical, extension-free URLs.
+// Index documents map to a meaningful landing route instead of exposing index.html.
+app.get(/\.html$/, (req, res, next) => {
+  const pathname = req.path;
+  let cleanPath = pathname.slice(0, -'.html'.length);
+  if (cleanPath === '/index') cleanPath = '/';
+  if (cleanPath === '/admin/index') cleanPath = '/admin/dashboard';
+  if (cleanPath.endsWith('/index')) cleanPath = cleanPath.slice(0, -'/index'.length) || '/';
+  if (cleanPath === pathname) return next();
+  const queryIndex = req.originalUrl.indexOf('?');
+  const query = queryIndex >= 0 ? req.originalUrl.slice(queryIndex) : '';
+  return res.redirect(301, `${cleanPath}${query}`);
+});
+
 // Static Admin UI Server (Merchant Panel)
-app.use('/admin', express.static(path.resolve(__dirname, '../public/admin')));
-app.get(['/admin', '/admin/'], (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../public/admin/index.html'));
-});
-app.get(['/admin/login', '/admin/login.html'], (req, res) => {
-  res.sendFile(path.resolve(__dirname, '../public/admin/login.html'));
-});
+const adminDirectory = path.resolve(__dirname, '../public/admin');
+app.get(['/admin', '/admin/'], (_req, res) => res.redirect(302, '/admin/dashboard'));
+app.get('/admin/dashboard', (_req, res) => res.sendFile(path.join(adminDirectory, 'index.html')));
+app.use('/admin', express.static(adminDirectory, { extensions: ['html'], redirect: false, dotfiles: 'deny' }));
 
 // Static Master Admin UI Server (Platform Owner Panel).
 // Its public path exists only in the server environment and is never embedded in public pages.
@@ -125,14 +137,9 @@ if (masterAdminBasePath !== '/master-admin') {
   });
 }
 
-app.use(masterAdminBasePath, masterPanelLimiter, hideMasterPanelFromIndexes, express.static(masterAdminDirectory, { index: false, redirect: false, dotfiles: 'deny' }));
-app.get(masterAdminBasePath, (_req, res) => res.redirect(302, `${masterAdminBasePath}/`));
-app.get(`${masterAdminBasePath}/`, (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'index.html')));
-app.get([`${masterAdminBasePath}/login`, `${masterAdminBasePath}/login.html`], (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'login.html')));
-app.get([`${masterAdminBasePath}/merchants`, `${masterAdminBasePath}/merchants.html`], (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'merchants.html')));
-app.get([`${masterAdminBasePath}/merchant`, `${masterAdminBasePath}/merchant.html`], (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'merchant.html')));
-app.get([`${masterAdminBasePath}/applications`, `${masterAdminBasePath}/applications.html`], (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'applications.html')));
-app.get([`${masterAdminBasePath}/plans`, `${masterAdminBasePath}/plans.html`], (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'plans.html')));
+app.get([masterAdminBasePath, `${masterAdminBasePath}/`], masterPanelLimiter, hideMasterPanelFromIndexes, (_req, res) => res.redirect(302, `${masterAdminBasePath}/dashboard`));
+app.get(`${masterAdminBasePath}/dashboard`, masterPanelLimiter, hideMasterPanelFromIndexes, (_req, res) => res.sendFile(path.join(masterAdminDirectory, 'index.html')));
+app.use(masterAdminBasePath, masterPanelLimiter, hideMasterPanelFromIndexes, express.static(masterAdminDirectory, { extensions: ['html'], index: false, redirect: false, dotfiles: 'deny' }));
 
 // ==========================================
 import masterAdminRouter from './routes/master-admin.routes';
@@ -141,7 +148,7 @@ import dataImportRouter from './routes/data-import.routes';
 app.use(masterAdminRouter);
 app.use(planRouter);
 app.use(dataImportRouter);
-app.use('/', express.static(path.resolve(__dirname, '../public')));
+app.use('/', express.static(path.resolve(__dirname, '../public'), { extensions: ['html'], dotfiles: 'deny' }));
 // --- PRODUCTS & STOCKS ---
 app.get('/api/stocks', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), async (req: AuthenticatedRequest, res) => {
   const storeId = req.auth!.storeId;

@@ -267,7 +267,7 @@
           submitBtn.innerHTML = '<i class="fa-solid fa-lock"></i> Platform Konsoluna Giriş Yap';
 
           setTimeout(() => {
-            window.location.href = '/admin/login.html';
+            window.location.href = '/admin/login';
           }, 1500);
           return;
         }
@@ -275,7 +275,7 @@
         // Session token is held only in the secure HttpOnly cookie.
         localStorage.removeItem('barons_admin_token');
         localStorage.setItem('barons_admin_user', JSON.stringify(u));
-        window.location.href = 'index.html';
+        window.location.href = 'dashboard';
       } else {
         const errorMsg = data.error?.message || data.error || 'Hatalı kullanıcı adı veya şifre!';
         alertText.textContent = typeof errorMsg === 'string' ? errorMsg : 'Giriş başarısız.';

@@ -78,14 +78,14 @@ async function apiFetch(url, options = {}) {
     if (response.status === 401) {
       localStorage.removeItem('barons_admin_token');
       localStorage.removeItem('barons_admin_user');
-      window.location.href = 'login.html';
+      window.location.href = 'login';
       throw new Error('UNAUTHORIZED');
     }
 
     if (response.status === 403) {
       showToast('⛔ Master Admin yetkiniz bulunmamaktadır.', 'error');
       setTimeout(() => {
-        window.location.href = '/admin/login.html';
+        window.location.href = '/admin/login';
       }, 1200);
       throw new Error('FORBIDDEN');
     }
@@ -105,14 +105,14 @@ async function apiFetch(url, options = {}) {
 }
 
 async function checkMasterAuth() {
-  if (window.location.pathname.includes('login.html')) {
+  if (window.location.pathname.includes('login')) {
     return;
   }
 
   const rawUser = localStorage.getItem('barons_admin_user');
 
   if (!rawUser) {
-    window.location.href = 'login.html';
+    window.location.href = 'login';
     return;
   }
 
@@ -120,10 +120,10 @@ async function checkMasterAuth() {
     const u = JSON.parse(rawUser);
     if (u.storeId !== 1 || (u.role !== 'OWNER' && u.role !== 'Super Admin')) {
       alert('⛔ Master Admin yetkiniz bulunmamaktadır.');
-      window.location.href = '/admin/login.html';
+      window.location.href = '/admin/login';
     }
   } catch (e) {
-    window.location.href = 'login.html';
+    window.location.href = 'login';
   }
 }
 
@@ -182,11 +182,11 @@ async function logoutMasterAdmin() {
 }
 
 function ensureMasterPlanNavigation() {
-  if (document.querySelector('.sidebar-menu a[href="plans.html"]')) return;
-  const applicationsLink = document.querySelector('.sidebar-menu a[href="applications.html"]');
+  if (document.querySelector('.sidebar-menu a[href="plans"]')) return;
+  const applicationsLink = document.querySelector('.sidebar-menu a[href="applications"]');
   if (!applicationsLink) return;
   const item = document.createElement('li');
-  item.innerHTML = '<a href="plans.html"><i class="fa-solid fa-calendar-check"></i> Plan Süreleri</a>';
+  item.innerHTML = '<a href="plans"><i class="fa-solid fa-calendar-check"></i> Plan Süreleri</a>';
   applicationsLink.closest('li')?.after(item);
 }
 
@@ -333,7 +333,7 @@ async function loadDashboardData() {
               <td>${escapeHtml(a.full_name)}</td>
               <td><span class="badge ${a.status}">${escapeHtml(a.status)}</span></td>
               <td>${escapeHtml(a.created_at)}</td>
-              <td><a href="applications.html" class="btn btn-sm btn-outline">İncele</a></td>
+              <td><a href="applications" class="btn btn-sm btn-outline">İncele</a></td>
             </tr>
           `).join('');
         }
@@ -352,7 +352,7 @@ async function loadDashboardData() {
               <td>${escapeHtml(m.owner_name)}</td>
               <td>${escapeHtml(m.owner_email)}</td>
               <td><span class="badge ${m.store_status}">${escapeHtml(m.store_status)}</span></td>
-              <td><a href="merchant.html?id=${m.store_id}" class="btn btn-sm btn-primary">Detay</a></td>
+              <td><a href="merchant?id=${m.store_id}" class="btn btn-sm btn-primary">Detay</a></td>
             </tr>
           `).join('');
         }
@@ -388,7 +388,7 @@ async function loadMerchantsList() {
           <td><span class="badge ${m.store_status}">${escapeHtml(m.store_status)}</span></td>
           <td>${escapeHtml(m.store_created_at || '-')}</td>
           <td>
-            <a href="merchant.html?id=${m.store_id}" class="btn btn-sm btn-outline"><i class="fa-solid fa-eye"></i> İncele</a>
+            <a href="merchant?id=${m.store_id}" class="btn btn-sm btn-outline"><i class="fa-solid fa-eye"></i> İncele</a>
             ${m.store_status === 'suspended' 
               ? `<button class="btn btn-sm btn-success" onclick="activateStoreAction(${m.store_id})"><i class="fa-solid fa-play"></i> Aktifleştir</button>`
               : `<button class="btn btn-sm btn-danger" onclick="suspendStoreAction(${m.store_id})"><i class="fa-solid fa-ban"></i> Askıya Al</button>`
@@ -409,7 +409,7 @@ async function loadMerchantDetailData() {
   const storeId = urlParams.get('id');
   if (!storeId) {
     alert('Geçersiz Mağaza ID!');
-    window.location.href = 'merchants.html';
+    window.location.href = 'merchants';
     return;
   }
 
@@ -546,7 +546,7 @@ async function approveAppAction(id) {
   try {
     const data = await apiFetch(`/api/master-admin/applications/${id}/approve`, { method: 'POST' });
     showToast(data.message || 'Başvuru onaylandı.', 'success');
-    if (window.location.pathname.includes('applications.html')) loadMasterApplications();
+    if (window.location.pathname.includes('applications')) loadMasterApplications();
     else loadDashboardData();
   } catch (e) {
     showToast(e.message || 'Başvuru onaylanamadı. Lütfen tekrar deneyin.', 'error');
@@ -558,7 +558,7 @@ async function rejectAppAction(id) {
   try {
     const data = await apiFetch(`/api/master-admin/applications/${id}/reject`, { method: 'POST' });
     showToast(data.message || 'Başvuru reddedildi.', 'info');
-    if (window.location.pathname.includes('applications.html')) loadMasterApplications();
+    if (window.location.pathname.includes('applications')) loadMasterApplications();
     else loadDashboardData();
   } catch (e) {
     showToast(e.message || 'Başvuru reddedilemedi. Lütfen tekrar deneyin.', 'error');
@@ -570,8 +570,8 @@ async function suspendStoreAction(storeId) {
   try {
     const data = await apiFetch(`/api/master-admin/stores/${storeId}/suspend`, { method: 'POST' });
     showToast(data.message || 'Mağaza askıya alındı.', 'warning');
-    if (window.location.pathname.includes('merchants.html')) loadMerchantsList();
-    if (window.location.pathname.includes('merchant.html')) loadMerchantDetailData();
+    if (window.location.pathname.includes('merchants')) loadMerchantsList();
+    if (window.location.pathname.includes('merchant')) loadMerchantDetailData();
   } catch (e) {
     showToast(e.message || 'Mağaza askıya alınamadı. Lütfen tekrar deneyin.', 'error');
   }
@@ -582,8 +582,8 @@ async function activateStoreAction(storeId) {
   try {
     const data = await apiFetch(`/api/master-admin/stores/${storeId}/activate`, { method: 'POST' });
     showToast(data.message || 'Mağaza aktifleştirildi!', 'success');
-    if (window.location.pathname.includes('merchants.html')) loadMerchantsList();
-    if (window.location.pathname.includes('merchant.html')) loadMerchantDetailData();
+    if (window.location.pathname.includes('merchants')) loadMerchantsList();
+    if (window.location.pathname.includes('merchant')) loadMerchantDetailData();
   } catch (e) {
     showToast(e.message || 'Mağaza aktifleştirilemedi. Lütfen tekrar deneyin.', 'error');
   }
@@ -604,7 +604,7 @@ async function promptChangePlan(storeId) {
       body: JSON.stringify({ plan: newPlan })
     });
     showToast(data.message || 'Paket güncellendi.', 'success');
-    if (window.location.pathname.includes('merchant.html')) loadMerchantDetailData();
+    if (window.location.pathname.includes('merchant')) loadMerchantDetailData();
   } catch (e) {
     showToast(e.message || 'Paket güncellenemedi. Lütfen tekrar deneyin.', 'error');
   }
@@ -621,17 +621,17 @@ document.addEventListener('DOMContentLoaded', () => {
   renderMasterUser();
 
   const path = window.location.pathname;
-  if (path.endsWith('/index.html') || path.endsWith('/')) {
+  if (path.endsWith('/dashboard') || path.endsWith('/')) {
     loadDashboardData();
-  } else if (path.includes('merchants.html')) {
+  } else if (path.includes('merchants')) {
     loadMerchantsList();
     document.getElementById('searchMerchantInput')?.addEventListener('input', () => loadMerchantsList());
     document.getElementById('filterStatusSelect')?.addEventListener('change', () => loadMerchantsList());
-  } else if (path.includes('merchant.html')) {
+  } else if (path.includes('merchant')) {
     loadMerchantDetailData();
-  } else if (path.includes('applications.html')) {
+  } else if (path.includes('applications')) {
     loadMasterApplications();
-  } else if (path.includes('plans.html')) {
+  } else if (path.includes('plans')) {
     loadMasterPlans();
   }
 });
