@@ -1,4 +1,5 @@
 import { ChatOpenAI } from '@langchain/openai';
+import { ChatGoogleGenerativeAI } from '@langchain/google-genai';
 import { db } from '../database/db';
 import { decryptSettingSecret } from '../utils/secret.util';
 
@@ -9,6 +10,8 @@ export interface StoreAIConfig {
   apiKey: string;
   model: string;
 }
+
+export type StoreChatModel = ChatOpenAI | ChatGoogleGenerativeAI;
 
 export class AIProviderService {
   private static readonly DEFAULT_MODELS: Record<AIProvider, string> = {
@@ -32,18 +35,23 @@ export class AIProviderService {
     return Boolean(this.getStoreConfig(storeId).apiKey);
   }
 
-  public static createChatModel(storeId: number, options: { temperature?: number; model?: string } = {}): ChatOpenAI {
+  public static createChatModel(storeId: number, options: { temperature?: number; model?: string } = {}): StoreChatModel {
     const config = this.getStoreConfig(storeId);
     if (!config.apiKey) {
       throw new Error(`${config.provider === 'gemini' ? 'Gemini' : 'OpenAI'} API anahtarı bu mağaza için tanımlanmamış.`);
     }
+    if (config.provider === 'gemini') {
+      return new ChatGoogleGenerativeAI({
+        apiKey: config.apiKey,
+        model: options.model || config.model,
+        temperature: options.temperature ?? 0.2,
+        maxOutputTokens: 2048
+      });
+    }
     return new ChatOpenAI({
       openAIApiKey: config.apiKey,
       modelName: options.model || config.model,
-      temperature: options.temperature ?? 0.2,
-      ...(config.provider === 'gemini'
-        ? { configuration: { baseURL: 'https://generativelanguage.googleapis.com/v1beta/openai/' } }
-        : {})
+      temperature: options.temperature ?? 0.2
     });
   }
 }

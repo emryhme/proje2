@@ -1,4 +1,3 @@
-import { ChatOpenAI } from '@langchain/openai';
 import { DynamicTool } from '@langchain/core/tools';
 import { SystemMessage, HumanMessage, ToolMessage, BaseMessage } from '@langchain/core/messages';
 import { AIProviderService } from './ai-provider.service';

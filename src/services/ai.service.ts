@@ -1,7 +1,6 @@
-import { ChatOpenAI } from '@langchain/openai';
 import { DynamicTool } from '@langchain/core/tools';
 import { SystemMessage, HumanMessage, AIMessage, ToolMessage, BaseMessage } from '@langchain/core/messages';
-import { AIProviderService } from './ai-provider.service';
+import { AIProviderService, StoreChatModel } from './ai-provider.service';
 import { StockService } from './stock.service';
 import { OrderService } from './order.service';
 import { TelegramService } from './telegram.service';
@@ -932,7 +931,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     return { stokTool, sepeteEkleTool, sepetGoruntuleTool, sepetOnaylaTool, kayitTool, mesajTool, guncelleTool };
   }
 
-  private static createBilgilendirmeSubAgent(model: ChatOpenAI, mesajTool: DynamicTool) {
+  private static createBilgilendirmeSubAgent(model: StoreChatModel, mesajTool: DynamicTool) {
     return new DynamicTool({
       name: 'BILGILENDIRME',
       description: 'Sipariş oluşturulduğunda Telegram bildirimi gönderir.',
@@ -942,7 +941,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     });
   }
 
-  private static createSiparisSubAgent(model: ChatOpenAI, stokTool: DynamicTool, sepeteEkleTool: DynamicTool, sepetGoruntuleTool: DynamicTool, sepetOnaylaTool: DynamicTool, kayitTool: DynamicTool, bilgilendirmeTool: DynamicTool) {
+  private static createSiparisSubAgent(model: StoreChatModel, stokTool: DynamicTool, sepeteEkleTool: DynamicTool, sepetGoruntuleTool: DynamicTool, sepetOnaylaTool: DynamicTool, kayitTool: DynamicTool, bilgilendirmeTool: DynamicTool) {
     return new DynamicTool({
       name: 'SIPARIS',
       description: 'Sipariş akışını yürütür. action yalnızca stok, sepete_ekle, sepet_goruntule, sepet_onayla veya kayit olabilir. sepete_ekle için productCode, size ve quantity zorunludur. sepet_onayla yalnız müşteri açıkça sepeti onayladığında, kayit yalnız onay sonrası tam müşteri bilgileri varken kullanılır.',
@@ -980,7 +979,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     });
   }
 
-  private static createStokManSubAgent(model: ChatOpenAI, guncelleTool: DynamicTool) {
+  private static createStokManSubAgent(model: StoreChatModel, guncelleTool: DynamicTool) {
     return new DynamicTool({
       name: 'STOK_MAN',
       description: 'Stok miktarını eksiltir.',
