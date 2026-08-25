@@ -2476,6 +2476,16 @@ async function saveAiConnectionSettings() {
   const provider = document.getElementById('sysAiProvider')?.value || 'openai';
   const aiApiKey = document.getElementById('sysAiApiKey')?.value?.trim() || '';
   const clearAiApiKey = Boolean(document.getElementById('sysClearAiApiKey')?.checked);
+  const looksLikeOpenAIKey = /^sk-[A-Za-z0-9_-]+$/.test(aiApiKey);
+  const looksLikeGeminiKey = /^(?:AIza[A-Za-z0-9_-]+|AQ\.[A-Za-z0-9._-]+)$/.test(aiApiKey);
+  if (aiApiKey && provider === 'openai' && looksLikeGeminiKey) {
+    showToast('❌ Gemini anahtarı OpenAI sağlayıcısına kaydedilemez.', 'error');
+    return;
+  }
+  if (aiApiKey && provider === 'gemini' && looksLikeOpenAIKey) {
+    showToast('❌ OpenAI anahtarı Gemini sağlayıcısına kaydedilemez.', 'error');
+    return;
+  }
   if (loadedAiProvider && provider !== loadedAiProvider && !aiApiKey && !clearAiApiKey) {
     showToast(`❌ ${provider === 'gemini' ? 'Gemini' : 'OpenAI'} için yeni API anahtarını girin.`, 'error');
     return;

@@ -580,6 +580,15 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     const requestedProvider = updates.find(update => update.key === 'ai_provider')?.value;
     const currentProviderRow = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_provider'").get(storeId) as { value?: string } | undefined;
     const currentProvider = currentProviderRow?.value === 'gemini' ? 'gemini' : 'openai';
+    const effectiveProvider = requestedProvider === 'gemini' ? 'gemini' : requestedProvider === 'openai' ? 'openai' : currentProvider;
+    const looksLikeOpenAIKey = /^sk-[A-Za-z0-9_-]+$/.test(cleanAiApiKey);
+    const looksLikeGeminiKey = /^(?:AIza[A-Za-z0-9_-]+|AQ\.[A-Za-z0-9._-]+)$/.test(cleanAiApiKey);
+    if (cleanAiApiKey && effectiveProvider === 'openai' && looksLikeGeminiKey) {
+      return res.status(400).json({ success: false, error: 'Bu anahtar Google Gemini anahtarına benziyor. OpenAI seçiliyken OpenAI API anahtarı giriniz.' });
+    }
+    if (cleanAiApiKey && effectiveProvider === 'gemini' && looksLikeOpenAIKey) {
+      return res.status(400).json({ success: false, error: 'Bu anahtar OpenAI anahtarına benziyor. Gemini seçiliyken Google Gemini API anahtarı giriniz.' });
+    }
     if (requestedProvider && requestedProvider !== currentProvider && !cleanAiApiKey && clearAiApiKey !== true) {
       return res.status(400).json({ success: false, error: 'Sağlayıcı değişikliği için yeni sağlayıcının API anahtarı zorunludur.' });
     }
