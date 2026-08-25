@@ -15,7 +15,7 @@ import { extractProductCode } from './utils/regex.util';
 import { db, hashPassword, initDatabase, needsPasswordRehash, performDataMaintenance, verifyPassword } from './database/db';
 import { AuthMiddleware, AuthenticatedRequest } from './middleware/auth.middleware';
 import { createRateLimiter, csrfProtection, securityHeaders } from './middleware/security.middleware';
-import { encryptSettingSecret } from './utils/secret.util';
+import { decryptSettingSecret, encryptSettingSecret } from './utils/secret.util';
 import { AIProviderService } from './services/ai-provider.service';
 
 // Initialize schema, migrations, and seed data once before serving requests.
@@ -515,7 +515,12 @@ app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole
       }
     }
     settingsObj.ai_provider = settingsObj.ai_provider === 'gemini' ? 'gemini' : 'openai';
-    settingsObj.ai_api_key_configured = AIProviderService.hasStoreApiKey(storeId) ? '1' : '0';
+    const secretRows = db.prepare("SELECT key, value FROM settings WHERE store_id = ? AND key IN ('ai_api_key', 'openai_api_key', 'gemini_api_key')").all(storeId) as Array<{ key: string; value: string }>;
+    const secrets = Object.fromEntries(secretRows.map(row => [row.key, decryptSettingSecret(String(row.value || '')).trim()]));
+    const legacyProvider = settingsObj.ai_provider === 'gemini' ? 'gemini' : 'openai';
+    settingsObj.openai_api_key_configured = secrets.openai_api_key || (legacyProvider === 'openai' && secrets.ai_api_key) ? '1' : '0';
+    settingsObj.gemini_api_key_configured = secrets.gemini_api_key || (legacyProvider === 'gemini' && secrets.ai_api_key) ? '1' : '0';
+    settingsObj.ai_api_key_configured = settingsObj[`${settingsObj.ai_provider}_api_key_configured`];
     res.json({ success: true, settings: settingsObj, settingsList: rows });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message, settings: {} });
@@ -589,13 +594,21 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     if (cleanAiApiKey && effectiveProvider === 'gemini' && looksLikeOpenAIKey) {
       return res.status(400).json({ success: false, error: 'Bu anahtar OpenAI anahtarına benziyor. Gemini seçiliyken Google Gemini API anahtarı giriniz.' });
     }
-    if (requestedProvider && requestedProvider !== currentProvider && !cleanAiApiKey && clearAiApiKey !== true) {
-      return res.status(400).json({ success: false, error: 'Sağlayıcı değişikliği için yeni sağlayıcının API anahtarı zorunludur.' });
+    const providerSecretKey = `${effectiveProvider}_api_key`;
+    const savedProviderSecret = db.prepare('SELECT value FROM settings WHERE store_id = ? AND key = ?').get(storeId, providerSecretKey) as { value?: string } | undefined;
+    const legacySecret = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_api_key'").get(storeId) as { value?: string } | undefined;
+    const hasSavedProviderKey = Boolean(decryptSettingSecret(String(savedProviderSecret?.value || '')).trim())
+      || (effectiveProvider === currentProvider && Boolean(decryptSettingSecret(String(legacySecret?.value || '')).trim()));
+    if (requestedProvider && requestedProvider !== currentProvider && !cleanAiApiKey && !hasSavedProviderKey) {
+      return res.status(400).json({ success: false, error: 'Bu sağlayıcı için önce API anahtarı kaydedilmelidir.' });
     }
     db.transaction(() => {
       updates.forEach(update => saveSetting.run(storeId, update.key, update.value));
-      if (cleanAiApiKey) saveSetting.run(storeId, 'ai_api_key', encryptSettingSecret(cleanAiApiKey));
-      if (clearAiApiKey === true) db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'ai_api_key'").run(storeId);
+      if (cleanAiApiKey) saveSetting.run(storeId, providerSecretKey, encryptSettingSecret(cleanAiApiKey));
+      if (clearAiApiKey === true) db.prepare('DELETE FROM settings WHERE store_id = ? AND key = ?').run(storeId, providerSecretKey);
+      if (legacySecret?.value && currentProvider === effectiveProvider && !savedProviderSecret?.value && !cleanAiApiKey && clearAiApiKey !== true) {
+        saveSetting.run(storeId, providerSecretKey, legacySecret.value);
+      }
     })();
 
     AuthMiddleware.logAudit(storeId, req.auth!.userId, 'UPDATE_SETTINGS', 'settings', 'all');

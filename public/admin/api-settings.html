@@ -155,16 +155,16 @@
 
             <div class="form-grid">
                 <div class="form-group">
-                    <label>Yapay Zekâ Sağlayıcısı</label>
+                    <label>Aktif Yapay Zekâ Sağlayıcısını Seç</label>
                     <select id="sysAiProvider" class="select" style="width:100%; height:40px; font-size:12px;">
                         <option value="openai">OpenAI</option>
                         <option value="gemini">Google Gemini</option>
                     </select>
-                    <small style="color:#94a3b8; margin-top:6px; display:block;">Bu seçim yalnızca bu mağazanın müşteri asistanı, Copilot ve ürün oluşturucusu için geçerlidir.</small>
+                    <small style="color:#94a3b8; margin-top:6px; display:block;">İki anahtarı bir kez kaydettikten sonra tekrar yazmadan sağlayıcılar arasında geçiş yapabilirsiniz.</small>
                 </div>
 
                 <div class="form-group">
-                    <label>Mağazaya Özel API Anahtarı</label>
+                    <label id="sysAiApiKeyLabel">Seçili Sağlayıcının API Anahtarı</label>
                     <input type="password" id="sysAiApiKey" autocomplete="new-password" placeholder="Yeni anahtar girin (kayıtlı anahtar gösterilmez)">
                     <small id="sysAiApiKeyStatus" style="color:#94a3b8; margin-top:6px; display:block;">Anahtar durumu yükleniyor…</small>
                     <small style="color:#64748b; margin-top:4px; display:block;">Güvenlik nedeniyle kaydedilmiş anahtar bu alana geri yazılmaz. Alanın boş görünmesi anahtarın silindiği anlamına gelmez.</small>
@@ -172,7 +172,7 @@
 
                 <div class="form-group full-width" style="display:flex; align-items:center; gap:8px;">
                     <input type="checkbox" id="sysClearAiApiKey" style="width:auto;">
-                    <label for="sysClearAiApiKey" style="margin:0; color:#fca5a5;">Kayıtlı mağaza API anahtarını kaldır</label>
+                    <label for="sysClearAiApiKey" style="margin:0; color:#fca5a5;">Seçili sağlayıcının kayıtlı API anahtarını kaldır</label>
                 </div>
             </div>
         </div>

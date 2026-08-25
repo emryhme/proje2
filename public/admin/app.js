@@ -2413,21 +2413,31 @@ function closeSystemSettingsModal() {
 }
 
 let loadedAiProvider = null;
+let configuredAiProviders = { openai: false, gemini: false };
 
 function handleAiProviderChange() {
   const providerInput = document.getElementById('sysAiProvider');
   const apiKeyInput = document.getElementById('sysAiApiKey');
   const clearApiKeyInput = document.getElementById('sysClearAiApiKey');
   const apiKeyStatus = document.getElementById('sysAiApiKeyStatus');
+  const apiKeyLabel = document.getElementById('sysAiApiKeyLabel');
   if (!providerInput || !apiKeyInput) return;
+  const provider = providerInput.value === 'gemini' ? 'gemini' : 'openai';
+  const configured = configuredAiProviders[provider];
   apiKeyInput.value = '';
-  if (clearApiKeyInput) clearApiKeyInput.checked = false;
-  if (loadedAiProvider && providerInput.value !== loadedAiProvider) {
-    apiKeyInput.placeholder = `${providerInput.value === 'gemini' ? 'Gemini' : 'OpenAI'} API anahtarını girin`;
-    if (apiKeyStatus) {
-      apiKeyStatus.textContent = '⚠ Sağlayıcı değiştirildi. Yeni sağlayıcının API anahtarını girip kaydedin; mevcut kayıt henüz değiştirilmedi.';
-      apiKeyStatus.style.color = '#fbbf24';
-    }
+  apiKeyInput.placeholder = configured
+    ? '••••••••••••••••  Kayıtlı — yalnız değiştirmek için yeni anahtar girin'
+    : `${provider === 'gemini' ? 'Gemini' : 'OpenAI'} API anahtarını girin`;
+  if (apiKeyLabel) apiKeyLabel.textContent = `${provider === 'gemini' ? 'Google Gemini' : 'OpenAI'} API Anahtarı`;
+  if (clearApiKeyInput) {
+    clearApiKeyInput.checked = false;
+    clearApiKeyInput.disabled = !configured;
+  }
+  if (apiKeyStatus) {
+    apiKeyStatus.textContent = configured
+      ? `✓ ${provider === 'gemini' ? 'Gemini' : 'OpenAI'} anahtarı kayıtlı. Anahtarı tekrar yazmadan bu sağlayıcıyı seçebilirsiniz.`
+      : `⚠ ${provider === 'gemini' ? 'Gemini' : 'OpenAI'} anahtarı henüz kayıtlı değil.`;
+    apiKeyStatus.style.color = configured ? '#34d399' : '#fbbf24';
   }
 }
 
@@ -2440,29 +2450,17 @@ async function loadSystemSettingsIntoModal() {
       if (document.getElementById('sysBotSystemPrompt')) document.getElementById('sysBotSystemPrompt').value = s.bot_system_prompt || '';
       const providerInput = document.getElementById('sysAiProvider');
       loadedAiProvider = s.ai_provider || 'openai';
+      configuredAiProviders = {
+        openai: s.openai_api_key_configured === '1',
+        gemini: s.gemini_api_key_configured === '1'
+      };
       if (providerInput) {
         providerInput.value = loadedAiProvider;
         providerInput.onchange = handleAiProviderChange;
       }
       const apiKeyInput = document.getElementById('sysAiApiKey');
       const clearApiKeyInput = document.getElementById('sysClearAiApiKey');
-      const configured = s.ai_api_key_configured === '1';
-      if (apiKeyInput) {
-        apiKeyInput.value = '';
-        apiKeyInput.placeholder = configured
-          ? '••••••••••••••••  Kayıtlı — değiştirmek için yeni anahtar girin'
-          : 'Henüz anahtar yok — yeni API anahtarını girin';
-      }
-      if (clearApiKeyInput) {
-        clearApiKeyInput.checked = false;
-        clearApiKeyInput.disabled = !configured;
-      }
-      const apiKeyStatus = document.getElementById('sysAiApiKeyStatus');
-      if (apiKeyStatus) {
-        apiKeyStatus.textContent = configured ? '✓ API anahtarı kayıtlı ve şifreli olarak korunuyor.' : '⚠ Bu mağaza için API anahtarı henüz tanımlanmamış.';
-        apiKeyStatus.style.color = configured ? '#34d399' : '#fbbf24';
-        apiKeyStatus.style.fontWeight = '700';
-      }
+      handleAiProviderChange();
     }
   } catch (e) {}
 }
@@ -2486,11 +2484,11 @@ async function saveAiConnectionSettings() {
     showToast('❌ OpenAI anahtarı Gemini sağlayıcısına kaydedilemez.', 'error');
     return;
   }
-  if (loadedAiProvider && provider !== loadedAiProvider && !aiApiKey && !clearAiApiKey) {
+  if (loadedAiProvider && provider !== loadedAiProvider && !aiApiKey && !configuredAiProviders[provider]) {
     showToast(`❌ ${provider === 'gemini' ? 'Gemini' : 'OpenAI'} için yeni API anahtarını girin.`, 'error');
     return;
   }
-  if (!aiApiKey && !clearAiApiKey && document.getElementById('sysAiApiKeyStatus')?.textContent?.includes('henüz')) {
+  if (!aiApiKey && !clearAiApiKey && !configuredAiProviders[provider]) {
     showToast('❌ Lütfen seçtiğiniz sağlayıcıya ait API anahtarını girin.', 'error');
     return;
   }

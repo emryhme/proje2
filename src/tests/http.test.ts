@@ -169,7 +169,7 @@ async function run(): Promise<void> {
     });
     const aiSettingsResponse = await fetch(`${origin}/api/settings`, { headers: { Cookie: cookie } });
     const aiSettingsBody = await aiSettingsResponse.json() as any;
-    const storedAiSecret = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_api_key'").get(storeId) as any)?.value || '';
+    const storedAiSecret = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'gemini_api_key'").get(storeId) as any)?.value || '';
     assert(
       savedAiProvider.ok
         && aiSettingsBody.settings.ai_provider === 'gemini'
@@ -185,7 +185,7 @@ async function run(): Promise<void> {
       body: JSON.stringify({ settings: { ai_provider: 'openai' } })
     });
     const providerAfterRejectedChange = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_provider'").get(storeId) as any)?.value;
-    const secretAfterRejectedChange = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_api_key'").get(storeId) as any)?.value;
+    const secretAfterRejectedChange = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'gemini_api_key'").get(storeId) as any)?.value;
     assert(
       rejectedProviderOnlyChange.status === 400
         && providerAfterRejectedChange === 'gemini'
@@ -198,12 +198,36 @@ async function run(): Promise<void> {
       body: JSON.stringify({ settings: { ai_provider: 'openai' }, aiApiKey: 'AIza-wrong-provider-key-123456789012345' })
     });
     const providerAfterMismatchedKey = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_provider'").get(storeId) as any)?.value;
-    const secretAfterMismatchedKey = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_api_key'").get(storeId) as any)?.value;
+    const secretAfterMismatchedKey = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'gemini_api_key'").get(storeId) as any)?.value;
     assert(
       rejectedMismatchedKey.status === 400
         && providerAfterMismatchedKey === 'gemini'
         && secretAfterMismatchedKey === storedAiSecret,
       'Provider and API key type mismatch is rejected without changing the saved credential'
+    );
+
+    const savedOpenAiKey = await fetch(`${origin}/api/settings`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { ai_provider: 'openai' }, aiApiKey: 'sk-http-openai-saved-12345678901234567890' })
+    });
+    const switchedBackToGemini = await fetch(`${origin}/api/settings`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { ai_provider: 'gemini' } })
+    });
+    const switchedAgainToOpenAi = await fetch(`${origin}/api/settings`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { ai_provider: 'openai' } })
+    });
+    const dualProviderSettings = await fetch(`${origin}/api/settings`, { headers: { Cookie: cookie } });
+    const dualProviderBody = await dualProviderSettings.json() as any;
+    assert(
+      savedOpenAiKey.ok
+        && switchedBackToGemini.ok
+        && switchedAgainToOpenAi.ok
+        && dualProviderBody.settings.ai_provider === 'openai'
+        && dualProviderBody.settings.openai_api_key_configured === '1'
+        && dualProviderBody.settings.gemini_api_key_configured === '1',
+      'Saved OpenAI and Gemini credentials can be selected repeatedly without entering either key again'
     );
 
     const autoVipSetting = await fetch(`${origin}/api/settings`, {

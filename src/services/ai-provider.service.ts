@@ -23,11 +23,12 @@ export class AIProviderService {
     if (!Number.isInteger(storeId) || storeId <= 0) throw new Error('Geçerli mağaza kimliği zorunludur.');
     const rows = db.prepare(`
       SELECT key, value FROM settings
-      WHERE store_id = ? AND key IN ('ai_provider', 'ai_api_key')
+      WHERE store_id = ? AND key IN ('ai_provider', 'ai_api_key', 'openai_api_key', 'gemini_api_key')
     `).all(storeId) as Array<{ key: string; value: string }>;
     const settings = Object.fromEntries(rows.map(row => [row.key, String(row.value || '')]));
     const provider: AIProvider = settings.ai_provider === 'gemini' ? 'gemini' : 'openai';
-    const apiKey = decryptSettingSecret(settings.ai_api_key || '').trim();
+    const providerKey = provider === 'gemini' ? settings.gemini_api_key : settings.openai_api_key;
+    const apiKey = decryptSettingSecret(providerKey || settings.ai_api_key || '').trim();
     return { provider, apiKey, model: this.DEFAULT_MODELS[provider] };
   }
 
