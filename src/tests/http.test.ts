@@ -174,6 +174,19 @@ async function run(): Promise<void> {
       'Store AI provider and encrypted API key can be configured without exposing the secret'
     );
 
+    const rejectedProviderOnlyChange = await fetch(`${origin}/api/settings`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { ai_provider: 'openai' } })
+    });
+    const providerAfterRejectedChange = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_provider'").get(storeId) as any)?.value;
+    const secretAfterRejectedChange = (db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_api_key'").get(storeId) as any)?.value;
+    assert(
+      rejectedProviderOnlyChange.status === 400
+        && providerAfterRejectedChange === 'gemini'
+        && secretAfterRejectedChange === storedAiSecret,
+      'Changing AI provider without its new key is rejected atomically and preserves the saved configuration'
+    );
+
     const autoVipSetting = await fetch(`${origin}/api/settings`, {
       method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'auto_vip_reward_enabled', value: '1' })
     });

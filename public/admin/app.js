@@ -2412,6 +2412,25 @@ function closeSystemSettingsModal() {
   if (modal) modal.style.display = 'none';
 }
 
+let loadedAiProvider = null;
+
+function handleAiProviderChange() {
+  const providerInput = document.getElementById('sysAiProvider');
+  const apiKeyInput = document.getElementById('sysAiApiKey');
+  const clearApiKeyInput = document.getElementById('sysClearAiApiKey');
+  const apiKeyStatus = document.getElementById('sysAiApiKeyStatus');
+  if (!providerInput || !apiKeyInput) return;
+  apiKeyInput.value = '';
+  if (clearApiKeyInput) clearApiKeyInput.checked = false;
+  if (loadedAiProvider && providerInput.value !== loadedAiProvider) {
+    apiKeyInput.placeholder = `${providerInput.value === 'gemini' ? 'Gemini' : 'OpenAI'} API anahtarını girin`;
+    if (apiKeyStatus) {
+      apiKeyStatus.textContent = '⚠ Sağlayıcı değiştirildi. Yeni sağlayıcının API anahtarını girip kaydedin; mevcut kayıt henüz değiştirilmedi.';
+      apiKeyStatus.style.color = '#fbbf24';
+    }
+  }
+}
+
 async function loadSystemSettingsIntoModal() {
   try {
     const data = await apiFetch(`${API_BASE}/api/settings`);
@@ -2419,7 +2438,12 @@ async function loadSystemSettingsIntoModal() {
       const s = data.settings;
       if (document.getElementById('sysBotTone')) document.getElementById('sysBotTone').value = s.bot_tone || 'luxury';
       if (document.getElementById('sysBotSystemPrompt')) document.getElementById('sysBotSystemPrompt').value = s.bot_system_prompt || '';
-      if (document.getElementById('sysAiProvider')) document.getElementById('sysAiProvider').value = s.ai_provider || 'openai';
+      const providerInput = document.getElementById('sysAiProvider');
+      loadedAiProvider = s.ai_provider || 'openai';
+      if (providerInput) {
+        providerInput.value = loadedAiProvider;
+        providerInput.onchange = handleAiProviderChange;
+      }
       const apiKeyInput = document.getElementById('sysAiApiKey');
       const clearApiKeyInput = document.getElementById('sysClearAiApiKey');
       const configured = s.ai_api_key_configured === '1';
@@ -2452,6 +2476,10 @@ async function saveAiConnectionSettings() {
   const provider = document.getElementById('sysAiProvider')?.value || 'openai';
   const aiApiKey = document.getElementById('sysAiApiKey')?.value?.trim() || '';
   const clearAiApiKey = Boolean(document.getElementById('sysClearAiApiKey')?.checked);
+  if (loadedAiProvider && provider !== loadedAiProvider && !aiApiKey && !clearAiApiKey) {
+    showToast(`❌ ${provider === 'gemini' ? 'Gemini' : 'OpenAI'} için yeni API anahtarını girin.`, 'error');
+    return;
+  }
   if (!aiApiKey && !clearAiApiKey && document.getElementById('sysAiApiKeyStatus')?.textContent?.includes('henüz')) {
     showToast('❌ Lütfen seçtiğiniz sağlayıcıya ait API anahtarını girin.', 'error');
     return;

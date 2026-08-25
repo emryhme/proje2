@@ -570,6 +570,12 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     if (cleanAiApiKey && (cleanAiApiKey.length < 20 || cleanAiApiKey.length > 512)) {
       return res.status(400).json({ success: false, error: 'API anahtarı geçerli uzunlukta değil.' });
     }
+    const requestedProvider = updates.find(update => update.key === 'ai_provider')?.value;
+    const currentProviderRow = db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'ai_provider'").get(storeId) as { value?: string } | undefined;
+    const currentProvider = currentProviderRow?.value === 'gemini' ? 'gemini' : 'openai';
+    if (requestedProvider && requestedProvider !== currentProvider && !cleanAiApiKey && clearAiApiKey !== true) {
+      return res.status(400).json({ success: false, error: 'Sağlayıcı değişikliği için yeni sağlayıcının API anahtarı zorunludur.' });
+    }
     db.transaction(() => {
       updates.forEach(update => saveSetting.run(storeId, update.key, update.value));
       if (cleanAiApiKey) saveSetting.run(storeId, 'ai_api_key', encryptSettingSecret(cleanAiApiKey));
