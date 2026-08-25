@@ -1006,9 +1006,13 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
   }> {
     this.validateStoreId(storeId);
     const aiConfig = AIProviderService.getStoreConfig(storeId);
+    const appendModelLabel = (reply: string) => {
+      const providerLabel = aiConfig.provider === 'gemini' ? 'Gemini' : 'OpenAI';
+      return `${reply}\n\n— ${providerLabel} · ${aiConfig.model}`;
+    };
     if (!aiConfig.apiKey) {
       return {
-        reply: `Merhaba! Mağaza ayarlarından ${aiConfig.provider === 'gemini' ? 'Gemini' : 'OpenAI'} API anahtarını tanımlayınız.`,
+        reply: appendModelLabel(`Merhaba! Mağaza ayarlarından ${aiConfig.provider === 'gemini' ? 'Gemini' : 'OpenAI'} API anahtarını tanımlayınız.`),
         tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
         toolTraces: [],
         cart: []
@@ -1041,7 +1045,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         ctx.history.push(new HumanMessage(userMessage), new AIMessage(deterministicStockReply));
         if (ctx.history.length > 16) ctx.history.splice(0, ctx.history.length - 16);
         return {
-          reply: deterministicStockReply,
+          reply: appendModelLabel(deterministicStockReply),
           tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
           toolTraces: [],
           cart: ctx.cart
@@ -1053,7 +1057,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         ctx.history.push(new HumanMessage(userMessage), new AIMessage(deterministicPriceReply));
         if (ctx.history.length > 16) ctx.history.splice(0, ctx.history.length - 16);
         return {
-          reply: deterministicPriceReply,
+          reply: appendModelLabel(deterministicPriceReply),
           tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
           toolTraces: [],
           cart: ctx.cart
@@ -1067,7 +1071,7 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
           ctx.history.splice(0, ctx.history.length - 16);
         }
         return {
-          reply: deterministicOrderReply,
+          reply: appendModelLabel(deterministicOrderReply),
           tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
           toolTraces: [],
           cart: ctx.cart
@@ -1235,7 +1239,7 @@ ${campaignsText}
       const costUsd = (promptTokens * 0.0000025) + (completionTokens * 0.00001);
 
       return {
-        reply: finalOutput,
+        reply: appendModelLabel(finalOutput),
         tokens: { promptTokens, completionTokens, totalTokens, costUsd },
         toolTraces,
         cart: ctx.cart
@@ -1244,7 +1248,7 @@ ${campaignsText}
     } catch (error: any) {
       console.error('[AIService] ❌ İşlem Hatası:', error);
       return {
-        reply: "Üzgünüm, şu an bağlantıda geçici bir yoğunluk var. Lütfen biraz sonra tekrar deneyiniz.",
+        reply: appendModelLabel("Üzgünüm, şu an bağlantıda geçici bir yoğunluk var. Lütfen biraz sonra tekrar deneyiniz."),
         tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
         toolTraces: [],
         cart: []
