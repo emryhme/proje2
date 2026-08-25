@@ -2437,6 +2437,45 @@ async function saveSystemSettingsModal() {
   closeSystemSettingsModal();
 }
 
+async function saveAiConnectionSettings() {
+  const provider = document.getElementById('sysAiProvider')?.value || 'openai';
+  const aiApiKey = document.getElementById('sysAiApiKey')?.value?.trim() || '';
+  const clearAiApiKey = Boolean(document.getElementById('sysClearAiApiKey')?.checked);
+  if (!aiApiKey && !clearAiApiKey && document.getElementById('sysAiApiKeyStatus')?.textContent?.includes('henüz')) {
+    showToast('❌ Lütfen seçtiğiniz sağlayıcıya ait API anahtarını girin.', 'error');
+    return;
+  }
+  try {
+    const data = await apiFetch(`${API_BASE}/api/settings`, {
+      method: 'POST',
+      body: JSON.stringify({ settings: { ai_provider: provider }, aiApiKey, clearAiApiKey })
+    });
+    if (!data.success) throw new Error(data.error || 'API ayarları kaydedilemedi.');
+    showToast('✅ Mağazaya özel API ayarları kaydedildi.', 'success');
+    await loadSystemSettingsIntoModal();
+  } catch (error) {
+    showToast(`❌ ${error.message || 'API ayarları kaydedilemedi.'}`, 'error');
+  }
+}
+
+async function savePersonaSettings() {
+  const settings = {
+    bot_tone: document.getElementById('sysBotTone')?.value || 'luxury',
+    bot_system_prompt: document.getElementById('sysBotSystemPrompt')?.value || ''
+  };
+  try {
+    const data = await apiFetch(`${API_BASE}/api/settings`, {
+      method: 'POST',
+      body: JSON.stringify({ settings })
+    });
+    if (!data.success) throw new Error(data.error || 'Persona ayarları kaydedilemedi.');
+    showToast('✅ Persona ve konuşma ayarları kaydedildi.', 'success');
+    await loadSystemSettingsIntoModal();
+  } catch (error) {
+    showToast(`❌ ${error.message || 'Persona ayarları kaydedilemedi.'}`, 'error');
+  }
+}
+
 async function saveSystemSettingsPage() {
   const payload = {
     bot_tone: document.getElementById('sysBotTone')?.value || 'luxury',
