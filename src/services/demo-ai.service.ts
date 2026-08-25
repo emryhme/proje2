@@ -56,7 +56,7 @@ KURALLAR:
 `;
 
     const response = await axios.post(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${encodeURIComponent(apiKey)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent?key=${encodeURIComponent(apiKey)}`,
       {
         systemInstruction: { parts: [{ text: systemInstruction }] },
         contents: [...safeHistory, { role: 'user', parts: [{ text: cleanMessage }] }],
