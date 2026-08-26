@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import { db } from '../database/db';
 import { env } from '../config/env';
 import { decryptSettingSecret } from '../utils/secret.util';
+import { HumanHandoffService } from './human-handoff.service';
 
 /**
  * Facebook Graph API (Instagram DM / Messenger) Yanıt Gönderme Servisi (Store Scoped)
@@ -268,6 +269,7 @@ export class FacebookService {
     }
 
     const sanitizedText = text ? text.trim() : '';
+    const outboundTrackingId = HumanHandoffService.beginAutomatedOutbound(storeId, recipientId, sanitizedText);
 
     try {
       const url = isInstagramLogin
@@ -286,9 +288,11 @@ export class FacebookService {
           }
         }
       );
+      HumanHandoffService.completeAutomatedOutbound(outboundTrackingId, String(res.data?.message_id || res.data?.id || ''));
       console.log(`[FacebookService] 📤 Mesaj başarıyla gönderildi -> ${recipientId} (Store: ${storeId || 'default'}, Status: ${res.status})`);
       return true;
     } catch (error: any) {
+      HumanHandoffService.cancelAutomatedOutbound(outboundTrackingId);
       const errDetails = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
       console.error(`[FacebookService] ❌ Mesaj gönderim hatası (${recipientId}):`, errDetails);
       return false;

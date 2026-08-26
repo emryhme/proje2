@@ -334,6 +334,28 @@ function runSchemaMigrations(): void {
       `);
       db.prepare("UPDATE settings SET value = '0' WHERE key IN ('instagram_comment_access_enabled', 'instagram_comment_permission_granted', 'instagram_comment_automation_enabled')").run();
     }
+  }, {
+    version: '20260826_014_human_handoff',
+    name: 'Pause AI per conversation after a human reply',
+    up: () => {
+      addColumnIfMissing('conversations', 'standby_until', 'TEXT DEFAULT NULL');
+      addColumnIfMissing('conversations', 'standby_reason', "TEXT NOT NULL DEFAULT ''");
+      addColumnIfMissing('conversations', 'standby_started_at', 'TEXT DEFAULT NULL');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS automated_outbound_messages (
+          tracking_id TEXT PRIMARY KEY,
+          store_id INTEGER NOT NULL,
+          recipient_id TEXT NOT NULL,
+          message_id TEXT DEFAULT NULL,
+          text_hash TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          expires_at TEXT NOT NULL,
+          FOREIGN KEY (store_id) REFERENCES stores(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_automated_outbound_lookup
+          ON automated_outbound_messages(store_id, recipient_id, message_id, expires_at);
+      `);
+    }
   }];
 
   const isApplied = db.prepare('SELECT 1 FROM schema_migrations WHERE version = ?');

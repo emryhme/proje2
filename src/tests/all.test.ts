@@ -11,6 +11,7 @@ import { FacebookService } from '../services/facebook.service';
 import { DemoAIService } from '../services/demo-ai.service';
 import { AIProviderService } from '../services/ai-provider.service';
 import { EmailVerificationService } from '../services/email-verification.service';
+import { HumanHandoffService } from '../services/human-handoff.service';
 import { AuthMiddleware } from '../middleware/auth.middleware';
 import { db, hashPassword, initDatabase, needsPasswordRehash, verifyPassword } from '../database/db';
 import { decryptSettingSecret, encryptSettingSecret } from '../utils/secret.util';
@@ -411,6 +412,49 @@ async function runTestSuite() {
     storeABufferCall?.[4]?.length === 3 &&
     storeBBufferCall?.[1] === 'Farklı mağaza mesajı',
     'Rapid messages are combined once per store and sender while different tenants remain isolated'
+  );
+
+  console.log('\n2️⃣6️⃣-C HUMAN HANDOFF TEST: İşletme mesajı yalnız ilgili konuşmada AI standby başlatmalı');
+  const handoffSender = 'handoff_customer_001';
+  db.prepare("DELETE FROM conversations WHERE store_id IN (100, 200) AND external_user_id = ?").run(`instagram:${handoffSender}`);
+  db.prepare("DELETE FROM automated_outbound_messages WHERE store_id IN (100, 200) AND recipient_id = ?").run(handoffSender);
+  const trackingId = HumanHandoffService.beginAutomatedOutbound(100, handoffSender, 'AI tarafından gönderildi');
+  HumanHandoffService.completeAutomatedOutbound(trackingId, 'mid_ai_handoff_001');
+  const automatedEcho = HumanHandoffService.handleOutboundEcho(100, handoffSender, 'mid_ai_handoff_001', 'AI tarafından gönderildi');
+  const ownerEcho = HumanHandoffService.handleOutboundEcho(100, handoffSender, 'mid_owner_handoff_001', 'Merhaba, ben yardımcı olayım.');
+  let aiCallsDuringStandby = 0;
+  const originalHandoffProcessMessage = (AIService as any).processMessage;
+  try {
+    (AIService as any).processMessage = async () => {
+      aiCallsDuringStandby += 1;
+      return { reply: 'Gönderilmemeli', toolTraces: [], cart: [], tokens: {} };
+    };
+    await webhookControllerForBuffer.processAndReply(handoffSender, 'Müşteri tekrar yazdı', 'store-alpha', 100, ['Müşteri tekrar yazdı']);
+  } finally {
+    (AIService as any).processMessage = originalHandoffProcessMessage;
+  }
+  const standbyConversation = db.prepare('SELECT id, status, standby_reason, standby_until FROM conversations WHERE store_id = 100 AND external_user_id = ?')
+    .get(`instagram:${handoffSender}`) as any;
+  const savedStandbyMessages = standbyConversation
+    ? db.prepare('SELECT sender_type, text FROM messages WHERE conversation_id = ? ORDER BY id').all(standbyConversation.id) as any[]
+    : [];
+  assert(
+    automatedEcho.automated === true
+      && ownerEcho.automated === false
+      && HumanHandoffService.isConversationOnStandby(100, handoffSender) === true
+      && HumanHandoffService.isConversationOnStandby(200, handoffSender) === false
+      && standbyConversation?.status === 'standby'
+      && standbyConversation?.standby_reason === 'owner_message'
+      && aiCallsDuringStandby === 0
+      && savedStandbyMessages.some(message => message.sender_type === 'owner')
+      && savedStandbyMessages.some(message => message.sender_type === 'user' && message.text === 'Müşteri tekrar yazdı'),
+    'Automated echoes are ignored while an owner reply pauses only that customer conversation and suppresses AI replies'
+  );
+  db.prepare("UPDATE conversations SET standby_until = datetime('now', '-1 minute') WHERE id = ?").run(standbyConversation.id);
+  assert(
+    HumanHandoffService.isConversationOnStandby(100, handoffSender) === false
+      && (db.prepare('SELECT status FROM conversations WHERE id = ?').get(standbyConversation.id) as any)?.status === 'active',
+    'Expired human handoff automatically returns the conversation to AI control'
   );
 
   // 7. STOCK BUG FIX TESTS (ADD, SET, ISOLATION, COLLISION & SANITATION)

@@ -4,6 +4,7 @@ import { env } from '../config/env';
 import { extractProductCode } from '../utils/regex.util';
 import { AIService } from '../services/ai.service';
 import { FacebookService } from '../services/facebook.service';
+import { HumanHandoffService } from '../services/human-handoff.service';
 import { db } from '../database/db';
 
 export class WebhookController {
@@ -110,6 +111,22 @@ export class WebhookController {
   public static isInstagramCommentAutomationEnabled(storeId: number): boolean {
     void storeId;
     return false;
+  }
+
+  private static handleMessageEcho(messagingEvent: any, store: { id: number; slug: string }): void {
+    const message = messagingEvent?.message;
+    const recipientId = String(messagingEvent?.recipient?.id || '').trim();
+    if (!message?.is_echo || !recipientId) return;
+    const messageId = String(message.mid || '').trim();
+    const eventId = messageId || `echo:${store.id}:${recipientId}:${messagingEvent?.timestamp || Date.now()}`;
+    if (this.isDuplicateEvent(eventId, store.id)) return;
+
+    const result = HumanHandoffService.handleOutboundEcho(store.id, recipientId, messageId, String(message.text || ''));
+    if (result.automated) {
+      console.log(`[Human Handoff] Store=${store.id} Recipient=${recipientId} Sistem mesajı echo olarak doğrulandı; standby başlatılmadı.`);
+      return;
+    }
+    console.log(`[Human Handoff] Store=${store.id} Recipient=${recipientId} İşletme mesajı algılandı; AI ${HumanHandoffService.DEFAULT_STANDBY_HOURS} saat standby durumuna alındı.`);
   }
 
   private static async resolveIncomingMessageText(message: any, storeId: number): Promise<string> {
@@ -250,7 +267,11 @@ export class WebhookController {
         const senderId = messagingEvent.sender?.id;
         const message = messagingEvent.message;
 
-        if (!senderId || !message || message.is_echo) continue;
+        if (message?.is_echo) {
+          WebhookController.handleMessageEcho(messagingEvent, store);
+          continue;
+        }
+        if (!senderId || !message) continue;
 
         const eventId = String(message.mid || `${entry.id}_${messagingEvent.timestamp || Date.now()}`);
         if (WebhookController.isDuplicateEvent(eventId, store.id)) {
@@ -356,7 +377,11 @@ export class WebhookController {
         const senderId = messagingEvent.sender?.id;
         const message = messagingEvent.message;
 
-        if (!senderId || !message || message.is_echo) continue;
+        if (message?.is_echo) {
+          WebhookController.handleMessageEcho(messagingEvent, matchedStore);
+          continue;
+        }
+        if (!senderId || !message) continue;
 
         const eventId = String(message.mid || `${entry.id}_${messagingEvent.timestamp || Date.now()}`);
         if (WebhookController.isDuplicateEvent(eventId, matchedStore.id)) {
@@ -467,7 +492,16 @@ export class WebhookController {
         AIService.persistMessage(conversationId, 'user', originalMessage);
       }
 
+      if (HumanHandoffService.isConversationOnStandby(storeId, senderId)) {
+        console.log(`[Human Handoff] Store=${storeId} Sender=${senderId} Müşteri mesajı kaydedildi; konuşma standby durumunda olduğu için AI yanıt vermedi.`);
+        return;
+      }
+
       const { reply, toolTraces } = await AIService.processMessage(senderId, text, storeSlug, storeId);
+      if (HumanHandoffService.isConversationOnStandby(storeId, senderId)) {
+        console.log(`[Human Handoff] Store=${storeId} Sender=${senderId} İşlem sırasında insan devraldı; hazırlanan AI yanıtı gönderilmedi.`);
+        return;
+      }
       AIService.persistMessage(conversationId, 'assistant', reply);
 
       for (const trace of toolTraces) {
