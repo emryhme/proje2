@@ -117,8 +117,9 @@ export class WebhookController {
   public static isSupportRequest(text: string): boolean {
     const normalized = String(text || '').toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ').trim();
     if (!normalized) return false;
-    return /\b(canlı destek|müşteri hizmetleri|destek ekibi|bir (insan|yetkili|personel|temsilci)|insanla|yetkiliyle|yetkili ile|personelle|personel ile|temsilciyle|temsilci ile)\b.*\b(görüş|konuş|bağla|ulaş|yardım|istiyorum|isterim)\w*/iu.test(normalized)
-      || /\b(personel|yetkili|insan|temsilci|canlı destek)\b.*(?:çağır|çağırın|çağırabilir misiniz|gelsin|bağlayın|istiyorum|isterim)(?:\s|$)/iu.test(normalized)
+    const asksForHuman = /(canlı destek|müşteri hizmetleri|destek ekibi|yetkili(?:yle| ile)?|personel(?:le| ile)?|temsilci(?:yle| ile)?|insan(?:la| ile)?)/iu.test(normalized);
+    const hasEscalationIntent = /(çağır|çağırır|çağırın|çağırabilir|bağla|bağlar|bağlayın|görüşmek|görüşebilir|görüşeyim|konuşmak|konuşabilir|ulaşmak|istiyorum|isterim|yardımcı ol|ilgilensin|devralsın)/iu.test(normalized);
+    return (asksForHuman && hasEscalationIntent)
       || /\b(biri|birisi)\b.*\b(benimle|benle)\b.*\b(görüşsün|konuşsun|ilgilensin)\b/iu.test(normalized);
   }
 

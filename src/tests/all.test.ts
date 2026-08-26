@@ -484,6 +484,7 @@ async function runTestSuite() {
   assert(
     WebhookController.isSupportRequest('Bir insanla görüşmek istiyorum')
       && WebhookController.isSupportRequest('Personel çağırın')
+      && WebhookController.isSupportRequest('Bana bir yetkili çağırır mısınız?')
       && !WebhookController.isSupportRequest('Bu ürün personel için uygun mu?')
       && supportNotifications === 1
       && supportAcknowledgements === 1
