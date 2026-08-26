@@ -931,6 +931,46 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
     return { stokTool, sepeteEkleTool, sepetGoruntuleTool, sepetOnaylaTool, kayitTool, mesajTool, guncelleTool };
   }
 
+  /** Siparişin kritik geçişlerini modelin araç çağırma tercihine bırakmadan tamamlar. */
+  private static async getDeterministicCheckoutReply(senderId: string, userText: string, storeSlug: string, storeId: number, channel: string): Promise<string | null> {
+    const ctx = this.getSessionContext(senderId, storeSlug, storeId, channel);
+    const tools = this.createLeafTools(senderId, storeSlug, storeId, channel);
+    const quantityMatch = String(userText || '').trim().match(/^(\d{1,4})\s*(?:adet|tane)?\s*[.!]?$/iu);
+
+    if (quantityMatch && ctx.variantVerified && ctx.productCode && ctx.size) {
+      const result = JSON.parse(String(await tools.sepeteEkleTool.invoke(JSON.stringify({
+        productCode: ctx.productCode,
+        size: ctx.size,
+        quantity: Number(quantityMatch[1])
+      }))));
+      if (!result.success) return String(result.message || 'Ürün sepete eklenemedi.');
+      return `${result.message}\n${result.priceMessage}\n\nSepetinizi onaylıyor musunuz?`;
+    }
+
+    const explicitConfirmation = /^(?:evet|onaylıyorum|onayla|tamam|olur|siparişi tamamla|siparişi onayla)[.!\s]*$/iu.test(String(userText || '').trim());
+    if (explicitConfirmation && ctx.cart.length > 0 && !ctx.checkoutConfirmed) {
+      const confirmation = JSON.parse(String(await tools.sepetOnaylaTool.invoke('')));
+      return String(confirmation.message || 'Sepet onaylandı. Ad soyad, telefon numarası ve açık teslimat adresinizi paylaşır mısınız?');
+    }
+
+    if (ctx.checkoutConfirmed && (ctx.currentTurnContactFields?.length || 0) > 0) {
+      const confirmation = JSON.parse(String(await tools.sepetOnaylaTool.invoke('')));
+      if (!confirmation.readyToCreateOrder) return String(confirmation.message || 'Sipariş bilgileriniz henüz tamamlanmadı.');
+
+      const orderContact = {
+        customerName: ctx.customerName,
+        customerPhone: ctx.customerPhone,
+        address: ctx.address
+      };
+      const saved = JSON.parse(String(await tools.kayitTool.invoke(JSON.stringify(orderContact))));
+      if (!saved.orderCreated) return String(saved.message || saved.error || 'Sipariş kaydedilemedi.');
+      await tools.mesajTool.invoke(JSON.stringify({ ...orderContact, orderId: saved.orderId }));
+      return String(saved.message || `Siparişiniz başarıyla oluşturuldu. Sipariş numaranız: ${saved.orderId}`);
+    }
+
+    return null;
+  }
+
   private static createBilgilendirmeSubAgent(model: StoreChatModel, mesajTool: DynamicTool) {
     return new DynamicTool({
       name: 'BILGILENDIRME',
@@ -1072,6 +1112,18 @@ Yalnızca aşağıdaki JSON yapısını döndür (bilinmeyen alanlar için null 
         }
         return {
           reply: appendModelLabel(deterministicOrderReply),
+          tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
+          toolTraces: [],
+          cart: ctx.cart
+        };
+      }
+
+      const deterministicCheckoutReply = await this.getDeterministicCheckoutReply(senderId, userMessage, storeSlug, storeId, channel);
+      if (deterministicCheckoutReply) {
+        ctx.history.push(new HumanMessage(userMessage), new AIMessage(deterministicCheckoutReply));
+        if (ctx.history.length > 16) ctx.history.splice(0, ctx.history.length - 16);
+        return {
+          reply: appendModelLabel(deterministicCheckoutReply),
           tokens: { promptTokens: 0, completionTokens: 0, totalTokens: 0, costUsd: 0 },
           toolTraces: [],
           cart: ctx.cart

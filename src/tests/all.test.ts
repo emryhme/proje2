@@ -629,6 +629,23 @@ async function runTestSuite() {
   const explicitSizeReply = (AIService as any).getShortCodeOrderReply(100, variantCtx, 'M beden istiyorum');
   assert(explicitSizeReply.includes('M bedeni stokta mevcut') && !/\d+\s*adet/i.test(explicitSizeReply) && variantCtx.productCode === 'HBL-M', 'Explicit M size resolves HBL-M without exposing its inventory quantity');
 
+  const deterministicCtx = AIService.getSessionContext('deterministic-order', 'store-alpha', 100, 'TEST');
+  deterministicCtx.productCode = 'HBL';
+  deterministicCtx.variantVerified = false;
+  (AIService as any).getShortCodeOrderReply(100, deterministicCtx, 'S beden istiyorum');
+  const quantityReply = await (AIService as any).getDeterministicCheckoutReply('deterministic-order', '1 adet', 'store-alpha', 100, 'TEST');
+  const confirmationReply = await (AIService as any).getDeterministicCheckoutReply('deterministic-order', 'evet', 'store-alpha', 100, 'TEST');
+  deterministicCtx.customerName = 'Kesin Kayıt';
+  deterministicCtx.customerPhone = '05551234000';
+  deterministicCtx.address = 'Güven Mahallesi Sipariş Sokak No 1';
+  deterministicCtx.currentTurnContactFields = ['customerName', 'customerPhone', 'address'];
+  const savedReply = await (AIService as any).getDeterministicCheckoutReply('deterministic-order', 'Adres bilgileri tamamlandı', 'store-alpha', 100, 'TEST');
+  const deterministicOrder = db.prepare("SELECT order_id FROM orders WHERE store_id = 100 AND sender_id = 'deterministic-order'").get() as any;
+  assert(
+    quantityReply.includes('sepete eklendi') && confirmationReply.includes('Sepet onaylandı') && savedReply.includes(String(deterministicOrder?.order_id || 'missing-order')) && Boolean(deterministicOrder?.order_id),
+    'Verified quantity, confirmation and complete contact data always persist an order without relying on model tool choice'
+  );
+
   await StockService.addProduct({ storeId: 100, shortCode: 'İNCİ', productCode: 'İNCİ-M', name: 'İnci Elbise', size: 'M', stock: 7, price: 600 });
   const turkishCodeStock = await StockService.checkStock(100, 'inci m stokta var mı?');
   const turkishCodeVariant = StockService.findProductVariant(100, 'inci_m', 'm');
