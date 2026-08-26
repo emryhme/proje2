@@ -134,8 +134,10 @@ router.post('/api/auth/login', loginLimiter, (req, res) => {
   if (!memberships.length) return res.status(403).json({ success: false, error: 'Aktif ve onaylanmış bir mağaza üyeliğiniz bulunmamaktadır.' });
   const reqStoreId = Number(req.body?.storeId);
   const activeMem = (reqStoreId && memberships.find(m => m.store_id === reqStoreId)) || memberships[0];
-  const token = AuthMiddleware.generateToken({ userId: user.id, storeId: activeMem.store_id, role: activeMem.role, email: user.email, sessionVersion: user.session_version });
-  setSessionCookie(res, token);
+  const rememberMe = req.body?.rememberMe !== false && !isMasterAccount;
+  const ttlHours = rememberMe ? env.rememberSessionTtlHours : env.sessionTtlHours;
+  const token = AuthMiddleware.generateToken({ userId: user.id, storeId: activeMem.store_id, role: activeMem.role, email: user.email, sessionVersion: user.session_version }, ttlHours);
+  setSessionCookie(res, token, rememberMe ? ttlHours * 3600 : undefined);
   AuthMiddleware.logAudit(activeMem.store_id, user.id, 'LOGIN', 'users', String(user.id), '', user.email);
   return res.json({ success: true, token, user: { id:user.id, email:user.email, name:user.full_name, storeId:activeMem.store_id, storeName:activeMem.store_name, storeSlug:activeMem.store_slug, role:activeMem.role } });
 });

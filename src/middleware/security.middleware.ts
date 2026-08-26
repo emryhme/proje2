@@ -69,9 +69,10 @@ export function sessionCookie(req: Request): string {
   return cookieValue(req, 'iscworks_session');
 }
 
-export function setSessionCookie(res: Response, token: string): void {
+export function setSessionCookie(res: Response, token: string, maxAgeSeconds?: number): void {
   const secure = env.nodeEnv === 'production' ? '; Secure' : '';
-  res.append('Set-Cookie', `iscworks_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${env.sessionTtlHours * 3600}${secure}`);
+  const maxAge = maxAgeSeconds ? `; Max-Age=${Math.floor(maxAgeSeconds)}` : '';
+  res.append('Set-Cookie', `iscworks_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict${maxAge}${secure}`);
 }
 
 export function clearSessionCookie(res: Response): void {

@@ -24,14 +24,14 @@ export class AuthMiddleware {
   /**
    * Generates signed JWT Token
    */
-  public static generateToken(payload: { userId: number; storeId: number; role: string; email: string; sessionVersion?: number }): string {
+  public static generateToken(payload: { userId: number; storeId: number; role: string; email: string; sessionVersion?: number }, ttlHours = env.sessionTtlHours): string {
     const secret = env.jwtSecret;
     const header = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
     const body = Buffer.from(JSON.stringify({
       ...payload,
       sessionVersion: Number(payload.sessionVersion || 0),
       iat: Math.floor(Date.now() / 1000),
-      exp: Math.floor(Date.now() / 1000) + (3600 * env.sessionTtlHours)
+      exp: Math.floor(Date.now() / 1000) + (3600 * ttlHours)
     })).toString('base64url');
 
     const signature = crypto.createHmac('sha256', secret).update(`${header}.${body}`).digest('base64url');

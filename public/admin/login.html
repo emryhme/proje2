@@ -235,6 +235,22 @@
 </div>
 
 <script>
+  async function continueExistingSession() {
+    try {
+      const response = await fetch('/api/auth/verify', { credentials: 'same-origin' });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!data.success || !data.valid || !data.user) return;
+      localStorage.removeItem('barons_admin_token');
+      localStorage.setItem('barons_admin_user', JSON.stringify(data.user));
+      window.location.replace('dashboard');
+    } catch (_) {
+      // Sunucuya ulaşılamıyorsa kullanıcı normal giriş formunu kullanabilir.
+    }
+  }
+
+  continueExistingSession();
+
   document.getElementById('loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const alertBox = document.getElementById('loginAlert');
@@ -244,6 +260,7 @@
 
     const username = document.getElementById('loginUsername').value.trim();
     const password = document.getElementById('loginPassword').value;
+    const rememberMe = document.getElementById('rememberMe').checked;
 
     if (!username || !password) {
       alertText.textContent = 'Lütfen kullanıcı adı ve şifrenizi girin.';
@@ -261,7 +278,7 @@
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username, password, rememberMe })
       });
 
       const data = await response.json();
