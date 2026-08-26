@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { db } from '../database/db';
 
 export class HumanHandoffService {
-  public static readonly DEFAULT_STANDBY_HOURS = 12;
+  public static readonly DEFAULT_STANDBY_HOURS = 1;
 
   private static textHash(text: string): string {
     return crypto.createHash('sha256').update(String(text || '').trim(), 'utf8').digest('hex');
