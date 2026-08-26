@@ -109,6 +109,14 @@ async function run(): Promise<void> {
     const loginBody = await login.json() as any;
     const cookie = String(login.headers.get('set-cookie') || '').split(';')[0];
     assert(login.ok && loginBody.token && cookie.startsWith('iscworks_session='), 'Login issues an HttpOnly browser session cookie');
+    const verifiedSession = await fetch(`${origin}/api/auth/verify`, { headers: { Cookie: cookie } });
+    const verifiedSessionBody = await verifiedSession.json() as any;
+    assert(
+      verifiedSession.ok
+        && verifiedSessionBody.user?.name === 'HTTP Test'
+        && verifiedSessionBody.user?.storeName === 'HTTP Security Store',
+      'Remembered session restores the user name and store name'
+    );
 
     db.prepare("INSERT INTO memberships (user_id, store_id, role, status) VALUES (?, 1, 'OWNER', 'active')").run(userId);
     const masterLoginWithoutPanelKey = await fetch(`${origin}/api/auth/login`, {

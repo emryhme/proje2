@@ -151,6 +151,28 @@ router.post('/api/auth/logout', (req, res) => {
   return res.json({ success: true });
 });
 
-router.get('/api/auth/verify', AuthMiddleware.authenticate, (req: AuthenticatedRequest, res) => res.json({ success: true, valid: true, user: req.auth }));
+router.get('/api/auth/verify', AuthMiddleware.authenticate, (req: AuthenticatedRequest, res) => {
+  const auth = req.auth!;
+  const profile = db.prepare(`
+    SELECT u.full_name, u.email, s.name AS store_name, s.slug AS store_slug
+    FROM users u
+    JOIN stores s ON s.id = ?
+    WHERE u.id = ?
+  `).get(auth.storeId, auth.userId) as any;
+
+  return res.json({
+    success: true,
+    valid: true,
+    user: profile ? {
+      id: auth.userId,
+      email: profile.email,
+      name: profile.full_name,
+      storeId: auth.storeId,
+      storeName: profile.store_name,
+      storeSlug: profile.store_slug,
+      role: auth.role
+    } : auth
+  });
+});
 
 export default router;
