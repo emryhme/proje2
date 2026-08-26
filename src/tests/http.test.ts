@@ -288,6 +288,49 @@ async function run(): Promise<void> {
       'Automatic VIP reward setting can be saved and read by the merchant panel'
     );
 
+    const savedHandoffSettings = await fetch(`${origin}/api/settings`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { human_handoff_enabled: '1', human_handoff_minutes: '30' } })
+    });
+    const handoffConversationId = Number(db.prepare(`
+      INSERT INTO conversations (store_id, external_user_id, status, standby_until, standby_reason, standby_started_at)
+      VALUES (?, 'instagram:http_handoff_customer', 'standby', datetime('now', '+30 minutes'), 'owner_message', CURRENT_TIMESTAMP)
+    `).run(storeId).lastInsertRowid);
+    const foreignHandoffConversationId = Number(db.prepare(`
+      INSERT INTO conversations (store_id, external_user_id, status, standby_until, standby_reason, standby_started_at)
+      VALUES (1, 'instagram:foreign_handoff_customer', 'standby', datetime('now', '+30 minutes'), 'owner_message', CURRENT_TIMESTAMP)
+    `).run().lastInsertRowid);
+    const handoffList = await fetch(`${origin}/api/human-handoff/conversations`, { headers: { Cookie: cookie } });
+    const handoffListBody = await handoffList.json() as any;
+    const rejectedForeignResume = await fetch(`${origin}/api/human-handoff/conversations/${foreignHandoffConversationId}/resume`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin }
+    });
+    const resumedOwnConversation = await fetch(`${origin}/api/human-handoff/conversations/${handoffConversationId}/resume`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin }
+    });
+    const resumedOwnStatus = (db.prepare('SELECT status FROM conversations WHERE id = ?').get(handoffConversationId) as any)?.status;
+    assert(
+      savedHandoffSettings.ok
+        && handoffList.ok
+        && handoffListBody.config?.enabled === true
+        && handoffListBody.config?.minutes === 30
+        && handoffListBody.conversations?.some((conversation: any) => conversation.id === handoffConversationId)
+        && rejectedForeignResume.status === 404
+        && resumedOwnConversation.ok
+        && resumedOwnStatus === 'active',
+      'Merchant can configure handoff, list only tenant standby conversations and manually resume AI'
+    );
+    db.prepare("UPDATE conversations SET status = 'standby', standby_until = datetime('now', '+30 minutes'), standby_reason = 'owner_message' WHERE id = ?").run(handoffConversationId);
+    const disabledHandoff = await fetch(`${origin}/api/settings`, {
+      method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ settings: { human_handoff_enabled: '0' } })
+    });
+    const disabledOwnHandoffStatus = (db.prepare('SELECT status FROM conversations WHERE id = ?').get(handoffConversationId) as any)?.status;
+    const foreignHandoffStatus = (db.prepare('SELECT status FROM conversations WHERE id = ?').get(foreignHandoffConversationId) as any)?.status;
+    assert(disabledHandoff.ok && disabledOwnHandoffStatus === 'active' && foreignHandoffStatus === 'standby', 'Disabling handoff clears only the authenticated store standby state');
+    db.prepare('DELETE FROM messages WHERE conversation_id IN (?, ?)').run(handoffConversationId, foreignHandoffConversationId);
+    db.prepare('DELETE FROM conversations WHERE id IN (?, ?)').run(handoffConversationId, foreignHandoffConversationId);
+
     const csrfRejected = await fetch(`${origin}/api/settings`, {
       method: 'POST', headers: { Cookie: cookie, Origin: 'https://attacker.example', 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'shipping_fee', value: '50' })
     });

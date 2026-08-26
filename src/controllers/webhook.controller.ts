@@ -126,7 +126,11 @@ export class WebhookController {
       console.log(`[Human Handoff] Store=${store.id} Recipient=${recipientId} Sistem mesajı echo olarak doğrulandı; standby başlatılmadı.`);
       return;
     }
-    console.log(`[Human Handoff] Store=${store.id} Recipient=${recipientId} İşletme mesajı algılandı; AI ${HumanHandoffService.DEFAULT_STANDBY_HOURS} saat standby durumuna alındı.`);
+    if (result.disabled) {
+      console.log(`[Human Handoff] Store=${store.id} Recipient=${recipientId} İşletme mesajı algılandı; handoff mağaza ayarlarında kapalı.`);
+      return;
+    }
+    console.log(`[Human Handoff] Store=${store.id} Recipient=${recipientId} İşletme mesajı algılandı; AI standby durumuna alındı.`);
   }
 
   private static async resolveIncomingMessageText(message: any, storeId: number): Promise<string> {

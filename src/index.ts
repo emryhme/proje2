@@ -17,6 +17,7 @@ import { AuthMiddleware, AuthenticatedRequest } from './middleware/auth.middlewa
 import { createRateLimiter, csrfProtection, securityHeaders } from './middleware/security.middleware';
 import { decryptSettingSecret, encryptSettingSecret } from './utils/secret.util';
 import { AIProviderService } from './services/ai-provider.service';
+import { HumanHandoffService } from './services/human-handoff.service';
 
 // Initialize schema, migrations, and seed data once before serving requests.
 initDatabase();
@@ -500,7 +501,8 @@ app.delete('/api/campaigns/:id', AuthMiddleware.authenticate, AuthMiddleware.req
 // --- SETTINGS ---
 const PUBLIC_SETTING_KEYS = new Set([
   'shipping_fee', 'free_shipping_threshold', 'loyalty_threshold', 'auto_vip_reward_enabled',
-  'bot_name', 'bot_tone', 'bot_system_prompt', 'ai_provider'
+  'bot_name', 'bot_tone', 'bot_system_prompt', 'ai_provider',
+  'human_handoff_enabled', 'human_handoff_minutes'
 ]);
 
 app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req: AuthenticatedRequest, res) => {
@@ -515,6 +517,8 @@ app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole
       }
     }
     settingsObj.ai_provider = settingsObj.ai_provider === 'gemini' ? 'gemini' : 'openai';
+    settingsObj.human_handoff_enabled = settingsObj.human_handoff_enabled === '0' ? '0' : '1';
+    settingsObj.human_handoff_minutes = ['15', '30', '60', '120'].includes(settingsObj.human_handoff_minutes) ? settingsObj.human_handoff_minutes : '60';
     const secretRows = db.prepare("SELECT key, value FROM settings WHERE store_id = ? AND key IN ('ai_api_key', 'openai_api_key', 'gemini_api_key')").all(storeId) as Array<{ key: string; value: string }>;
     const secrets = Object.fromEntries(secretRows.map(row => [row.key, decryptSettingSecret(String(row.value || '')).trim()]));
     const legacyProvider = settingsObj.ai_provider === 'gemini' ? 'gemini' : 'openai';
@@ -548,6 +552,11 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
       } else if (settingKey === 'auto_vip_reward_enabled') {
         if (!['0', '1', 'false', 'true'].includes(settingValue.toLowerCase())) throw new Error('Geçersiz otomatik VIP ayarı.');
         settingValue = ['1', 'true'].includes(settingValue.toLowerCase()) ? '1' : '0';
+      } else if (settingKey === 'human_handoff_enabled') {
+        if (!['0', '1', 'false', 'true'].includes(settingValue.toLowerCase())) throw new Error('Geçersiz human handoff ayarı.');
+        settingValue = ['1', 'true'].includes(settingValue.toLowerCase()) ? '1' : '0';
+      } else if (settingKey === 'human_handoff_minutes') {
+        if (!['15', '30', '60', '120'].includes(settingValue)) throw new Error('Geçersiz standby süresi.');
       } else {
         const numericValue = Number(settingValue);
         if (!Number.isFinite(numericValue) || numericValue < 0 || numericValue > 1_000_000) throw new Error('Fiyat ayarı geçerli bir pozitif sayı olmalıdır.');
@@ -604,6 +613,13 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     }
     db.transaction(() => {
       updates.forEach(update => saveSetting.run(storeId, update.key, update.value));
+      if (updates.some(update => update.key === 'human_handoff_enabled' && update.value === '0')) {
+        db.prepare(`
+          UPDATE conversations
+          SET status = 'active', standby_until = NULL, standby_reason = '', standby_started_at = NULL
+          WHERE store_id = ? AND status = 'standby'
+        `).run(storeId);
+      }
       if (cleanAiApiKey) saveSetting.run(storeId, providerSecretKey, encryptSettingSecret(cleanAiApiKey));
       if (clearAiApiKey === true) {
         db.prepare('DELETE FROM settings WHERE store_id = ? AND key = ?').run(storeId, providerSecretKey);
@@ -621,6 +637,34 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
   } catch (e: any) {
     const status = /ayar|sayı|üslup|adı/i.test(String(e.message || '')) ? 400 : 500;
     res.status(status).json({ success: false, error: e.message });
+  }
+});
+
+app.get('/api/human-handoff/conversations', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN', 'MANAGER', 'STAFF']), (req: AuthenticatedRequest, res) => {
+  try {
+    const storeId = req.auth!.storeId;
+    const config = HumanHandoffService.getStoreConfig(storeId);
+    const conversations = HumanHandoffService.listActiveStandbyConversations(storeId);
+    res.json({ success: true, config, conversations });
+  } catch (e: any) {
+    res.status(500).json({ success: false, error: e.message || 'Standby görüşmeleri alınamadı.' });
+  }
+});
+
+app.post('/api/human-handoff/conversations/:id/resume', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN']), (req: AuthenticatedRequest, res) => {
+  try {
+    const storeId = req.auth!.storeId;
+    const conversationId = Number(req.params.id);
+    if (!Number.isInteger(conversationId) || conversationId <= 0) {
+      return res.status(400).json({ success: false, error: 'Geçersiz görüşme kimliği.' });
+    }
+    if (!HumanHandoffService.resumeConversation(storeId, conversationId)) {
+      return res.status(404).json({ success: false, error: 'Görüşme bulunamadı.' });
+    }
+    AuthMiddleware.logAudit(storeId, req.auth!.userId, 'RESUME_AI_CONVERSATION', 'conversations', String(conversationId));
+    return res.json({ success: true, message: 'AI bu görüşme için yeniden devreye alındı.' });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message || 'AI yeniden devreye alınamadı.' });
   }
 });
 

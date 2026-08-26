@@ -8,7 +8,7 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="styles.css?v=20260817-plan-expiry-v2">
+  <link rel="stylesheet" href="styles.css?v=20260826-human-handoff">
 </head>
 <body>
 
@@ -139,6 +139,51 @@
                 <p>Mağazanızın OpenAI veya Gemini sağlayıcısını, izole API anahtarını ve müşteri temsilcisi üslubunu yönetin.</p>
             </div>
 
+        </div>
+
+        <!-- HUMAN HANDOFF CARD -->
+        <div class="card table-card" style="margin-top:20px;">
+            <div class="table-header" style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap;">
+                <div>
+                    <div class="table-title">🤝 İnsan Devralma (Human Handoff)</div>
+                    <small style="color:#94a3b8;">İşletme sahibi müşteriye manuel yazdığında AI'ın o görüşmede ne kadar bekleyeceğini yönetin.</small>
+                </div>
+                <button type="button" class="btn btn-primary" onclick="saveHumanHandoffSettings()">
+                    <i data-lucide="save" size="14"></i> Handover Ayarlarını Kaydet
+                </button>
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Otomatik Human Handoff</label>
+                    <select id="humanHandoffEnabled" class="select" style="width:100%; height:40px; font-size:12px;">
+                        <option value="1">Açık — manuel mesajda AI beklesin</option>
+                        <option value="0">Kapalı — AI çalışmaya devam etsin</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Standby Süresi</label>
+                    <select id="humanHandoffMinutes" class="select" style="width:100%; height:40px; font-size:12px;">
+                        <option value="15">15 dakika</option>
+                        <option value="30">30 dakika</option>
+                        <option value="60">1 saat (Önerilen)</option>
+                        <option value="120">2 saat</option>
+                    </select>
+                </div>
+            </div>
+
+            <div style="margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:12px;">
+                    <strong style="font-size:13px;">Şu anda insan tarafından yönetilen görüşmeler</strong>
+                    <button type="button" class="btn btn-secondary" onclick="loadHumanHandoffConversations()"><i data-lucide="refresh-cw" size="13"></i> Yenile</button>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table style="width:100%; border-collapse:collapse; font-size:12px;">
+                        <thead><tr style="text-align:left; color:#94a3b8;"><th style="padding:10px;">Müşteri ID</th><th style="padding:10px;">Son Mesaj</th><th style="padding:10px;">AI'ın Dönüş Zamanı</th><th style="padding:10px;">İşlem</th></tr></thead>
+                        <tbody id="humanHandoffConversationList"><tr><td colspan="4" style="padding:16px; text-align:center; color:#94a3b8;">Standby görüşmeleri yükleniyor…</td></tr></tbody>
+                    </table>
+                </div>
+            </div>
         </div>
 
         <!-- STORE-SPECIFIC AI PROVIDER & CREDENTIAL CARD -->
@@ -355,7 +400,7 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
-<script src="app.js?v=20260817-plan-expiry-v2"></script>
+<script src="app.js?v=20260826-human-handoff"></script>
 <script>
   function toggleSidebar(){
     document.getElementById("sidebar").classList.toggle("open");

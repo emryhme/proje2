@@ -2448,6 +2448,8 @@ async function loadSystemSettingsIntoModal() {
       const s = data.settings;
       if (document.getElementById('sysBotTone')) document.getElementById('sysBotTone').value = s.bot_tone || 'luxury';
       if (document.getElementById('sysBotSystemPrompt')) document.getElementById('sysBotSystemPrompt').value = s.bot_system_prompt || '';
+      if (document.getElementById('humanHandoffEnabled')) document.getElementById('humanHandoffEnabled').value = s.human_handoff_enabled === '0' ? '0' : '1';
+      if (document.getElementById('humanHandoffMinutes')) document.getElementById('humanHandoffMinutes').value = s.human_handoff_minutes || '60';
       const providerInput = document.getElementById('sysAiProvider');
       loadedAiProvider = s.ai_provider || 'openai';
       configuredAiProviders = {
@@ -2461,8 +2463,65 @@ async function loadSystemSettingsIntoModal() {
       const apiKeyInput = document.getElementById('sysAiApiKey');
       const clearApiKeyInput = document.getElementById('sysClearAiApiKey');
       handleAiProviderChange();
+      if (document.getElementById('humanHandoffConversationList')) loadHumanHandoffConversations();
     }
   } catch (e) {}
+}
+
+async function saveHumanHandoffSettings() {
+  const enabled = document.getElementById('humanHandoffEnabled')?.value === '0' ? '0' : '1';
+  const minutes = document.getElementById('humanHandoffMinutes')?.value || '60';
+  try {
+    const data = await apiFetch(`${API_BASE}/api/settings`, {
+      method: 'POST',
+      body: JSON.stringify({ settings: { human_handoff_enabled: enabled, human_handoff_minutes: minutes } })
+    });
+    if (!data.success) throw new Error(data.error || 'Handover ayarları kaydedilemedi.');
+    showToast(enabled === '1' ? '✅ Human Handoff ayarları kaydedildi.' : '✅ Human Handoff kapatıldı; standby görüşmeleri yeniden AI kontrolüne geçti.', 'success');
+    await loadHumanHandoffConversations();
+  } catch (error) {
+    showToast(`❌ ${error.message || 'Handover ayarları kaydedilemedi.'}`, 'error');
+  }
+}
+
+function formatHandoffDate(value) {
+  if (!value) return '-';
+  const date = new Date(`${String(value).replace(' ', 'T')}Z`);
+  return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString('tr-TR');
+}
+
+async function loadHumanHandoffConversations() {
+  const body = document.getElementById('humanHandoffConversationList');
+  if (!body) return;
+  try {
+    const data = await apiFetch(`${API_BASE}/api/human-handoff/conversations`);
+    const conversations = Array.isArray(data.conversations) ? data.conversations : [];
+    if (!conversations.length) {
+      body.innerHTML = '<tr><td colspan="4" style="padding:16px; text-align:center; color:#94a3b8;">Şu anda standby durumunda görüşme yok.</td></tr>';
+      return;
+    }
+    body.innerHTML = conversations.map(conversation => {
+      const customerId = String(conversation.externalUserId || '').replace(/^instagram:/, '');
+      return `<tr style="border-top:1px solid var(--border);">
+        <td style="padding:10px;"><code>${escapeHtml(customerId)}</code></td>
+        <td style="padding:10px; max-width:320px;">${escapeHtml(String(conversation.lastMessage || '').slice(0, 120)) || '-'}</td>
+        <td style="padding:10px;">${escapeHtml(formatHandoffDate(conversation.standbyUntil))}</td>
+        <td style="padding:10px;"><button type="button" class="btn btn-primary" onclick="resumeAiConversation(${Number(conversation.id)})">AI'ı Devreye Al</button></td>
+      </tr>`;
+    }).join('');
+  } catch (error) {
+    body.innerHTML = '<tr><td colspan="4" style="padding:16px; text-align:center; color:#f87171;">Standby görüşmeleri yüklenemedi.</td></tr>';
+  }
+}
+
+async function resumeAiConversation(conversationId) {
+  try {
+    const data = await apiFetch(`${API_BASE}/api/human-handoff/conversations/${Number(conversationId)}/resume`, { method: 'POST' });
+    showToast(`✅ ${data.message || 'AI yeniden devreye alındı.'}`, 'success');
+    await loadHumanHandoffConversations();
+  } catch (error) {
+    showToast(`❌ ${error.message || 'AI yeniden devreye alınamadı.'}`, 'error');
+  }
 }
 
 async function saveSystemSettingsModal() {
