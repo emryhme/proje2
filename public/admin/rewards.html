@@ -8,7 +8,7 @@
 
   <script src="https://unpkg.com/lucide@latest"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="styles.css?v=20260817-plan-expiry-v2">
+  <link rel="stylesheet" href="styles.css?v=20260826-vip-window-warning">
 </head>
 <body>
 
@@ -154,6 +154,16 @@
             </div>
         </div>
 
+        <div class="card" style="margin-bottom:18px; border:1px solid rgba(245,158,11,.45); background:rgba(245,158,11,.08); padding:16px;">
+            <div style="display:flex; align-items:flex-start; gap:12px;">
+                <i data-lucide="triangle-alert" size="21" style="color:#f59e0b; flex:0 0 auto; margin-top:2px;"></i>
+                <div style="font-size:12px; line-height:1.65; color:#d1d5db;">
+                    <strong style="display:block; color:#fbbf24; font-size:13px; margin-bottom:4px;">Instagram DM için 24 saat sınırı</strong>
+                    Müşterinin son Instagram mesajının üzerinden 24 saat geçtiyse Meta, otomatik VIP ödül DM'ini reddedebilir. Ödül müşterinin hesabına yine tanımlanır ancak bildirim mesajı teslim edilmeyebilir. En güvenilir yöntem ödülü sipariş görüşmesi tamamlanırken göndermektir; daha geç bildirimler için e-posta veya SMS kullanın.
+                </div>
+            </div>
+        </div>
+
         <!-- FORM CARD -->
         <div class="card table-card">
             <div class="table-header">
@@ -258,7 +268,7 @@
 
 <div class="toast-container" id="toastContainer"></div>
 
-<script src="app.js?v=20260817-plan-expiry-v2"></script>
+<script src="app.js?v=20260826-vip-window-warning"></script>
 <script>
   function toggleSidebar(){
     document.getElementById("sidebar").classList.toggle("open");
