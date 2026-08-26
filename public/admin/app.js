@@ -477,6 +477,8 @@ function setupUserDropdown() {
   }
 
   userElem.onclick = (e) => {
+    // Dropdown actions must bubble to the delegated document handler.
+    if (dropdown.contains(e.target)) return;
     e.stopPropagation();
     dropdown.style.display = (dropdown.style.display === 'flex') ? 'none' : 'flex';
   };
