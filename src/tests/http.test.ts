@@ -38,7 +38,15 @@ async function run(): Promise<void> {
 
   try {
     const health = await fetch(`${origin}/healthz`);
-    assert(health.ok && health.headers.get('x-content-type-options') === 'nosniff', 'Health endpoint and security headers are active');
+    const contentSecurityPolicy = String(health.headers.get('content-security-policy') || '');
+    assert(
+      health.ok
+        && health.headers.get('x-content-type-options') === 'nosniff'
+        && contentSecurityPolicy.includes("object-src 'none'")
+        && contentSecurityPolicy.includes("frame-src 'none'")
+        && contentSecurityPolicy.includes('upgrade-insecure-requests'),
+      'Health endpoint and hardened security headers are active'
+    );
 
     const [oldMasterLogin, privateMasterLogin, publicHomepage] = await Promise.all([
       fetch(`${origin}/master-admin/login`),
@@ -68,6 +76,7 @@ async function run(): Promise<void> {
     const dashboardHtml = await dashboardPage.text();
     const stockHtml = await stockPage.text();
     const instagramMediaHtml = await instagramMediaPage.text();
+    const initialAdminAppSource = await (await fetch(`${origin}/admin/app.js`)).text();
     assert(
       dashboardPage.ok
         && stockPage.ok
@@ -86,6 +95,12 @@ async function run(): Promise<void> {
         && stockHtml.includes('id="outOfStockKpi"')
         && stockHtml.includes('id="stockAlertModal"'),
       'Clean page URLs work and legacy HTML URLs redirect to their canonical routes'
+    );
+    assert(
+      initialAdminAppSource.includes('setupDelegatedActions')
+        && initialAdminAppSource.includes('data-action="open-order"')
+        && !/onclick=[^\n]*escapeHtml/.test(initialAdminAppSource),
+      'Customer-controlled values are not embedded in inline JavaScript handlers'
     );
 
     const [missingPage, missingApi] = await Promise.all([
@@ -107,8 +122,17 @@ async function run(): Promise<void> {
       method: 'POST', headers: { 'Content-Type': 'application/json', Origin: origin }, body: JSON.stringify({ email, password })
     });
     const loginBody = await login.json() as any;
-    const cookie = String(login.headers.get('set-cookie') || '').split(';')[0];
-    assert(login.ok && loginBody.token && cookie.startsWith('iscworks_session='), 'Login issues an HttpOnly browser session cookie');
+    const loginSetCookie = String(login.headers.get('set-cookie') || '');
+    const cookie = loginSetCookie.split(';')[0];
+    assert(
+      login.ok
+        && loginBody.token
+        && cookie.startsWith('iscworks_session=')
+        && loginSetCookie.includes('HttpOnly')
+        && loginSetCookie.includes('SameSite=Strict')
+        && loginSetCookie.includes('Priority=High'),
+      'Login issues a hardened HttpOnly browser session cookie'
+    );
     const verifiedSession = await fetch(`${origin}/api/auth/verify`, { headers: { Cookie: cookie } });
     const verifiedSessionBody = await verifiedSession.json() as any;
     assert(

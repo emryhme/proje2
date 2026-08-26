@@ -80,6 +80,47 @@ function applyTheme(theme) {
   }
 }
 
+function setupDelegatedActions() {
+  if (document.documentElement.dataset.delegatedActionsReady === '1') return;
+  document.documentElement.dataset.delegatedActionsReady = '1';
+  document.addEventListener('click', async (event) => {
+    const target = event.target.closest('[data-action]');
+    if (!target) return;
+    const action = target.dataset.action;
+    const value = target.dataset.value || '';
+    const modal = document.getElementById('orderDetailsModal');
+    if (target.matches('button, a')) event.stopPropagation();
+
+    switch (action) {
+      case 'logout': return logoutUser();
+      case 'delete-reward': return deleteReward(Number(value));
+      case 'select-reward-order': return selectOrderForReward(value);
+      case 'delete-order': return deleteOrder(value);
+      case 'save-product': return saveProductRow(value);
+      case 'delete-product': return deleteProduct(value);
+      case 'open-order': return openOrderDetailsModal(value);
+      case 'approve-order': return updateOrderStatus(value, 'OK');
+      case 'reject-order': return updateOrderStatus(value, 'DEC');
+      case 'open-rejection':
+        if (modal) modal.style.display = 'none';
+        return openRejectionModal(value);
+      case 'copy-address':
+        await navigator.clipboard.writeText(value);
+        return showToast('📋 Adres panoya kopyalandı!', 'success');
+      case 'close-order-modal':
+        if (modal) modal.style.display = 'none';
+        return;
+      case 'delete-campaign': return deleteCampaign(Number(value));
+      case 'switch-settings-ai': return switchSettingsTab('ai');
+      case 'close-system-settings': return closeSystemSettingsModal();
+      case 'save-system-settings': return saveSystemSettingsModal();
+      case 'resume-ai': return resumeAiConversation(Number(value));
+      case 'approve-application': return approveMerchantApplication(Number(value));
+      case 'reject-application': return rejectMerchantApplication(Number(value));
+    }
+  });
+}
+
 function setupThemeToggle() {
   const actions = document.querySelector('.top-actions');
   if (!actions || document.getElementById('themeToggle')) return;
@@ -428,7 +469,7 @@ function setupUserDropdown() {
         <strong style="font-size: 12px; display: block; color: #111827;">${escapeHtml(displayName)}</strong>
         <span style="font-size: 10px; color: #6b7280; font-weight: 600;">Rol: ${escapeHtml(roleTitle)}</span>
       </div>
-      <div onclick="logoutUser()" style="padding: 10px 16px; font-size: 11px; color: #ef4444; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px;" onmouseover="this.style.background='#fef2f2'" onmouseout="this.style.background='transparent'">
+      <div data-action="logout" style="padding: 10px 16px; font-size: 11px; color: #ef4444; font-weight: 700; cursor: pointer; display: flex; align-items: center; gap: 8px;">
         <i class="fa-solid fa-right-from-bracket"></i> Çıkış Yap
       </div>
     `;
@@ -458,6 +499,7 @@ async function initApp() {
   applyDynamicStoreBranding();
   applyCurrentUserProfile();
   setupEventListeners();
+  setupDelegatedActions();
   setupUserDropdown();
   fetchData();
   fetchCampaigns();
@@ -1047,7 +1089,7 @@ function renderRewardsTable() {
         <td><small class="text-muted">${r.createdAt ? new Date(r.createdAt).toLocaleString('tr-TR') : '-'}</small></td>
         <td><small class="text-muted">${r.usedAt ? new Date(r.usedAt).toLocaleString('tr-TR') : '-'}</small></td>
         <td>
-          <button class="btn btn-sm btn-delete" onclick="deleteReward(${r.id})">
+          <button class="btn btn-sm btn-delete" data-action="delete-reward" data-value="${Number(r.id)}">
             <i class="fa-solid fa-trash-can"></i> Sil
           </button>
         </td>
@@ -1085,7 +1127,7 @@ function renderRewardOrdersTable() {
     }
 
     return `
-      <tr style="cursor:pointer;" onclick="selectOrderForReward('${escapeHtml(senderId)}')">
+      <tr style="cursor:pointer;" data-action="select-reward-order" data-value="${escapeHtml(senderId)}">
         <td><strong class="text-purple">${escapeHtml(o.orderId || '-')}</strong></td>
         <td><span class="code-tag">${escapeHtml(senderId)}</span></td>
         <td><strong>${escapeHtml(o.customerName || '-')}</strong></td>
@@ -1094,10 +1136,10 @@ function renderRewardOrdersTable() {
         <td><small class="text-muted">${escapeHtml(o.createdAt || '-')}</small></td>
         <td>
           <div style="display:flex; gap:6px;">
-            <button class="btn btn-sm btn-primary" onclick="event.stopPropagation(); selectOrderForReward('${escapeHtml(senderId)}')">
+            <button class="btn btn-sm btn-primary" data-action="select-reward-order" data-value="${escapeHtml(senderId)}">
               <i class="fa-solid fa-hand-pointer"></i> Form'a Aktar
             </button>
-            <button class="btn btn-sm btn-delete" onclick="event.stopPropagation(); deleteOrder('${escapeHtml(o.orderId)}')">
+            <button class="btn btn-sm btn-delete" data-action="delete-order" data-value="${escapeHtml(o.orderId)}">
               <i class="fa-solid fa-trash"></i> Sil
             </button>
           </div>
@@ -1252,10 +1294,10 @@ function renderProductsTable() {
         <td><span class="code-tag" title="Instagram Media ID">${escapeHtml(p.instagramMediaId || '-')}</span></td>
         <td>
           <div class="action-btn-group">
-            <button class="btn btn-sm btn-stock" onclick="saveProductRow('${escapeHtml(p.productCode)}')">
+            <button class="btn btn-sm btn-stock" data-action="save-product" data-value="${escapeHtml(p.productCode)}">
               <i class="fa-solid fa-floppy-disk"></i> Kaydet
             </button>
-            <button class="btn btn-sm btn-delete" onclick="deleteProduct('${escapeHtml(p.productCode)}')">
+            <button class="btn btn-sm btn-delete" data-action="delete-product" data-value="${escapeHtml(p.productCode)}">
               <i class="fa-solid fa-trash-can"></i> Sil
             </button>
           </div>
@@ -1459,7 +1501,7 @@ function renderOrdersTable() {
     }
 
     return `
-      <tr style="cursor:pointer;" onclick="openOrderDetailsModal('${escapeHtml(o.orderId)}')">
+      <tr style="cursor:pointer;" data-action="open-order" data-value="${escapeHtml(o.orderId)}">
         <td><strong class="text-purple">${escapeHtml(o.orderId || '-')}</strong></td>
         <td><strong>${escapeHtml(o.customerName || '-')}</strong></td>
         <td><span class="code-tag">${escapeHtml(o.customerPhone || '-')}</span></td>
@@ -1470,17 +1512,17 @@ function renderOrdersTable() {
         <td>${statusBadge}</td>
         <td><small class="text-muted">${escapeHtml(o.createdAt || '-')}</small></td>
         <td>
-          <div class="action-btn-group" onclick="event.stopPropagation()">
-            <button class="btn btn-sm btn-secondary" onclick="openOrderDetailsModal('${escapeHtml(o.orderId)}')">
+          <div class="action-btn-group">
+            <button class="btn btn-sm btn-secondary" data-action="open-order" data-value="${escapeHtml(o.orderId)}">
               <i class="fa-solid fa-eye"></i> Detay
             </button>
-            <button class="btn btn-sm btn-success" onclick="updateOrderStatus('${escapeHtml(o.orderId)}', 'OK')">
+            <button class="btn btn-sm btn-success" data-action="approve-order" data-value="${escapeHtml(o.orderId)}">
               <i class="fa-solid fa-check"></i> Onayla
             </button>
-            <button class="btn btn-sm btn-warning" style="background:#eab308; color:#000; font-weight:600;" onclick="updateOrderStatus('${escapeHtml(o.orderId)}', 'DEC')">
+            <button class="btn btn-sm btn-warning" style="background:#eab308; color:#000; font-weight:600;" data-action="reject-order" data-value="${escapeHtml(o.orderId)}">
               <i class="fa-solid fa-xmark"></i> Reddet
             </button>
-            <button class="btn btn-sm btn-delete" onclick="deleteOrder('${escapeHtml(o.orderId)}')">
+            <button class="btn btn-sm btn-delete" data-action="delete-order" data-value="${escapeHtml(o.orderId)}">
               <i class="fa-solid fa-trash"></i> Sil
             </button>
           </div>
@@ -1674,7 +1716,7 @@ function openOrderDetailsModal(orderId) {
           <span style="color:#94a3b8; display:block; font-size:0.8rem; margin-bottom:4px;">📍 Teslimat Adresi:</span>
           <div style="background:#1e293b; border:1px solid #334155; padding:0.75rem; border-radius:8px; color:#f8fafc; font-size:0.9rem; line-height:1.4; display:flex; justify-content:space-between; align-items:center;">
             <span>${escapeHtml(order.address)}</span>
-            <button class="btn btn-sm btn-secondary" onclick="navigator.clipboard.writeText('${escapeHtml(order.address)}'); showToast('📋 Adres panoya kopyalandı!','success');" title="Adresi Kopyala">
+            <button class="btn btn-sm btn-secondary" data-action="copy-address" data-value="${escapeHtml(order.address)}" title="Adresi Kopyala">
               <i class="fa-solid fa-copy"></i> Kopyala
             </button>
           </div>
@@ -1713,22 +1755,22 @@ function openOrderDetailsModal(orderId) {
   if (footer) {
     footer.innerHTML = `
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <button class="btn btn-sm btn-success" onclick="updateOrderStatus('${escapeHtml(order.orderId)}', 'OK'); document.getElementById('orderDetailsModal').style.display='none';">
+        <button class="btn btn-sm btn-success" data-action="approve-order" data-value="${escapeHtml(order.orderId)}">
           <i class="fa-solid fa-check"></i> Siparişi Onayla
         </button>
-        <button class="btn btn-sm btn-warning" style="background:#eab308; color:#000; font-weight:600;" onclick="document.getElementById('orderDetailsModal').style.display='none'; openRejectionModal('${escapeHtml(order.orderId)}');">
+        <button class="btn btn-sm btn-warning" style="background:#eab308; color:#000; font-weight:600;" data-action="open-rejection" data-value="${escapeHtml(order.orderId)}">
           <i class="fa-solid fa-xmark"></i> Siparişi Reddet & DM Yolla
         </button>
-        <button class="btn btn-sm btn-delete" onclick="document.getElementById('orderDetailsModal').style.display='none'; deleteOrder('${escapeHtml(order.orderId)}');">
+        <button class="btn btn-sm btn-delete" data-action="delete-order" data-value="${escapeHtml(order.orderId)}">
           <i class="fa-solid fa-trash"></i> Siparişi Sil
         </button>
         ${order.senderId ? `
-          <button class="btn btn-sm btn-secondary" onclick="document.getElementById('orderDetailsModal').style.display='none'; selectOrderForReward('${escapeHtml(order.senderId)}');">
+          <button class="btn btn-sm btn-secondary" data-action="select-reward-order" data-value="${escapeHtml(order.senderId)}">
             <i class="fa-solid fa-gift text-gold"></i> VIP Ödül Tanımla
           </button>
         ` : ''}
       </div>
-      <button class="btn btn-sm" style="background:#334155; color:#f8fafc;" onclick="document.getElementById('orderDetailsModal').style.display='none';">
+      <button class="btn btn-sm" style="background:#334155; color:#f8fafc;" data-action="close-order-modal">
         Kapat (&times;)
       </button>
     `;
@@ -1961,7 +2003,7 @@ async function fetchCampaigns() {
             <td><strong class="text-green">${[Number(c.discount_percent) > 0 ? `%${Number(c.discount_percent)}` : '', Number(c.discount_amount) > 0 ? `${Number(c.discount_amount).toLocaleString('tr-TR')} TL` : ''].filter(Boolean).join(' + ') || '-'}</strong>${Number(c.min_order_amount) > 0 ? `<small class="text-muted" style="display:block">Min. ${Number(c.min_order_amount).toLocaleString('tr-TR')} TL</small>` : ''}</td>
             <td>${endDateBadge}</td>
             <td>
-              <button class="btn btn-sm btn-delete" onclick="deleteCampaign(${c.id})"><i class="fa-solid fa-trash-can"></i> Sil</button>
+              <button class="btn btn-sm btn-delete" data-action="delete-campaign" data-value="${Number(c.id)}"><i class="fa-solid fa-trash-can"></i> Sil</button>
             </td>
           </tr>
         `;
@@ -2326,7 +2368,7 @@ function getOrCreateSystemSettingsModal() {
 
       <!-- Settings Tabs -->
       <div style="display:flex; gap:10px; margin-bottom:20px; border-bottom:1px solid var(--border); padding-bottom:10px;">
-        <button class="btn btn-sm btn-primary" id="tabBtnAiCustom" onclick="switchSettingsTab('ai')">
+        <button class="btn btn-sm btn-primary" id="tabBtnAiCustom" data-action="switch-settings-ai">
           🤖 Yapay Zeka Kişiselleştirme
         </button>
       </div>
@@ -2373,8 +2415,8 @@ function getOrCreateSystemSettingsModal() {
       </div>
 
       <div style="display:flex; justify-content:flex-end; gap:10px; border-top:1px solid var(--border); padding-top:15px; margin-top:15px;">
-        <button class="btn btn-secondary" onclick="closeSystemSettingsModal()">Vazgeç</button>
-        <button class="btn btn-primary" onclick="saveSystemSettingsModal()">
+        <button class="btn btn-secondary" data-action="close-system-settings">Vazgeç</button>
+        <button class="btn btn-primary" data-action="save-system-settings">
           <i class="fa-solid fa-floppy-disk"></i> Ayarları Kaydet
         </button>
       </div>
@@ -2538,7 +2580,7 @@ async function loadHumanHandoffConversations() {
         <td style="padding:10px;"><code>${escapeHtml(customerId)}</code></td>
         <td style="padding:10px; max-width:320px;">${escapeHtml(String(conversation.lastMessage || '').slice(0, 120)) || '-'}</td>
         <td style="padding:10px;">${escapeHtml(formatHandoffDate(conversation.standbyUntil))}</td>
-        <td style="padding:10px;"><button type="button" class="btn btn-primary" onclick="resumeAiConversation(${Number(conversation.id)})">AI'ı Devreye Al</button></td>
+        <td style="padding:10px;"><button type="button" class="btn btn-primary" data-action="resume-ai" data-value="${Number(conversation.id)}">AI'ı Devreye Al</button></td>
       </tr>`;
     }).join('');
   } catch (error) {
@@ -3489,8 +3531,8 @@ async function fetchMerchantApplications() {
         }
 
         const actions = (app.status === 'pending') ? `
-          <button class="btn btn-sm btn-primary" onclick="approveMerchantApplication(${app.id})"><i class="fa-solid fa-check"></i> Onayla</button>
-          <button class="btn btn-sm btn-delete" style="margin-left:4px;" onclick="rejectMerchantApplication(${app.id})"><i class="fa-solid fa-xmark"></i> Reddet</button>
+          <button class="btn btn-sm btn-primary" data-action="approve-application" data-value="${Number(app.id)}"><i class="fa-solid fa-check"></i> Onayla</button>
+          <button class="btn btn-sm btn-delete" style="margin-left:4px;" data-action="reject-application" data-value="${Number(app.id)}"><i class="fa-solid fa-xmark"></i> Reddet</button>
         ` : `<span style="font-size:11px; color:#6b7280;">İşlem Yapıldı</span>`;
 
         return `

@@ -194,7 +194,7 @@ export class WebhookController {
       console.log('[WebhookController] ✅ Webhook Doğrulaması Başarılı!');
       res.status(200).send(challenge);
     } else {
-      console.warn(`[WebhookController] ❌ Webhook Verification Failed! Token: "${token}"`);
+      console.warn('[WebhookController] ❌ Webhook doğrulaması başarısız; gönderilen anahtar loglanmadı.');
       res.sendStatus(403);
     }
   }
@@ -241,7 +241,7 @@ export class WebhookController {
       console.log(`[WebhookController] ✅ ${storeSlug} Webhook Doğrulaması Başarılı!`);
       res.status(200).send(challenge);
     } else {
-      console.warn(`[WebhookController] ❌ ${storeSlug} Verify Token Uyuşmazlığı! Gelen: "${token}"`);
+      console.warn(`[WebhookController] ❌ ${storeSlug} Verify Token uyuşmazlığı; gönderilen anahtar loglanmadı.`);
       res.sendStatus(403);
     }
   }

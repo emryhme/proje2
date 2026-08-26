@@ -14,7 +14,7 @@ import { DemoAIService } from './services/demo-ai.service';
 import { extractProductCode } from './utils/regex.util';
 import { db, hashPassword, initDatabase, needsPasswordRehash, performDataMaintenance, verifyPassword } from './database/db';
 import { AuthMiddleware, AuthenticatedRequest } from './middleware/auth.middleware';
-import { createRateLimiter, csrfProtection, securityHeaders } from './middleware/security.middleware';
+import { createRateLimiter, csrfProtection, sanitizeServerErrors, securityHeaders } from './middleware/security.middleware';
 import { decryptSettingSecret, encryptSettingSecret } from './utils/secret.util';
 import { AIProviderService } from './services/ai-provider.service';
 import { HumanHandoffService } from './services/human-handoff.service';
@@ -29,6 +29,7 @@ const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
 app.use(securityHeaders);
+app.use(sanitizeServerErrors);
 
 // Apply Global CORS Middleware
 app.use(AuthMiddleware.cors);

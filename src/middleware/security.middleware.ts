@@ -49,10 +49,23 @@ export function securityHeaders(req: Request, res: Response, next: NextFunction)
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://docs.google.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://unpkg.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://fonts.googleapis.com; font-src 'self' https://cdnjs.cloudflare.com https://fonts.gstatic.com; img-src 'self' data: https:; connect-src 'self' https://docs.google.com; object-src 'none'; frame-src 'none'; worker-src 'none'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'; upgrade-insecure-requests");
   if (env.nodeEnv === 'production') {
     res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   }
+  next();
+}
+
+export function sanitizeServerErrors(req: Request, res: Response, next: NextFunction): void {
+  const sendJson = res.json.bind(res);
+  res.json = ((body: any) => {
+    if (res.statusCode >= 500 && body && Object.prototype.hasOwnProperty.call(body, 'error')) {
+      const requestId = String(res.locals.requestId || 'unknown');
+      console.error(`[API Error] requestId=${requestId} method=${req.method} path=${req.path} status=${res.statusCode}`);
+      return sendJson({ ...body, error: 'İşlem sırasında sunucu hatası oluştu.', requestId });
+    }
+    return sendJson(body);
+  }) as Response['json'];
   next();
 }
 
@@ -72,12 +85,12 @@ export function sessionCookie(req: Request): string {
 export function setSessionCookie(res: Response, token: string, maxAgeSeconds?: number): void {
   const secure = env.nodeEnv === 'production' ? '; Secure' : '';
   const maxAge = maxAgeSeconds ? `; Max-Age=${Math.floor(maxAgeSeconds)}` : '';
-  res.append('Set-Cookie', `iscworks_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict${maxAge}${secure}`);
+  res.append('Set-Cookie', `iscworks_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Priority=High${maxAge}${secure}`);
 }
 
 export function clearSessionCookie(res: Response): void {
   const secure = env.nodeEnv === 'production' ? '; Secure' : '';
-  res.append('Set-Cookie', `iscworks_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${secure}`);
+  res.append('Set-Cookie', `iscworks_session=; Path=/; HttpOnly; SameSite=Strict; Priority=High; Max-Age=0${secure}`);
 }
 
 export function csrfProtection(req: Request, res: Response, next: NextFunction): void {
