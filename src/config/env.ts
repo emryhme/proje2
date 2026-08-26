@@ -17,7 +17,7 @@ const envSchema = z.object({
   OPENAI_MODEL: z.string().default('gpt-4o'),
   GEMINI_API_KEY: z.string().default(''),
   RESEND_API_KEY: z.string().trim().default(''),
-  EMAIL_FROM: z.string().trim().default('ISCWORKS <onay@mail.iscworks.info>'),
+  EMAIL_FROM: z.string().trim().default('ISCWORKS <onay@mail.iscworks.tr>'),
   TELEGRAM_BOT_TOKEN: z.string().default(''),
   TELEGRAM_CHAT_ID: z.string().default(''),
   N8N_WEBHOOK_URL: z.string().default(''),

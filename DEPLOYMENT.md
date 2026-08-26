@@ -3,7 +3,7 @@
 ## Required environment
 
 - Use a unique `JWT_SECRET` of at least 32 characters.
-- Set `CORS_ORIGINS=https://www.iscworks.info` in production; wildcard CORS is rejected.
+- Set `CORS_ORIGINS=https://www.iscworks.tr` in production; wildcard CORS is rejected.
 - Keep `DATABASE_PATH` on persistent storage.
 - Configure `RESEND_API_KEY`, `EMAIL_FROM`, Gemini and Meta credentials only in `.env`.
 

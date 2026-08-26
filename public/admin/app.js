@@ -241,7 +241,7 @@ async function logoutUser() {
   state.knownOrderIds.clear();
   showToast('👋 Çıkış yapıldı. Ana sayfaya yönlendiriliyorsunuz...', 'info');
   setTimeout(() => {
-    window.location.href = 'https://www.iscworks.info/';
+    window.location.href = 'https://www.iscworks.tr/';
   }, 600);
 }
 
