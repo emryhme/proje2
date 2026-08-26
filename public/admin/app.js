@@ -172,13 +172,19 @@ function applyCurrentUserProfile() {
 
 async function checkAuthStatus() {
   const path = window.location.pathname;
-  if (path.endsWith('login')) return;
+  if (path.endsWith('login')) return false;
   try {
     const response = await fetch('/api/auth/verify', { credentials: 'same-origin' });
     if (!response.ok) throw new Error('UNAUTHORIZED');
+    const data = await response.json();
+    if (!data.success || !data.valid || !data.user) throw new Error('UNAUTHORIZED');
+    localStorage.removeItem('barons_admin_token');
+    localStorage.setItem('barons_admin_user', JSON.stringify(data.user));
+    return true;
   } catch {
     localStorage.removeItem('barons_admin_user');
     window.location.href = 'login';
+    return false;
   }
 }
 
@@ -440,8 +446,9 @@ function setupUserDropdown() {
 }
 
 // Initialize Application Robustly (Supports readyState interactive & complete)
-function initApp() {
-  checkAuthStatus();
+async function initApp() {
+  const authenticated = await checkAuthStatus();
+  if (!authenticated) return;
   ensureDashboardStockNavigation();
   ensurePlanNavigation();
   ensureDataSourcesNavigation();
