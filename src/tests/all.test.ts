@@ -157,6 +157,23 @@ async function runTestSuite() {
       && shuffledNormalized.validRows[0]?.price === 799.9,
     'Shuffled Turkish supplier columns are recognized without manual mapping'
   );
+  const warehouseCsvRows = parseImportContent('csv', [
+    'warehouse_ref;variant_descriptor;available_units;retail_amount;item_title;shade_name;collection_group;social_media_asset_id;product_page',
+    'NX-701-S;Small;18;749.90;Nova Keten Gömlek;Kum Beji;Yaz Koleksiyonu;17900123456789001;https://example.com/nova-keten'
+  ].join('\n'));
+  const warehouseMapping = suggestMapping(collectHeaders(warehouseCsvRows));
+  const warehouseNormalized = normalizeRecords(warehouseCsvRows, warehouseMapping);
+  assert(
+    warehouseMapping.productCode === 'warehouse_ref'
+      && warehouseMapping.price === 'retail_amount'
+      && warehouseMapping.stock === 'available_units'
+      && warehouseNormalized.errors.length === 0
+      && warehouseNormalized.validRows[0]?.productCode === 'NX-701-S'
+      && warehouseNormalized.validRows[0]?.price === 749.9
+      && warehouseNormalized.validRows[0]?.stock === 18
+      && warehouseNormalized.validRows[0]?.instagramMediaId === '17900123456789001',
+    'External warehouse and retail column names are recognized without manual mapping'
+  );
 
   console.log('\n2️⃣ AUTH TEST 2: Valid JWT Token Generation & Verification');
   const jwtOwnerA = AuthMiddleware.generateToken({ userId: 10, storeId: 100, role: 'OWNER', email: 'owner_a@iscworks.com' });
