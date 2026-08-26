@@ -605,7 +605,12 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
     db.transaction(() => {
       updates.forEach(update => saveSetting.run(storeId, update.key, update.value));
       if (cleanAiApiKey) saveSetting.run(storeId, providerSecretKey, encryptSettingSecret(cleanAiApiKey));
-      if (clearAiApiKey === true) db.prepare('DELETE FROM settings WHERE store_id = ? AND key = ?').run(storeId, providerSecretKey);
+      if (clearAiApiKey === true) {
+        db.prepare('DELETE FROM settings WHERE store_id = ? AND key = ?').run(storeId, providerSecretKey);
+        if (effectiveProvider === currentProvider) {
+          db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'ai_api_key'").run(storeId);
+        }
+      }
       if (legacySecret?.value && currentProvider === effectiveProvider && !savedProviderSecret?.value && !cleanAiApiKey && clearAiApiKey !== true) {
         saveSetting.run(storeId, providerSecretKey, legacySecret.value);
       }

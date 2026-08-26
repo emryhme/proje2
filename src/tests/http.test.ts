@@ -168,7 +168,21 @@ async function run(): Promise<void> {
         && merchantRejectedMasterAi.status === 403,
       'Master Admin can assign encrypted provider credentials to a store without exposing them'
     );
-    db.prepare("DELETE FROM settings WHERE store_id = ? AND key IN ('ai_provider', 'openai_api_key', 'gemini_api_key')").run(storeId);
+    const masterClearedAi = await fetch(`${origin}/api/master-admin/stores/${storeId}/ai-settings`, {
+      method: 'POST',
+      headers: { Cookie: masterCookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'gemini', clearOpenaiApiKey: true, clearGeminiApiKey: true })
+    });
+    const masterClearedAiBody = await masterClearedAi.json() as any;
+    const remainingMasterAiKeys = (db.prepare("SELECT COUNT(*) AS count FROM settings WHERE store_id = ? AND key IN ('ai_api_key', 'openai_api_key', 'gemini_api_key')").get(storeId) as any)?.count;
+    assert(
+      masterClearedAi.ok
+        && masterClearedAiBody.aiSettings?.openaiConfigured === false
+        && masterClearedAiBody.aiSettings?.geminiConfigured === false
+        && remainingMasterAiKeys === 0,
+      'Master Admin can delete stored AI credentials including the active provider key'
+    );
+    db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'ai_provider'").run(storeId);
     db.prepare('DELETE FROM memberships WHERE user_id = ? AND store_id = 1').run(userId);
 
     const adminAppScript = await fetch(`${origin}/admin/app.js`);

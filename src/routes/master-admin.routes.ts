@@ -279,10 +279,6 @@ router.post('/api/master-admin/stores/:storeId/ai-settings', AuthMiddleware.auth
     const savedGeminiKey = decryptSettingSecret(current.gemini_api_key || '').trim() || (currentProvider === 'gemini' ? legacyKey : '');
     const projectedOpenaiKey = openaiApiKey || (clearOpenaiApiKey ? '' : savedOpenaiKey);
     const projectedGeminiKey = geminiApiKey || (clearGeminiApiKey ? '' : savedGeminiKey);
-    if ((provider === 'openai' && !projectedOpenaiKey) || (provider === 'gemini' && !projectedGeminiKey)) {
-      return res.status(400).json({ success: false, error: 'Aktif sağlayıcı için API anahtarı zorunludur.' });
-    }
-
     const saveSetting = db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)');
     db.transaction(() => {
       saveSetting.run(targetStoreId, 'ai_provider', provider);
