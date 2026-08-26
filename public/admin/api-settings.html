@@ -170,6 +170,20 @@
                         <option value="120">2 saat</option>
                     </select>
                 </div>
+                <div class="form-group">
+                    <label>Telegram Bot Token</label>
+                    <input type="password" id="supportTelegramBotToken" autocomplete="new-password" placeholder="123456789:AA...">
+                    <small id="supportTelegramStatus" style="color:#94a3b8; margin-top:6px; display:block;">Telegram bağlantısı kontrol ediliyor…</small>
+                </div>
+                <div class="form-group">
+                    <label>Telegram Chat ID</label>
+                    <input type="text" id="supportTelegramChatId" autocomplete="off" placeholder="Örn: -1001234567890">
+                    <small style="color:#64748b; margin-top:6px; display:block;">Canlı destek çağrıları bu kişi veya grup sohbetine gönderilir.</small>
+                </div>
+                <div class="form-group full-width" style="display:flex; align-items:center; gap:8px;">
+                    <input type="checkbox" id="clearSupportTelegram" style="width:auto;">
+                    <label for="clearSupportTelegram" style="margin:0; color:#fca5a5;">Kayıtlı Telegram bağlantısını kaldır</label>
+                </div>
             </div>
 
             <div style="margin-top:20px; border-top:1px solid var(--border); padding-top:16px;">

@@ -63,6 +63,37 @@ export class TelegramService {
     }
   }
 
+  public static async notifySupportRequest(storeId: number, senderId: string, customerMessage: string): Promise<boolean> {
+    const credentials = this.getStoreCredentials(storeId);
+    if (!credentials) {
+      console.warn(`[TelegramService] ⚠️ Destek çağrısı gönderilemedi; Telegram ayarları eksik (Store: ${storeId}).`);
+      return false;
+    }
+    const store = db.prepare('SELECT name FROM stores WHERE id = ?').get(storeId) as { name?: string } | undefined;
+    const messageHtml = `
+🆘 <b>CANLI DESTEK TALEBİ</b>
+
+• <b>Mağaza:</b> ${this.escapeHtml(store?.name || String(storeId))}
+• <b>Instagram Müşteri ID:</b> <code>${this.escapeHtml(String(senderId))}</code>
+• <b>Müşteri Mesajı:</b> ${this.escapeHtml(String(customerMessage || '').slice(0, 1000))}
+• <b>Tarih:</b> ${this.escapeHtml(new Date().toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' }))}
+
+<i>Müşteriye Instagram gelen kutusundan dönüş yapınız. AI bu görüşmede standby durumuna alınacaktır.</i>
+    `.trim();
+    try {
+      await axios.post(`https://api.telegram.org/bot${credentials.botToken}/sendMessage`, {
+        chat_id: credentials.chatId,
+        text: messageHtml,
+        parse_mode: 'HTML'
+      });
+      console.log(`[TelegramService] 🆘 Destek çağrısı Telegram'a gönderildi (Store: ${storeId}, Sender: ${senderId}).`);
+      return true;
+    } catch (error: any) {
+      console.error('[TelegramService] ❌ Destek çağrısı gönderilemedi:', error?.response?.data || error.message);
+      return false;
+    }
+  }
+
   /**
    * Sipariş Onaylandığında Müşteriye / Grubuna 'Siparişiniz Onaylandı' Mesajı Gönderir.
    */

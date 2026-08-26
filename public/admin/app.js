@@ -2450,6 +2450,18 @@ async function loadSystemSettingsIntoModal() {
       if (document.getElementById('sysBotSystemPrompt')) document.getElementById('sysBotSystemPrompt').value = s.bot_system_prompt || '';
       if (document.getElementById('humanHandoffEnabled')) document.getElementById('humanHandoffEnabled').value = s.human_handoff_enabled === '0' ? '0' : '1';
       if (document.getElementById('humanHandoffMinutes')) document.getElementById('humanHandoffMinutes').value = s.human_handoff_minutes || '60';
+      const telegramConfigured = s.telegram_configured === '1';
+      const telegramStatus = document.getElementById('supportTelegramStatus');
+      if (telegramStatus) {
+        telegramStatus.textContent = telegramConfigured ? '✓ Telegram bağlantısı kayıtlı.' : '⚠ Telegram bağlantısı henüz kurulmadı.';
+        telegramStatus.style.color = telegramConfigured ? '#34d399' : '#fbbf24';
+      }
+      if (document.getElementById('supportTelegramBotToken')) document.getElementById('supportTelegramBotToken').placeholder = telegramConfigured ? '••••••••  Kayıtlı — değiştirmek için yeni token girin' : '123456789:AA...';
+      if (document.getElementById('supportTelegramChatId')) document.getElementById('supportTelegramChatId').placeholder = telegramConfigured ? 'Kayıtlı — değiştirmek için token ile birlikte girin' : 'Örn: -1001234567890';
+      if (document.getElementById('clearSupportTelegram')) {
+        document.getElementById('clearSupportTelegram').checked = false;
+        document.getElementById('clearSupportTelegram').disabled = !telegramConfigured;
+      }
       const providerInput = document.getElementById('sysAiProvider');
       loadedAiProvider = s.ai_provider || 'openai';
       configuredAiProviders = {
@@ -2471,14 +2483,27 @@ async function loadSystemSettingsIntoModal() {
 async function saveHumanHandoffSettings() {
   const enabled = document.getElementById('humanHandoffEnabled')?.value === '0' ? '0' : '1';
   const minutes = document.getElementById('humanHandoffMinutes')?.value || '60';
+  const telegramBotToken = document.getElementById('supportTelegramBotToken')?.value?.trim() || '';
+  const telegramChatId = document.getElementById('supportTelegramChatId')?.value?.trim() || '';
+  const clearTelegram = document.getElementById('clearSupportTelegram')?.checked === true;
+  if ((telegramBotToken && !telegramChatId) || (!telegramBotToken && telegramChatId)) {
+    showToast('❌ Telegram Bot Token ve Chat ID birlikte girilmelidir.', 'error');
+    return;
+  }
+  if (clearTelegram && (telegramBotToken || telegramChatId)) {
+    showToast('❌ Telegram bağlantısını aynı anda hem kaydedip hem silemezsiniz.', 'error');
+    return;
+  }
   try {
     const data = await apiFetch(`${API_BASE}/api/settings`, {
       method: 'POST',
-      body: JSON.stringify({ settings: { human_handoff_enabled: enabled, human_handoff_minutes: minutes } })
+      body: JSON.stringify({ settings: { human_handoff_enabled: enabled, human_handoff_minutes: minutes }, telegramBotToken, telegramChatId, clearTelegram })
     });
     if (!data.success) throw new Error(data.error || 'Handover ayarları kaydedilemedi.');
     showToast(enabled === '1' ? '✅ Human Handoff ayarları kaydedildi.' : '✅ Human Handoff kapatıldı; standby görüşmeleri yeniden AI kontrolüne geçti.', 'success');
-    await loadHumanHandoffConversations();
+    if (document.getElementById('supportTelegramBotToken')) document.getElementById('supportTelegramBotToken').value = '';
+    if (document.getElementById('supportTelegramChatId')) document.getElementById('supportTelegramChatId').value = '';
+    await loadSystemSettingsIntoModal();
   } catch (error) {
     showToast(`❌ ${error.message || 'Handover ayarları kaydedilemedi.'}`, 'error');
   }

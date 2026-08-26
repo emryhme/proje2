@@ -5,6 +5,7 @@ import { extractProductCode } from '../utils/regex.util';
 import { AIService } from '../services/ai.service';
 import { FacebookService } from '../services/facebook.service';
 import { HumanHandoffService } from '../services/human-handoff.service';
+import { TelegramService } from '../services/telegram.service';
 import { db } from '../database/db';
 
 export class WebhookController {
@@ -111,6 +112,14 @@ export class WebhookController {
   public static isInstagramCommentAutomationEnabled(storeId: number): boolean {
     void storeId;
     return false;
+  }
+
+  public static isSupportRequest(text: string): boolean {
+    const normalized = String(text || '').toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ').trim();
+    if (!normalized) return false;
+    return /\b(canlı destek|müşteri hizmetleri|destek ekibi|bir (insan|yetkili|personel|temsilci)|insanla|yetkiliyle|yetkili ile|personelle|personel ile|temsilciyle|temsilci ile)\b.*\b(görüş|konuş|bağla|ulaş|yardım|istiyorum|isterim)\w*/iu.test(normalized)
+      || /\b(personel|yetkili|insan|temsilci|canlı destek)\b.*(?:çağır|çağırın|çağırabilir misiniz|gelsin|bağlayın|istiyorum|isterim)(?:\s|$)/iu.test(normalized)
+      || /\b(biri|birisi)\b.*\b(benimle|benle)\b.*\b(görüşsün|konuşsun|ilgilensin)\b/iu.test(normalized);
   }
 
   private static handleMessageEcho(messagingEvent: any, store: { id: number; slug: string }): void {
@@ -498,6 +507,20 @@ export class WebhookController {
 
       if (HumanHandoffService.isConversationOnStandby(storeId, senderId)) {
         console.log(`[Human Handoff] Store=${storeId} Sender=${senderId} Müşteri mesajı kaydedildi; konuşma standby durumunda olduğu için AI yanıt vermedi.`);
+        return;
+      }
+
+      if (WebhookController.isSupportRequest(text)) {
+        const notificationSent = await TelegramService.notifySupportRequest(storeId, senderId, text);
+        const supportReply = notificationSent
+          ? 'Canlı destek talebinizi ekibimize ilettim. Bir mağaza yetkilisi en kısa sürede bu görüşmeden size dönüş yapacaktır.'
+          : 'Şu anda canlı destek ekibine bildirim gönderemiyorum. Talebiniz kaydedildi; lütfen biraz sonra tekrar deneyin.';
+        AIService.persistMessage(conversationId, 'assistant', supportReply);
+        await FacebookService.sendMessage(senderId, supportReply, storeId);
+        if (notificationSent) {
+          HumanHandoffService.activateStandby(storeId, senderId, 'support_request');
+          console.log(`[Human Handoff] Store=${storeId} Sender=${senderId} Müşteri canlı destek istedi; Telegram bildirimi gönderildi ve AI standby durumuna alındı.`);
+        }
         return;
       }
 

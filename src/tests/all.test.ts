@@ -8,6 +8,7 @@ import { AdminCopilotService } from '../services/admin-copilot.service';
 import { GeminiService } from '../services/gemini.service';
 import { WebhookController } from '../controllers/webhook.controller';
 import { FacebookService } from '../services/facebook.service';
+import { TelegramService } from '../services/telegram.service';
 import { DemoAIService } from '../services/demo-ai.service';
 import { AIProviderService } from '../services/ai-provider.service';
 import { EmailVerificationService } from '../services/email-verification.service';
@@ -455,6 +456,41 @@ async function runTestSuite() {
     HumanHandoffService.isConversationOnStandby(100, handoffSender) === false
       && (db.prepare('SELECT status FROM conversations WHERE id = ?').get(standbyConversation.id) as any)?.status === 'active',
     'Expired human handoff automatically returns the conversation to AI control'
+  );
+
+  console.log('\n2️⃣6️⃣-D LIVE SUPPORT TEST: Müşteri personel istediğinde Telegram çağrısı ve standby başlamalı');
+  const supportSender = 'support_customer_001';
+  const originalNotifySupportRequest = (TelegramService as any).notifySupportRequest;
+  const originalSupportSendMessage = (FacebookService as any).sendMessage;
+  const originalSupportProcessMessage = (AIService as any).processMessage;
+  let supportNotifications = 0;
+  let supportAcknowledgements = 0;
+  let supportAiCalls = 0;
+  try {
+    (TelegramService as any).notifySupportRequest = async () => { supportNotifications += 1; return true; };
+    (FacebookService as any).sendMessage = async (_recipientId: string, reply: string) => {
+      if (reply.includes('Canlı destek talebinizi')) supportAcknowledgements += 1;
+      return true;
+    };
+    (AIService as any).processMessage = async () => { supportAiCalls += 1; return { reply: 'AI yanıtı', toolTraces: [] }; };
+    await webhookControllerForBuffer.processAndReply(supportSender, 'Canlı destek istiyorum, beni bir yetkiliye bağlayın', 'store-alpha', 100);
+  } finally {
+    (TelegramService as any).notifySupportRequest = originalNotifySupportRequest;
+    (FacebookService as any).sendMessage = originalSupportSendMessage;
+    (AIService as any).processMessage = originalSupportProcessMessage;
+  }
+  const supportConversation = db.prepare('SELECT status, standby_reason FROM conversations WHERE store_id = 100 AND external_user_id = ?')
+    .get(`instagram:${supportSender}`) as any;
+  assert(
+    WebhookController.isSupportRequest('Bir insanla görüşmek istiyorum')
+      && WebhookController.isSupportRequest('Personel çağırın')
+      && !WebhookController.isSupportRequest('Bu ürün personel için uygun mu?')
+      && supportNotifications === 1
+      && supportAcknowledgements === 1
+      && supportAiCalls === 0
+      && supportConversation?.status === 'standby'
+      && supportConversation?.standby_reason === 'support_request',
+    'Explicit live support requests notify Telegram once, acknowledge the customer and pause AI for that conversation'
   );
 
   // 7. STOCK BUG FIX TESTS (ADD, SET, ISOLATION, COLLISION & SANITATION)

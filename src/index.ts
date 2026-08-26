@@ -519,12 +519,13 @@ app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole
     settingsObj.ai_provider = settingsObj.ai_provider === 'gemini' ? 'gemini' : 'openai';
     settingsObj.human_handoff_enabled = settingsObj.human_handoff_enabled === '0' ? '0' : '1';
     settingsObj.human_handoff_minutes = ['15', '30', '60', '120'].includes(settingsObj.human_handoff_minutes) ? settingsObj.human_handoff_minutes : '60';
-    const secretRows = db.prepare("SELECT key, value FROM settings WHERE store_id = ? AND key IN ('ai_api_key', 'openai_api_key', 'gemini_api_key')").all(storeId) as Array<{ key: string; value: string }>;
+    const secretRows = db.prepare("SELECT key, value FROM settings WHERE store_id = ? AND key IN ('ai_api_key', 'openai_api_key', 'gemini_api_key', 'telegram_bot_token', 'telegram_chat_id')").all(storeId) as Array<{ key: string; value: string }>;
     const secrets = Object.fromEntries(secretRows.map(row => [row.key, decryptSettingSecret(String(row.value || '')).trim()]));
     const legacyProvider = settingsObj.ai_provider === 'gemini' ? 'gemini' : 'openai';
     settingsObj.openai_api_key_configured = secrets.openai_api_key || (legacyProvider === 'openai' && secrets.ai_api_key) ? '1' : '0';
     settingsObj.gemini_api_key_configured = secrets.gemini_api_key || (legacyProvider === 'gemini' && secrets.ai_api_key) ? '1' : '0';
     settingsObj.ai_api_key_configured = settingsObj[`${settingsObj.ai_provider}_api_key_configured`];
+    settingsObj.telegram_configured = secrets.telegram_bot_token && secrets.telegram_chat_id ? '1' : '0';
     res.json({ success: true, settings: settingsObj, settingsList: rows });
   } catch (e: any) {
     res.status(500).json({ success: false, error: e.message, settings: {} });
@@ -534,7 +535,7 @@ app.get('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole
 app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRole(['OWNER', 'ADMIN']), (req: AuthenticatedRequest, res) => {
   try {
     const storeId = req.auth!.storeId;
-    const { key, value, settings, shippingFee, freeShippingThreshold, aiApiKey, clearAiApiKey } = req.body || {};
+    const { key, value, settings, shippingFee, freeShippingThreshold, aiApiKey, clearAiApiKey, telegramBotToken, telegramChatId, clearTelegram } = req.body || {};
 
     const normalizeSetting = (rawKey: unknown, rawValue: unknown): { key: string; value: string } | null => {
       const settingKey = String(rawKey || '');
@@ -588,6 +589,17 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
 
     const saveSetting = db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)');
     const cleanAiApiKey = typeof aiApiKey === 'string' ? aiApiKey.trim() : '';
+    const cleanTelegramBotToken = typeof telegramBotToken === 'string' ? telegramBotToken.trim() : '';
+    const cleanTelegramChatId = typeof telegramChatId === 'string' ? telegramChatId.trim() : '';
+    if (Boolean(cleanTelegramBotToken) !== Boolean(cleanTelegramChatId)) {
+      return res.status(400).json({ success: false, error: 'Telegram Bot Token ve Chat ID birlikte girilmelidir.' });
+    }
+    if (cleanTelegramBotToken && !/^\d{5,15}:[A-Za-z0-9_-]{20,}$/.test(cleanTelegramBotToken)) {
+      return res.status(400).json({ success: false, error: 'Telegram Bot Token biçimi geçersiz.' });
+    }
+    if (cleanTelegramChatId && !/^-?\d{1,20}$/.test(cleanTelegramChatId)) {
+      return res.status(400).json({ success: false, error: 'Telegram Chat ID biçimi geçersiz.' });
+    }
     if (cleanAiApiKey && (cleanAiApiKey.length < 20 || cleanAiApiKey.length > 512)) {
       return res.status(400).json({ success: false, error: 'API anahtarı geçerli uzunlukta değil.' });
     }
@@ -621,6 +633,13 @@ app.post('/api/settings', AuthMiddleware.authenticate, AuthMiddleware.requireRol
         `).run(storeId);
       }
       if (cleanAiApiKey) saveSetting.run(storeId, providerSecretKey, encryptSettingSecret(cleanAiApiKey));
+      if (cleanTelegramBotToken && cleanTelegramChatId) {
+        saveSetting.run(storeId, 'telegram_bot_token', encryptSettingSecret(cleanTelegramBotToken));
+        saveSetting.run(storeId, 'telegram_chat_id', encryptSettingSecret(cleanTelegramChatId));
+      }
+      if (clearTelegram === true) {
+        db.prepare("DELETE FROM settings WHERE store_id = ? AND key IN ('telegram_bot_token', 'telegram_chat_id')").run(storeId);
+      }
       if (clearAiApiKey === true) {
         db.prepare('DELETE FROM settings WHERE store_id = ? AND key = ?').run(storeId, providerSecretKey);
         if (effectiveProvider === currentProvider) {

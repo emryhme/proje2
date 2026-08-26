@@ -288,10 +288,19 @@ async function run(): Promise<void> {
       'Automatic VIP reward setting can be saved and read by the merchant panel'
     );
 
+    const testTelegramToken = '123456789:AAHttpSupportBotToken1234567890';
+    const testTelegramChatId = '-1001234567890';
     const savedHandoffSettings = await fetch(`${origin}/api/settings`, {
       method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ settings: { human_handoff_enabled: '1', human_handoff_minutes: '30' } })
+      body: JSON.stringify({
+        settings: { human_handoff_enabled: '1', human_handoff_minutes: '30' },
+        telegramBotToken: testTelegramToken,
+        telegramChatId: testTelegramChatId
+      })
     });
+    const handoffSettingsResponse = await fetch(`${origin}/api/settings`, { headers: { Cookie: cookie } });
+    const handoffSettingsBody = await handoffSettingsResponse.json() as any;
+    const encryptedTelegramToken = String((db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'telegram_bot_token'").get(storeId) as any)?.value || '');
     const handoffConversationId = Number(db.prepare(`
       INSERT INTO conversations (store_id, external_user_id, status, standby_until, standby_reason, standby_started_at)
       VALUES (?, 'instagram:http_handoff_customer', 'standby', datetime('now', '+30 minutes'), 'owner_message', CURRENT_TIMESTAMP)
@@ -311,6 +320,9 @@ async function run(): Promise<void> {
     const resumedOwnStatus = (db.prepare('SELECT status FROM conversations WHERE id = ?').get(handoffConversationId) as any)?.status;
     assert(
       savedHandoffSettings.ok
+        && handoffSettingsBody.settings?.telegram_configured === '1'
+        && !JSON.stringify(handoffSettingsBody).includes(testTelegramToken)
+        && encryptedTelegramToken.startsWith('sv1:')
         && handoffList.ok
         && handoffListBody.config?.enabled === true
         && handoffListBody.config?.minutes === 30
@@ -318,16 +330,17 @@ async function run(): Promise<void> {
         && rejectedForeignResume.status === 404
         && resumedOwnConversation.ok
         && resumedOwnStatus === 'active',
-      'Merchant can configure handoff, list only tenant standby conversations and manually resume AI'
+      'Merchant can securely configure Telegram handoff, list only tenant standby conversations and manually resume AI'
     );
     db.prepare("UPDATE conversations SET status = 'standby', standby_until = datetime('now', '+30 minutes'), standby_reason = 'owner_message' WHERE id = ?").run(handoffConversationId);
     const disabledHandoff = await fetch(`${origin}/api/settings`, {
       method: 'POST', headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ settings: { human_handoff_enabled: '0' } })
+      body: JSON.stringify({ settings: { human_handoff_enabled: '0' }, clearTelegram: true })
     });
     const disabledOwnHandoffStatus = (db.prepare('SELECT status FROM conversations WHERE id = ?').get(handoffConversationId) as any)?.status;
     const foreignHandoffStatus = (db.prepare('SELECT status FROM conversations WHERE id = ?').get(foreignHandoffConversationId) as any)?.status;
-    assert(disabledHandoff.ok && disabledOwnHandoffStatus === 'active' && foreignHandoffStatus === 'standby', 'Disabling handoff clears only the authenticated store standby state');
+    const remainingTelegramSecrets = (db.prepare("SELECT COUNT(*) AS count FROM settings WHERE store_id = ? AND key IN ('telegram_bot_token', 'telegram_chat_id')").get(storeId) as any)?.count;
+    assert(disabledHandoff.ok && disabledOwnHandoffStatus === 'active' && foreignHandoffStatus === 'standby' && remainingTelegramSecrets === 0, 'Disabling handoff clears only the authenticated store standby state and Telegram credentials can be removed');
     db.prepare('DELETE FROM messages WHERE conversation_id IN (?, ?)').run(handoffConversationId, foreignHandoffConversationId);
     db.prepare('DELETE FROM conversations WHERE id IN (?, ?)').run(handoffConversationId, foreignHandoffConversationId);
 

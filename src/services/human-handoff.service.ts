@@ -57,6 +57,14 @@ export class HumanHandoffService {
     const config = this.getStoreConfig(storeId);
     if (!config.enabled) return { automated: false, disabled: true };
 
+    return { automated: false, standbyUntil: this.activateStandby(storeId, cleanRecipientId, 'owner_message', text) };
+  }
+
+  public static activateStandby(storeId: number, recipientId: string, reason: 'owner_message' | 'support_request', ownerMessage: string = ''): string | undefined {
+    const cleanRecipientId = String(recipientId || '').trim();
+    if (!cleanRecipientId) return undefined;
+    const config = this.getStoreConfig(storeId);
+    if (!config.enabled) return undefined;
     const externalUserId = `instagram:${cleanRecipientId}`;
     let conversation = db.prepare('SELECT id, standby_until FROM conversations WHERE store_id = ? AND external_user_id = ?')
       .get(storeId, externalUserId) as { id: number; standby_until?: string } | undefined;
@@ -69,18 +77,18 @@ export class HumanHandoffService {
       SET status = 'standby',
           standby_started_at = CURRENT_TIMESTAMP,
           standby_until = datetime('now', ?),
-          standby_reason = 'owner_message'
+          standby_reason = ?
       WHERE store_id = ? AND external_user_id = ?
-    `).run(`+${config.minutes} minutes`, storeId, externalUserId);
+    `).run(`+${config.minutes} minutes`, reason, storeId, externalUserId);
 
     conversation = db.prepare('SELECT id, standby_until FROM conversations WHERE store_id = ? AND external_user_id = ?')
       .get(storeId, externalUserId) as { id: number; standby_until: string } | undefined;
-    const cleanText = String(text || '').trim();
-    if (conversation && cleanText) {
+    const cleanText = String(ownerMessage || '').trim();
+    if (reason === 'owner_message' && conversation && cleanText) {
       db.prepare("INSERT INTO messages (conversation_id, sender_type, text) VALUES (?, 'owner', ?)")
         .run(conversation.id, cleanText.slice(0, 4_000));
     }
-    return { automated: false, standbyUntil: conversation?.standby_until };
+    return conversation?.standby_until;
   }
 
   public static isConversationOnStandby(storeId: number, recipientId: string): boolean {
