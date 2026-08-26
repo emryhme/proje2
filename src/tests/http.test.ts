@@ -135,6 +135,40 @@ async function run(): Promise<void> {
         && !serializedMerchantDetail.includes('must-never-leak'),
       'Merchant detail exposes safe account and plan fields without credentials or integration secrets'
     );
+
+    const masterOpenAiKey = 'sk-master-assigned-openai-12345678901234567890';
+    const masterGeminiKey = 'AIza-master-assigned-gemini-123456789012345';
+    const masterSavedAi = await fetch(`${origin}/api/master-admin/stores/${storeId}/ai-settings`, {
+      method: 'POST',
+      headers: { Cookie: masterCookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'gemini', openaiApiKey: masterOpenAiKey, geminiApiKey: masterGeminiKey })
+    });
+    const masterSavedAiBody = await masterSavedAi.json() as any;
+    const merchantDetailAfterAi = await fetch(`${origin}/api/master-admin/merchants/${storeId}`, { headers: { Cookie: masterCookie } });
+    const merchantDetailAfterAiBody = await merchantDetailAfterAi.json() as any;
+    const masterStoredOpenAi = String((db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'openai_api_key'").get(storeId) as any)?.value || '');
+    const masterStoredGemini = String((db.prepare("SELECT value FROM settings WHERE store_id = ? AND key = 'gemini_api_key'").get(storeId) as any)?.value || '');
+    const merchantRejectedMasterAi = await fetch(`${origin}/api/master-admin/stores/${storeId}/ai-settings`, {
+      method: 'POST',
+      headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: 'openai' })
+    });
+    assert(
+      masterSavedAi.ok
+        && masterSavedAiBody.aiSettings?.provider === 'gemini'
+        && masterSavedAiBody.aiSettings?.openaiConfigured === true
+        && masterSavedAiBody.aiSettings?.geminiConfigured === true
+        && merchantDetailAfterAiBody.detail?.aiSettings?.provider === 'gemini'
+        && merchantDetailAfterAiBody.detail?.aiSettings?.openaiConfigured === true
+        && merchantDetailAfterAiBody.detail?.aiSettings?.geminiConfigured === true
+        && masterStoredOpenAi.startsWith('sv1:')
+        && masterStoredGemini.startsWith('sv1:')
+        && !JSON.stringify(masterSavedAiBody).includes(masterOpenAiKey)
+        && !JSON.stringify(merchantDetailAfterAiBody).includes(masterGeminiKey)
+        && merchantRejectedMasterAi.status === 403,
+      'Master Admin can assign encrypted provider credentials to a store without exposing them'
+    );
+    db.prepare("DELETE FROM settings WHERE store_id = ? AND key IN ('ai_provider', 'openai_api_key', 'gemini_api_key')").run(storeId);
     db.prepare('DELETE FROM memberships WHERE user_id = ? AND store_id = 1').run(userId);
 
     const adminAppScript = await fetch(`${origin}/admin/app.js`);

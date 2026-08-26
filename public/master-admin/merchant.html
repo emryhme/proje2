@@ -6,7 +6,7 @@
   <link rel="icon" type="image/png" sizes="64x64" href="/favicon.png">
   <title>ISCWORKS — Tüccar Detayı</title>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="styles.css?v=20260817-merchant-details">
+  <link rel="stylesheet" href="styles.css?v=20260826-ai-management">
 </head>
 <body>
 
@@ -142,6 +142,39 @@
       </div>
     </div>
 
+    <!-- Store AI Provider & API Management -->
+    <div class="data-card">
+      <div class="card-title">
+        <span><i class="fa-solid fa-wand-magic-sparkles text-indigo"></i> Yapay Zeka Sağlayıcısı ve API Anahtarları</span>
+        <span class="code-tag" id="detailAiProviderBadge">Yükleniyor...</span>
+      </div>
+      <p class="ai-settings-note">Anahtarlar şifreli saklanır ve kaydedildikten sonra tekrar görüntülenmez. Boş bıraktığınız alan mevcut anahtarı değiştirmez.</p>
+      <form id="masterStoreAiForm" class="ai-settings-form">
+        <div class="ai-settings-field">
+          <label for="masterAiProvider">Aktif sağlayıcı</label>
+          <select id="masterAiProvider" required>
+            <option value="openai">OpenAI — gpt-4o-mini</option>
+            <option value="gemini">Google Gemini — gemini-3.5-flash-lite</option>
+          </select>
+        </div>
+        <div class="ai-settings-field">
+          <label for="masterOpenaiApiKey">OpenAI API anahtarı</label>
+          <input id="masterOpenaiApiKey" type="password" autocomplete="new-password" placeholder="Yeni anahtar ekle veya mevcut anahtarı değiştir">
+          <div class="ai-key-status" id="masterOpenaiKeyStatus">Kontrol ediliyor...</div>
+          <label class="ai-clear-option"><input id="masterClearOpenaiKey" type="checkbox"> Kayıtlı OpenAI anahtarını sil</label>
+        </div>
+        <div class="ai-settings-field">
+          <label for="masterGeminiApiKey">Google Gemini API anahtarı</label>
+          <input id="masterGeminiApiKey" type="password" autocomplete="new-password" placeholder="Yeni anahtar ekle veya mevcut anahtarı değiştir">
+          <div class="ai-key-status" id="masterGeminiKeyStatus">Kontrol ediliyor...</div>
+          <label class="ai-clear-option"><input id="masterClearGeminiKey" type="checkbox"> Kayıtlı Gemini anahtarını sil</label>
+        </div>
+        <div class="ai-settings-actions">
+          <button class="btn btn-primary" type="submit" id="masterSaveAiSettings"><i class="fa-solid fa-floppy-disk"></i> API Ayarlarını Kaydet</button>
+        </div>
+      </form>
+    </div>
+
     <!-- Metrics Cards -->
     <div class="metrics-grid">
       <div class="metric-card">
@@ -220,6 +253,6 @@
   </main>
 </div>
 
-<script src="app.js?v=20260817-merchant-details"></script>
+<script src="app.js?v=20260826-ai-management"></script>
 </body>
 </html>

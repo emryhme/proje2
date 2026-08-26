@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../database/db';
 import { AuthMiddleware, AuthenticatedRequest } from '../middleware/auth.middleware';
 import { EmailVerificationService } from '../services/email-verification.service';
+import { decryptSettingSecret, encryptSettingSecret } from '../utils/secret.util';
 
 const router = Router();
 const ALLOWED_PLANS = ['Starter Store', 'Pro Store', 'Enterprise Store'];
@@ -181,6 +182,16 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
     const aiUsageCount = (db.prepare("SELECT COUNT(*) as count FROM ai_usage WHERE store_id = ?").get(targetStoreId) as any).count;
     const apiKeysCount = (db.prepare("SELECT COUNT(*) as count FROM api_keys WHERE store_id = ?").get(targetStoreId) as any).count;
 
+    const aiSettingRows = db.prepare(`
+      SELECT key, value FROM settings
+      WHERE store_id = ? AND key IN ('ai_provider', 'ai_api_key', 'openai_api_key', 'gemini_api_key')
+    `).all(targetStoreId) as Array<{ key: string; value: string }>;
+    const aiSettings = Object.fromEntries(aiSettingRows.map(row => [row.key, String(row.value || '')]));
+    const aiProvider = aiSettings.ai_provider === 'gemini' ? 'gemini' : 'openai';
+    const legacyAiKey = decryptSettingSecret(aiSettings.ai_api_key || '').trim();
+    const openAiConfigured = Boolean(decryptSettingSecret(aiSettings.openai_api_key || '').trim()) || (aiProvider === 'openai' && Boolean(legacyAiKey));
+    const geminiConfigured = Boolean(decryptSettingSecret(aiSettings.gemini_api_key || '').trim()) || (aiProvider === 'gemini' && Boolean(legacyAiKey));
+
     const recentProducts = db.prepare("SELECT product_code, name, price, stock FROM products WHERE store_id = ? ORDER BY id DESC LIMIT 5").all(targetStoreId);
     const recentOrders = db.prepare(`
       SELECT id,
@@ -203,6 +214,11 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
         membership,
         application,
         subscription,
+        aiSettings: {
+          provider: aiProvider,
+          openaiConfigured: openAiConfigured,
+          geminiConfigured: geminiConfigured
+        },
         metrics: {
           productsCount,
           ordersCount,
@@ -219,6 +235,76 @@ router.get('/api/master-admin/merchants/:storeId', AuthMiddleware.authenticate, 
     });
   } catch (e: any) {
     return res.status(500).json({ success: false, error: e.message });
+  }
+});
+
+// POST /api/master-admin/stores/:storeId/ai-settings
+router.post('/api/master-admin/stores/:storeId/ai-settings', AuthMiddleware.authenticate, AuthMiddleware.requireMasterAdmin, (req: AuthenticatedRequest, res) => {
+  try {
+    const targetStoreId = Number(req.params.storeId);
+    if (!Number.isInteger(targetStoreId) || targetStoreId <= 0) {
+      return res.status(400).json({ success: false, error: 'Geçersiz mağaza ID.' });
+    }
+    const store = db.prepare('SELECT id, name FROM stores WHERE id = ?').get(targetStoreId) as { id: number; name: string } | undefined;
+    if (!store) return res.status(404).json({ success: false, error: 'Mağaza bulunamadı.' });
+
+    const provider = req.body?.provider === 'gemini' ? 'gemini' : req.body?.provider === 'openai' ? 'openai' : null;
+    if (!provider) return res.status(400).json({ success: false, error: 'OpenAI veya Gemini sağlayıcısını seçiniz.' });
+
+    const openaiApiKey = typeof req.body?.openaiApiKey === 'string' ? req.body.openaiApiKey.trim() : '';
+    const geminiApiKey = typeof req.body?.geminiApiKey === 'string' ? req.body.geminiApiKey.trim() : '';
+    const clearOpenaiApiKey = req.body?.clearOpenaiApiKey === true;
+    const clearGeminiApiKey = req.body?.clearGeminiApiKey === true;
+
+    for (const key of [openaiApiKey, geminiApiKey]) {
+      if (key && (key.length < 20 || key.length > 512)) {
+        return res.status(400).json({ success: false, error: 'API anahtarı geçerli uzunlukta değil.' });
+      }
+    }
+    if (openaiApiKey && /^(?:AIza[A-Za-z0-9_-]+|AQ\.[A-Za-z0-9._-]+)$/.test(openaiApiKey)) {
+      return res.status(400).json({ success: false, error: 'OpenAI alanına Google Gemini anahtarı girilemez.' });
+    }
+    if (geminiApiKey && /^sk-[A-Za-z0-9_-]+$/.test(geminiApiKey)) {
+      return res.status(400).json({ success: false, error: 'Gemini alanına OpenAI anahtarı girilemez.' });
+    }
+
+    const rows = db.prepare(`
+      SELECT key, value FROM settings
+      WHERE store_id = ? AND key IN ('ai_provider', 'ai_api_key', 'openai_api_key', 'gemini_api_key')
+    `).all(targetStoreId) as Array<{ key: string; value: string }>;
+    const current = Object.fromEntries(rows.map(row => [row.key, String(row.value || '')]));
+    const currentProvider = current.ai_provider === 'gemini' ? 'gemini' : 'openai';
+    const legacyKey = decryptSettingSecret(current.ai_api_key || '').trim();
+    const savedOpenaiKey = decryptSettingSecret(current.openai_api_key || '').trim() || (currentProvider === 'openai' ? legacyKey : '');
+    const savedGeminiKey = decryptSettingSecret(current.gemini_api_key || '').trim() || (currentProvider === 'gemini' ? legacyKey : '');
+    const projectedOpenaiKey = openaiApiKey || (clearOpenaiApiKey ? '' : savedOpenaiKey);
+    const projectedGeminiKey = geminiApiKey || (clearGeminiApiKey ? '' : savedGeminiKey);
+    if ((provider === 'openai' && !projectedOpenaiKey) || (provider === 'gemini' && !projectedGeminiKey)) {
+      return res.status(400).json({ success: false, error: 'Aktif sağlayıcı için API anahtarı zorunludur.' });
+    }
+
+    const saveSetting = db.prepare('INSERT OR REPLACE INTO settings (store_id, key, value) VALUES (?, ?, ?)');
+    db.transaction(() => {
+      saveSetting.run(targetStoreId, 'ai_provider', provider);
+      if (projectedOpenaiKey) saveSetting.run(targetStoreId, 'openai_api_key', encryptSettingSecret(projectedOpenaiKey));
+      else db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'openai_api_key'").run(targetStoreId);
+      if (projectedGeminiKey) saveSetting.run(targetStoreId, 'gemini_api_key', encryptSettingSecret(projectedGeminiKey));
+      else db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'gemini_api_key'").run(targetStoreId);
+      db.prepare("DELETE FROM settings WHERE store_id = ? AND key = 'ai_api_key'").run(targetStoreId);
+      AuthMiddleware.logAudit(1, req.auth!.userId, 'MASTER_ADMIN_UPDATE_STORE_AI', 'stores', String(targetStoreId));
+    })();
+
+    return res.json({
+      success: true,
+      message: `${store.name} mağazasının yapay zeka API ayarları güncellendi.`,
+      aiSettings: {
+        provider,
+        openaiConfigured: Boolean(projectedOpenaiKey),
+        geminiConfigured: Boolean(projectedGeminiKey)
+      }
+    });
+  } catch (e: any) {
+    return res.status(500).json({ success: false, error: e.message || 'Yapay zeka API ayarları güncellenemedi.' });
   }
 });
 

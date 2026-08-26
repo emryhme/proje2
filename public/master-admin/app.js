@@ -138,6 +138,64 @@ function setDetailBadge(id, text, status) {
   element.textContent = text;
 }
 
+function renderMasterStoreAiSettings(aiSettings = {}) {
+  const provider = aiSettings.provider === 'gemini' ? 'gemini' : 'openai';
+  const providerInput = document.getElementById('masterAiProvider');
+  if (providerInput) providerInput.value = provider;
+
+  const providerBadge = document.getElementById('detailAiProviderBadge');
+  if (providerBadge) providerBadge.textContent = provider === 'gemini' ? 'Gemini aktif' : 'OpenAI aktif';
+
+  const setKeyStatus = (id, configured, label) => {
+    const element = document.getElementById(id);
+    if (!element) return;
+    element.className = `ai-key-status${configured ? ' configured' : ''}`;
+    element.textContent = configured ? `✓ ${label} anahtarı kayıtlı` : `⚠ ${label} anahtarı kayıtlı değil`;
+  };
+  setKeyStatus('masterOpenaiKeyStatus', aiSettings.openaiConfigured === true, 'OpenAI');
+  setKeyStatus('masterGeminiKeyStatus', aiSettings.geminiConfigured === true, 'Gemini');
+}
+
+async function saveMasterStoreAiSettings(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const storeId = Number(form.dataset.storeId);
+  if (!storeId) return showToast('Geçersiz mağaza kimliği.', 'error');
+
+  const openaiApiKey = document.getElementById('masterOpenaiApiKey')?.value.trim() || '';
+  const geminiApiKey = document.getElementById('masterGeminiApiKey')?.value.trim() || '';
+  const clearOpenaiApiKey = document.getElementById('masterClearOpenaiKey')?.checked === true;
+  const clearGeminiApiKey = document.getElementById('masterClearGeminiKey')?.checked === true;
+  if ((openaiApiKey && clearOpenaiApiKey) || (geminiApiKey && clearGeminiApiKey)) {
+    return showToast('Aynı sağlayıcının anahtarını hem ekleyip hem silemezsiniz.', 'warning');
+  }
+
+  const saveButton = document.getElementById('masterSaveAiSettings');
+  if (saveButton) saveButton.disabled = true;
+  try {
+    const data = await apiFetch(`/api/master-admin/stores/${storeId}/ai-settings`, {
+      method: 'POST',
+      body: JSON.stringify({
+        provider: document.getElementById('masterAiProvider')?.value || 'openai',
+        openaiApiKey,
+        geminiApiKey,
+        clearOpenaiApiKey,
+        clearGeminiApiKey
+      })
+    });
+    document.getElementById('masterOpenaiApiKey').value = '';
+    document.getElementById('masterGeminiApiKey').value = '';
+    document.getElementById('masterClearOpenaiKey').checked = false;
+    document.getElementById('masterClearGeminiKey').checked = false;
+    renderMasterStoreAiSettings(data.aiSettings || {});
+    showToast(data.message || 'Yapay zeka API ayarları güncellendi.', 'success');
+  } catch (e) {
+    showToast(e.message || 'Yapay zeka API ayarları güncellenemedi.', 'error');
+  } finally {
+    if (saveButton) saveButton.disabled = false;
+  }
+}
+
 function formatMerchantRole(role) {
   const normalizedRole = String(role || '').toUpperCase();
   if (normalizedRole === 'OWNER') return 'Mağaza Sahibi';
@@ -424,6 +482,10 @@ async function loadMerchantDetailData() {
       const subscription = d.subscription || {};
       const m = d.metrics || {};
 
+      const aiForm = document.getElementById('masterStoreAiForm');
+      if (aiForm) aiForm.dataset.storeId = String(s.id || storeId);
+      renderMasterStoreAiSettings(d.aiSettings || {});
+
       document.getElementById('detailStoreName').textContent = s.name || 'Mağaza Detayı';
       document.getElementById('detailStoreSlug').textContent = `Slug: ${s.slug || ''}`;
       document.getElementById('detailOwnerId').textContent = o.id ? `#${o.id}` : '-';
@@ -619,6 +681,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupMasterThemeToggle();
   checkMasterAuth();
   renderMasterUser();
+  document.getElementById('masterStoreAiForm')?.addEventListener('submit', saveMasterStoreAiSettings);
 
   const path = window.location.pathname;
   if (path.endsWith('/dashboard') || path.endsWith('/')) {
